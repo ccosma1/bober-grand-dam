@@ -1,4 +1,4 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd3";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd4";
 
 function canvasTex(THREE, draw, w, h, repeat) {
   const c = document.createElement("canvas");
@@ -472,7 +472,7 @@ export function createWorld(THREE, track) {
   let road = buildRoad(THREE, track, roadMap);
   scene.add(road.mesh, road.skirt);
 
-  const concMat = new THREE.MeshStandardMaterial({ map: concrete, roughness: 0.88 });
+  const concMat = new THREE.MeshStandardMaterial({ map: concrete, roughness: 0.58, metalness: 0.06 });
   const damL = new THREE.Mesh(new THREE.BoxGeometry(74, 11.2, 14), concMat);
   damL.position.set(-52, 5.5, -46);
   damL.castShadow = true;
@@ -669,13 +669,25 @@ export function createWorld(THREE, track) {
     return view;
   }
 
-  function emitSpark(x, y, z, hot) {
+  function emitSpark(x, y, z, hot, ice) {
     const i = sparkCursor % sparkN;
     sparkCursor++;
     sparkLife[i] = 1;
     sparkPos[i * 3] = x + (Math.random() - 0.5) * 0.3;
     sparkPos[i * 3 + 1] = y + Math.random() * 0.2;
     sparkPos[i * 3 + 2] = z + (Math.random() - 0.5) * 0.3;
+    if (ice === "ice") {
+      sparkCol[i * 3] = 0.86;
+      sparkCol[i * 3 + 1] = 0.94;
+      sparkCol[i * 3 + 2] = 1;
+      return;
+    }
+    if (ice === "foam") {
+      sparkCol[i * 3] = 0.75;
+      sparkCol[i * 3 + 1] = 0.9;
+      sparkCol[i * 3 + 2] = 0.88;
+      return;
+    }
     const heat = hot ? 1 : 0.55 + Math.random() * 0.4;
     sparkCol[i * 3] = 1;
     sparkCol[i * 3 + 1] = 0.55 + heat * 0.4;
@@ -755,17 +767,16 @@ export function createWorld(THREE, track) {
       view.blob.position.set(k.x, k.y + 0.05, k.z);
       const spin = k.speed * dt * 1.6;
       for (const w of view.wheels) w.rotation.x += spin;
-      if ((k.drifting && k.spark > 0.05) || k.boost > 0) {
+      const icy = liveTrack.theme === "frost";
+      const hot = k.spark > 0.72 || k.boost > 0;
+      const spraying = (k.drifting && k.spark > 0.05) || k.boost > 0 || k.speed > 16;
+      if (spraying) {
         const f = forward(k.yaw);
         const rx = Math.cos(k.yaw);
         const rz = -Math.sin(k.yaw);
+        const kind = hot ? false : icy ? "ice" : "foam";
         for (const side of [-0.7, 0.7]) {
-          emitSpark(
-            k.x - f.x * 0.9 + rx * side,
-            k.y + 0.25,
-            k.z - f.z * 0.9 + rz * side,
-            k.spark > 0.72 || k.boost > 0
-          );
+          emitSpark(k.x - f.x * 1.05 + rx * side, k.y + 0.22, k.z - f.z * 1.05 + rz * side, hot, kind);
         }
       }
     }
@@ -810,6 +821,10 @@ export function createWorld(THREE, track) {
       camera.updateProjectionMatrix();
     }
     paintItems(race, dt);
+    spray.children.forEach((card, i) => {
+      card.position.y = 6 + ((race.time * 1.5 + i * 0.37) % 9);
+      card.lookAt(camera.position);
+    });
     renderer.render(scene, camera);
   }
 
@@ -880,7 +895,7 @@ export function createWorld(THREE, track) {
       const k = 1 - b.life / b.max;
       const geo = b.kind === "shock" || b.kind === "blast" ? blastGeo : sapGeo;
       const mat = b.kind === "orb" || b.kind === "shock" ? orbMat : b.kind === "blast" || b.kind === "rocket" ? rocketMat : starMat;
-      addMesh(geo, mat, b.x, b.y, b.z, 0.4 + k * (b.kind === "blast" ? 4.2 : 1.8));
+      addMesh(geo, mat, b.x, b.y, b.z, 0.35 + k * (b.kind === "blast" ? 2.4 : 0.9));
     }
     for (const k of race.karts || []) {
       if (k.invuln > 0) {
@@ -893,6 +908,43 @@ export function createWorld(THREE, track) {
     }
   }
 
+  const backdrop = new THREE.Mesh(
+    new THREE.PlaneGeometry(220, 84),
+    new THREE.MeshBasicMaterial({ color: 0xd7c4a8, depthWrite: false })
+  );
+  backdrop.position.set(0, 26, -78);
+  scene.add(backdrop);
+  const spray = new THREE.Group();
+  scene.add(spray);
+  for (let i = 0; i < 18; i++) {
+    const card = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.8 + (i % 3), 6),
+      new THREE.MeshBasicMaterial({ map: mistMap, transparent: true, depthWrite: false, opacity: 0.42, side: THREE.DoubleSide })
+    );
+    card.position.set(-14 + (i % 9) * 3.2, 8, -62);
+    spray.add(card);
+  }
+  const loader = new THREE.TextureLoader();
+  const ready = new Promise((resolve) => {
+    let left = 2;
+    const done = () => { if (--left === 0) resolve(); };
+    const take = (url, key) => {
+      loader.load(url, (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.anisotropy = 8;
+        backdrop.userData[key] = tex;
+        if (key === "dam") {
+          backdrop.material.map = tex;
+          backdrop.material.color.set(0xffffff);
+          backdrop.material.needsUpdate = true;
+        }
+        done();
+      }, undefined, done);
+    };
+    take("assets/history/dam-loop.jpg?v=gd4", "dam");
+    take("assets/history/frost-ridge.jpg?v=gd4", "frost");
+  });
+
   let frostDress = null;
   function setTrack(next) {
     liveTrack = next;
@@ -900,6 +952,8 @@ export function createWorld(THREE, track) {
     road.mesh.geometry.dispose();
     road.skirt.geometry.dispose();
     road = buildRoad(THREE, next, next.theme === "frost" ? iceMap : roadMap);
+    road.mesh.material.roughness = next.theme === "frost" ? 0.22 : 0.42;
+    road.mesh.material.metalness = next.theme === "frost" ? 0.18 : 0.08;
     if (next.theme === "frost") road.mesh.material.color.set(0xd7e8f4);
     scene.add(road.mesh, road.skirt);
     const frost = next.theme === "frost";
@@ -927,7 +981,13 @@ export function createWorld(THREE, track) {
     }
     ground.material.color.set(frost ? 0xd5e4ee : 0x4e7a48);
     scene.fog.color.set(frost ? 0xc5d6e6 : 0xe7c49a);
+    if (backdrop.userData.dam) {
+      backdrop.material.map = frost ? backdrop.userData.frost : backdrop.userData.dam;
+      backdrop.material.needsUpdate = true;
+      backdrop.position.set(0, frost ? 22 : 26, frost ? 8 : -78);
+    }
+    spray.visible = !frost;
   }
 
-  return { renderer, scene, camera, resize, update, frameCheck, views, setTrack };
+  return { renderer, scene, camera, resize, update, frameCheck, views, setTrack, ready };
 }

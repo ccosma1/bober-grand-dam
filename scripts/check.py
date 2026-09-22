@@ -41,6 +41,14 @@ for need in ("Sling Kart", "Dam Loop", "Frost Ridge", "Sap Shell", "Stick Trap",
         fails.append("html missing " + need)
 if "58dvh" not in css:
     fails.append("stage 58dvh")
+if "btn-history" in html or 'id="history"' in html or ">HISTORY<" in html:
+    fails.append("history leftover")
+if "user-select: none" not in css or "-webkit-touch-callout: none" not in css:
+    fails.append("hold select css")
+if html.lower().count("data-exhibit=\"dam-loop\"") != 1:
+    fails.append("dup dam card")
+if html.lower().count("data-exhibit=\"frost-ridge\"") != 1:
+    fails.append("dup frost card")
 for aid in (
     "assets/splash.jpg",
     "assets/history/dam-loop.jpg",

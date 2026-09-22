@@ -14,9 +14,9 @@ import {
   launchHeld,
   swapTrack,
   writeSave,
-} from "./sim.js?v=gd3";
-import { createWorld } from "./world.js?v=gd3";
-import { createSfx } from "./audio.js?v=gd3";
+} from "./sim.js?v=gd4";
+import { createWorld } from "./world.js?v=gd4";
+import { createSfx } from "./audio.js?v=gd4";
 
 const app = document.getElementById("app");
 const stage = document.getElementById("stage");
@@ -25,8 +25,6 @@ const controls = document.getElementById("controls");
 const hud = document.getElementById("hud");
 const countdownEl = document.getElementById("countdown");
 const hintEl = document.getElementById("hint");
-const historyEl = document.getElementById("history");
-const stillEl = document.getElementById("still");
 const museumEl = document.getElementById("museum");
 const exhibitEl = document.getElementById("exhibit");
 const podiumEl = document.getElementById("podium");
@@ -72,8 +70,9 @@ function youInput() {
   return {
     // +steer yaws toward screen-left in the chase view. Left is +1.
     steer: (held.left ? 1 : 0) - (held.right ? 1 : 0),
-    gas: !!held.gas,
+    gas: !!held.gas && !held.brake,
     drift: !!held.drift,
+    brake: !!held.brake,
     fire: takeFire(),
   };
 }
@@ -112,7 +111,104 @@ document.getElementById("btn-fire").addEventListener("pointerup", () => {
   document.getElementById("btn-fire").classList.remove("on");
 });
 
+function inRace() {
+  return race.phase === "race" || race.phase === "countdown";
+}
+
+function splashButtons() {
+  return [
+    document.querySelector("[data-track=dam]"),
+    document.querySelector("[data-track=frost]"),
+    document.getElementById("btn-start"),
+    document.getElementById("btn-how"),
+    document.getElementById("btn-museum"),
+  ];
+}
+
+function focusAt(list, index) {
+  if (!list.length) return 0;
+  const i = (index + list.length) % list.length;
+  list[i].focus();
+  return i;
+}
+
+let splashFocus = 2;
+
+function menuKey(e) {
+  if (!exhibitEl.classList.contains("hidden")) {
+    if (e.code === "Escape" || e.code === "Backspace") {
+      e.preventDefault();
+      exhibitEl.classList.add("hidden");
+      document.querySelector("[data-exhibit]")?.focus();
+    }
+    return true;
+  }
+  if (!museumEl.classList.contains("hidden")) {
+    const cards = [...museumEl.querySelectorAll("[data-exhibit], #btn-museum-back")];
+    const cur = Math.max(0, cards.indexOf(document.activeElement));
+    if (e.code === "ArrowDown" || e.code === "ArrowRight") {
+      e.preventDefault();
+      focusAt(cards, cur + 1);
+    } else if (e.code === "ArrowUp" || e.code === "ArrowLeft") {
+      e.preventDefault();
+      focusAt(cards, cur - 1);
+    } else if (e.code === "Escape" || e.code === "Backspace") {
+      e.preventDefault();
+      museumEl.classList.add("hidden");
+      document.getElementById("btn-museum").focus();
+    }
+    return true;
+  }
+  const howEl = document.getElementById("how");
+  if (howEl && !howEl.classList.contains("hidden")) {
+    if (e.code === "Escape" || e.code === "Enter" || e.code === "Backspace") {
+      e.preventDefault();
+      howEl.classList.add("hidden");
+      document.getElementById("btn-how").focus();
+    }
+    return true;
+  }
+  if (!podiumEl.classList.contains("hidden")) {
+    const row = [document.getElementById("btn-rematch"), document.getElementById("btn-splash")];
+    const cur = Math.max(0, row.indexOf(document.activeElement));
+    if (e.code === "ArrowLeft" || e.code === "ArrowUp") {
+      e.preventDefault();
+      focusAt(row, cur - 1);
+    } else if (e.code === "ArrowRight" || e.code === "ArrowDown") {
+      e.preventDefault();
+      focusAt(row, cur + 1);
+    } else if (e.code === "Escape") {
+      e.preventDefault();
+      document.getElementById("btn-splash").click();
+    }
+    return true;
+  }
+  if (race.phase === "splash") {
+    const row = splashButtons();
+    if (e.code === "ArrowRight" || e.code === "ArrowDown") {
+      e.preventDefault();
+      splashFocus = focusAt(row, splashFocus + 1);
+    } else if (e.code === "ArrowLeft" || e.code === "ArrowUp") {
+      e.preventDefault();
+      splashFocus = focusAt(row, splashFocus - 1);
+    } else if (e.code === "Escape") {
+      return true;
+    } else {
+      return false;
+    }
+    const picked = row[splashFocus];
+    if (picked && picked.hasAttribute("data-track")) picked.click();
+    return true;
+  }
+  return false;
+}
+
 window.addEventListener("keydown", (e) => {
+  if (!inRace()) {
+    const used = menuKey(e);
+    if (used) return;
+    return;
+  }
   const map = {
     ArrowLeft: "left",
     KeyA: "left",
@@ -120,15 +216,20 @@ window.addEventListener("keydown", (e) => {
     KeyD: "right",
     ArrowUp: "gas",
     KeyW: "gas",
-    KeyF: "fire",
+    ArrowDown: "brake",
+    KeyS: "brake",
     Space: "drift",
     ShiftLeft: "drift",
     ShiftRight: "drift",
   };
+  if (e.code === "KeyF" || e.code === "KeyE" || e.code === "Enter" || e.code === "NumpadEnter") {
+    e.preventDefault();
+    firePulse = true;
+    return;
+  }
   if (!map[e.code]) return;
   e.preventDefault();
-  if (map[e.code] === "fire") firePulse = true;
-  else held[map[e.code]] = true;
+  if (!e.repeat) held[map[e.code]] = true;
 });
 window.addEventListener("keyup", (e) => {
   const map = {
@@ -138,7 +239,8 @@ window.addEventListener("keyup", (e) => {
     KeyD: "right",
     ArrowUp: "gas",
     KeyW: "gas",
-    KeyF: "fire",
+    ArrowDown: "brake",
+    KeyS: "brake",
     Space: "drift",
     ShiftLeft: "drift",
     ShiftRight: "drift",
@@ -146,6 +248,9 @@ window.addEventListener("keyup", (e) => {
   if (!map[e.code]) return;
   held[map[e.code]] = false;
 });
+document.getElementById("controls").addEventListener("selectstart", (e) => e.preventDefault());
+document.getElementById("stage").addEventListener("selectstart", (e) => e.preventDefault());
+document.getElementById("controls").addEventListener("contextmenu", (e) => e.preventDefault());
 
 function layout() {
   const portrait = window.innerHeight >= window.innerWidth;
@@ -176,9 +281,8 @@ function startRace() {
   scripted = null;
   resetRace(race);
   showRaceChrome(true);
-  historyEl.classList.add("hidden");
   museumEl.classList.add("hidden");
-  stillEl.classList.add("hidden");
+  document.getElementById("how").classList.add("hidden");
   exhibitEl.classList.add("hidden");
   hintEl.classList.remove("hidden");
   hintEl.textContent = "Hold a turn. Let go when it sparks.";
@@ -211,27 +315,7 @@ function showPodium() {
     "Best " + placeWord(save.bestPlace) + " · " + fmt(save.bestTime);
   podiumEl.classList.remove("hidden");
   sfx.stop();
-}
-
-const STILLS = {
-  "dam-loop": {
-    src: "assets/history/dam-loop.jpg?v=gd1",
-    title: "Dam Loop",
-    cap: "One crest, one bank, one spillway. The line is the crest. Three laps.",
-  },
-  "crest-drift": {
-    src: "assets/history/crest-drift.jpg?v=gd1",
-    title: "Crest drift",
-    cap: "Hold the turn until the bands spark. Let go and the bowl kicks up the face.",
-  },
-};
-
-function openStill(id) {
-  const s = STILLS[id];
-  document.getElementById("still-img").src = s.src;
-  document.getElementById("still-title").textContent = s.title;
-  document.getElementById("still-cap").textContent = s.cap;
-  stillEl.classList.remove("hidden");
+  document.getElementById("btn-rematch").focus();
 }
 
 document.getElementById("btn-start").addEventListener("click", () => startRace());
@@ -249,31 +333,21 @@ document.getElementById("btn-quit").addEventListener("click", () => {
   sfx.stop();
   layout();
 });
-document.getElementById("btn-history").addEventListener("click", () => {
-  historyEl.classList.remove("hidden");
-});
-document.getElementById("btn-history-back").addEventListener("click", () => {
-  historyEl.classList.add("hidden");
-  stillEl.classList.add("hidden");
-});
-document.getElementById("btn-still-back").addEventListener("click", () => {
-  stillEl.classList.add("hidden");
-});
 const EXHIBITS = {
   "dam-loop": {
-    src: "assets/museum/dam-loop.jpg?v=gd2",
+    src: "assets/history/dam-loop.jpg?v=gd4",
     title: "Dam Loop",
-    cap: "The only circuit. Three laps. The line is the crest.",
-  },
-  "sling-kart": {
-    src: "assets/museum/sling-kart.jpg?v=gd2",
-    title: "Sling Kart",
-    cap: "Cedar bowl. Twin sling bands on the rear posts. Hold a turn until the bands spark, then let go.",
+    cap: "The crest road, the bank, the spillway. Three laps. The line is the crest.",
   },
   "frost-ridge": {
-    src: "assets/museum/frost-ridge.jpg?v=gd3",
+    src: "assets/history/frost-ridge.jpg?v=gd4",
     title: "Frost Ridge",
     cap: "Ice, drifts, and two narrow bridges. Same three laps. Same four racers.",
+  },
+  "sling-kart": {
+    src: "assets/history/crest-drift.jpg?v=gd4",
+    title: "Sling Kart",
+    cap: "Cedar bowl. Twin sling bands on the rear posts. Hold a turn until the bands spark, then let go.",
   },
   sap: {
     src: "assets/museum/sap.jpg?v=gd3",
@@ -337,19 +411,21 @@ document.getElementById("btn-how-back").addEventListener("click", () => {
 document.getElementById("btn-museum").addEventListener("click", () => {
   closeExhibit();
   museumEl.classList.remove("hidden");
+  museumEl.querySelector("[data-exhibit]")?.focus();
 });
 document.getElementById("btn-museum-back").addEventListener("click", () => {
   closeExhibit();
   museumEl.classList.add("hidden");
 });
 document.querySelectorAll("[data-exhibit]").forEach((btn) => {
-  btn.addEventListener("click", () => openExhibit(btn.getAttribute("data-exhibit")));
+  btn.addEventListener("click", () => {
+    openExhibit(btn.getAttribute("data-exhibit"));
+    document.getElementById("btn-exhibit-close").focus();
+  });
 });
 document.getElementById("exhibit-scrim").addEventListener("click", closeExhibit);
 document.getElementById("btn-exhibit-close").addEventListener("click", closeExhibit);
-document.querySelectorAll("[data-still]").forEach((btn) => {
-  btn.addEventListener("click", () => openStill(btn.getAttribute("data-still")));
-});
+
 
 function hudTick() {
   const you = race.karts.find((k) => k.id === "you");
@@ -424,6 +500,13 @@ function frame(now) {
 window.addEventListener("resize", layout);
 paintBest();
 layout();
+document.getElementById("btn-start").disabled = true;
+world.ready.then(() => {
+  const startBtn = document.getElementById("btn-start");
+  startBtn.disabled = false;
+  startBtn.textContent = "START";
+  startBtn.focus();
+});
 const check = world.frameCheck();
 window.__grand = {
   snapshot() {

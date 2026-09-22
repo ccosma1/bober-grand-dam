@@ -7,7 +7,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "assets" / "ref"
 OUT.mkdir(parents=True, exist_ok=True)
-URL = "http://127.0.0.1:8771/?v=gd3"
+URL = "http://127.0.0.1:8771/?v=gd4"
 
 
 def shot(page, name):
@@ -101,6 +101,45 @@ def museum_round(page, w, h):
     page.wait_for_selector("#museum", state="hidden")
 
 
+def key_race(page, timeout_s=100):
+    import time
+    down = set()
+
+    def set_keys(want):
+        for key in list(down):
+            if key not in want:
+                page.keyboard.up(key)
+                down.discard(key)
+        for key in want:
+            if key not in down:
+                page.keyboard.down(key)
+                down.add(key)
+
+    deadline = time.time() + timeout_s
+    try:
+        while time.time() < deadline:
+            s = snap(page)
+            if s["phase"] == "podium":
+                return s
+            advice = s["advice"]
+            want = set()
+            if advice.get("gas"):
+                want.add("KeyW")
+            if advice.get("steer", 0) > 0.18:
+                want.add("KeyA")
+            elif advice.get("steer", 0) < -0.18:
+                want.add("KeyD")
+            if advice.get("drift"):
+                want.add("ShiftLeft")
+            if advice.get("fire"):
+                want.add("KeyF")
+            set_keys(want)
+            page.wait_for_timeout(70)
+    finally:
+        set_keys(set())
+    raise AssertionError("keyboard race timeout")
+
+
 def clean_starts(page, n=3):
     for i in range(n):
         page.click("#btn-start")
@@ -135,6 +174,9 @@ def main():
         page.on("console", lambda msg: print("CONSOLE", msg.type, msg.text) if msg.type in ("error", "warning") else None)
         page.goto(URL, wait_until="networkidle")
         page.wait_for_function("() => window.__grand && window.__grand.snapshot().phase === 'splash'")
+        page.wait_for_function("() => !document.getElementById('btn-start').disabled", timeout=20000)
+        if page.locator("#history").count() or page.locator("#btn-history").count():
+            fails.append("history still present")
         splash = page.locator("#splash").inner_text()
         low = splash.lower()
         for banned in ("mario", "nintendo", "rainbow", "kart"):
@@ -167,6 +209,12 @@ def main():
         page.click("#btn-start")
         page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=8000)
         assert_race_chrome(page, 390, 844)
+        hold(page, "#btn-left", 3000)
+        selected = page.evaluate("() => window.getSelection().toString()")
+        selectable = page.evaluate("() => getComputedStyle(document.getElementById('btn-left')).userSelect")
+        print("select", repr(selected), selectable)
+        if selected.strip() or selectable != "none":
+            fails.append("text select " + repr(selected) + " " + selectable)
         right_d = steer_delta(page, "#btn-right")
         left_d = steer_delta(page, "#btn-left")
         print("steer R", round(right_d, 3), "L", round(left_d, 3))
@@ -194,10 +242,12 @@ def main():
         print("gas speed", round(speed, 2))
         if speed < 2:
             fails.append("gas no speed " + str(speed))
-        page.evaluate("() => window.__grand.setAuto(true)")
-        page.wait_for_timeout(3500)
         shot(page, "race-390.png")
-        page.wait_for_function("() => window.__grand.snapshot().phase === 'podium'", timeout=100000)
+        try:
+            key_race(page, 100)
+        except Exception as exc:
+            fails.append("keyboard race " + str(exc))
+        page.wait_for_function("() => window.__grand.snapshot().phase === 'podium'", timeout=5000)
         pod = page.evaluate("() => window.__grand.snapshot()")
         print("PODIUM", pod["place"], round(pod["time"], 2), pod["progress"])
         if pod["place"] < 1 or pod["place"] > 4:
@@ -229,9 +279,20 @@ def main():
             fails.append("frost short")
         page.click("#btn-splash")
         page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")
+        page.locator("#btn-museum").focus()
+        page.keyboard.press("Enter")
+        page.wait_for_selector("#museum", state="visible")
+        page.keyboard.press("Enter")
+        page.wait_for_selector("#exhibit", state="visible")
+        print("KEY MUSEUM", page.locator("#exhibit-title").inner_text())
+        page.keyboard.press("Escape")
+        page.wait_for_selector("#exhibit", state="hidden")
+        page.keyboard.press("Escape")
+        page.wait_for_selector("#museum", state="hidden")
 
         page.set_viewport_size({"width": 844, "height": 390})
         page.reload(wait_until="networkidle")
+        page.wait_for_function("() => window.__grand && !document.getElementById('btn-start').disabled", timeout=20000)
         page.click("#btn-start")
         page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=8000)
         assert_race_chrome(page, 844, 390)

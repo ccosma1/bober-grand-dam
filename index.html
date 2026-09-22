@@ -10,7 +10,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png" />
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="css/game.css?v=gd3" />
+  <link rel="stylesheet" href="css/game.css?v=gd4" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Bober Grand Dam" />
   <meta property="og:description" content="Race the bank. Drift the dam. First to the crest wins. Fan game by a holder." />
@@ -55,12 +55,12 @@
           <button class="ghost on" type="button" data-track="dam">DAM LOOP</button>
           <button class="ghost" type="button" data-track="frost">FROST RIDGE</button>
         </div>
-        <button class="play" id="btn-start" type="button">START</button>
+        <button class="play" id="btn-start" type="button">LOADING</button>
         <div class="row">
           <button class="ghost" id="btn-how" type="button">HOW</button>
-          <button class="ghost" id="btn-history" type="button">HISTORY</button>
           <button class="ghost" id="btn-museum" type="button">MUSEUM</button>
         </div>
+        <p class="keys">Keys: A D steer · W go · S brake · Shift drift · F fire · arrows + Enter</p>
         <p class="best" id="splash-best"></p>
       </div>
     </section>
@@ -71,42 +71,23 @@
       <p>Boxes sit on the road. Drive through one to hold a throw.</p>
       <p>FIRE uses it. There is a short wait before the next throw.</p>
       <p>Blue Lodge Orb only while you are 1st or 2nd.</p>
+      <p class="keys">A D or arrows steer. W or up goes. S or down brakes. Shift or Space drifts. F, E, or Enter fires. Arrows and Enter run the menus.</p>
       <button class="back" id="btn-how-back" type="button">BACK</button>
-    </section>
-
-    <section id="history" class="hidden" role="dialog" aria-label="History">
-      <h2>HISTORY</h2>
-      <button class="hist-card" type="button" data-still="dam-loop">
-        <img src="assets/history/dam-loop.jpg?v=gd1" alt="" />
-        <span><strong>Dam Loop</strong>The crest road, the bank, the spillway.</span>
-      </button>
-      <button class="hist-card" type="button" data-still="crest-drift">
-        <img src="assets/history/crest-drift.jpg?v=gd1" alt="" />
-        <span><strong>Crest drift</strong>Hold the turn. Let the bands spark.</span>
-      </button>
-      <button class="back" id="btn-history-back" type="button">BACK</button>
-    </section>
-
-    <section id="still" class="hidden" role="dialog" aria-label="Still">
-      <h2 id="still-title">Still</h2>
-      <img id="still-img" alt="" />
-      <p id="still-cap"></p>
-      <button class="back" id="btn-still-back" type="button">BACK</button>
     </section>
 
     <section id="museum" class="hidden" role="dialog" aria-label="Museum">
       <h2>MUSEUM</h2>
       <button class="exh" type="button" data-exhibit="dam-loop">
-        <img src="assets/museum/dam-loop.jpg?v=gd2" alt="" />
-        <span><strong>Dam Loop</strong>The only circuit. Three laps. The line is the crest.</span>
-      </button>
-      <button class="exh" type="button" data-exhibit="sling-kart">
-        <img src="assets/museum/sling-kart.jpg?v=gd2" alt="" />
-        <span><strong>Sling Kart</strong>Cedar bowl. Twin sling bands on the rear posts. Hold a turn until the bands spark, then let go.</span>
+        <img src="assets/history/dam-loop.jpg?v=gd4" alt="" />
+        <span><strong>Dam Loop</strong>The crest road, the bank, the spillway. Three laps.</span>
       </button>
       <button class="exh" type="button" data-exhibit="frost-ridge">
-        <img src="assets/museum/frost-ridge.jpg?v=gd3" alt="" />
+        <img src="assets/history/frost-ridge.jpg?v=gd4" alt="" />
         <span><strong>Frost Ridge</strong>Ice, drifts, and two narrow bridges.</span>
+      </button>
+      <button class="exh" type="button" data-exhibit="sling-kart">
+        <img src="assets/history/crest-drift.jpg?v=gd4" alt="" />
+        <span><strong>Sling Kart</strong>Cedar bowl. Twin sling bands. Hold a turn, then let go.</span>
       </button>
       <button class="exh" type="button" data-exhibit="sap">
         <img src="assets/museum/sap.jpg?v=gd3" alt="" />
@@ -154,6 +135,6 @@
       <button class="ghost" id="btn-splash" type="button">SPLASH</button>
     </section>
   </div>
-  <script type="module" src="js/main.js?v=gd3"></script>
+  <script type="module" src="js/main.js?v=gd4"></script>
 </body>
 </html>

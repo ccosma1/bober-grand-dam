@@ -1,7 +1,7 @@
 /* Race sim. No rendering.
    yaw 0 faces +z. yaw > 0 turns toward +x (screen-left in the chase view).
    forward = (sin(yaw), 0, cos(yaw)). */
-import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd3";
+import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd4";
 export { launchHeld };
 
 export const LAPS = 3;
@@ -362,6 +362,7 @@ function integrate(kart, input, dt) {
   }
   const steer = Math.max(-1, Math.min(1, input.steer || 0));
   const gas = Math.max(0, Math.min(1, Number(input.gas) || 0));
+  const brake = input.brake ? 1 : 0;
   const speed = Math.hypot(kart.vx, kart.vz);
   const turning = Math.abs(steer) > 0.42;
   kart.steerHold = turning ? kart.steerHold + dt : 0;
@@ -386,7 +387,7 @@ function integrate(kart, input, dt) {
     kart.vz += f.z * kart.boostPow * dt;
     kart.boost -= dt;
   }
-  const drag = (gas ? 0.38 : 1.35) * dt;
+  const drag = (brake ? 3.4 : gas ? 0.38 : 1.35) * dt;
   kart.vx -= kart.vx * drag;
   kart.vz -= kart.vz * drag;
 
