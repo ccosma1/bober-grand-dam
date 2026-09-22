@@ -12,9 +12,9 @@ import {
   selfTest,
   stepRace,
   writeSave,
-} from "./sim.js";
-import { createWorld } from "./world.js";
-import { createSfx } from "./audio.js";
+} from "./sim.js?v=gd2";
+import { createWorld } from "./world.js?v=gd2";
+import { createSfx } from "./audio.js?v=gd2";
 
 const app = document.getElementById("app");
 const stage = document.getElementById("stage");
@@ -26,6 +26,7 @@ const hintEl = document.getElementById("hint");
 const historyEl = document.getElementById("history");
 const stillEl = document.getElementById("still");
 const museumEl = document.getElementById("museum");
+const exhibitEl = document.getElementById("exhibit");
 const podiumEl = document.getElementById("podium");
 
 const track = createTrack();
@@ -66,7 +67,8 @@ function youInput() {
   if (scripted) return scripted;
   if (auto) return adviceFor(race, "you");
   return {
-    steer: (held.right ? 1 : 0) - (held.left ? 1 : 0),
+    // +steer yaws toward screen-left in the chase view. Left is +1.
+    steer: (held.left ? 1 : 0) - (held.right ? 1 : 0),
     gas: !!held.gas,
     drift: !!held.drift,
   };
@@ -140,27 +142,23 @@ function showRaceChrome(on) {
     podiumEl.classList.add("hidden");
     countdownEl.classList.add("hidden");
     hintEl.classList.add("hidden");
+    exhibitEl.classList.add("hidden");
   }
 }
 
-function startRace(rematch) {
+function startRace() {
   sfx.unlock();
   savedThisRace = false;
   hinted = false;
   ceilSeen = 4;
   auto = false;
   scripted = null;
-  if (rematch) resetRace(race);
-  else {
-    race.phase = "countdown";
-    race.countdown = 3;
-    race.time = 0;
-    race.places = [];
-  }
+  resetRace(race);
   showRaceChrome(true);
   historyEl.classList.add("hidden");
   museumEl.classList.add("hidden");
   stillEl.classList.add("hidden");
+  exhibitEl.classList.add("hidden");
   hintEl.classList.remove("hidden");
   hintEl.textContent = "Hold a turn. Let go when it sparks.";
   layout();
@@ -215,8 +213,8 @@ function openStill(id) {
   stillEl.classList.remove("hidden");
 }
 
-document.getElementById("btn-start").addEventListener("click", () => startRace(false));
-document.getElementById("btn-rematch").addEventListener("click", () => startRace(true));
+document.getElementById("btn-start").addEventListener("click", () => startRace());
+document.getElementById("btn-rematch").addEventListener("click", () => startRace());
 document.getElementById("btn-splash").addEventListener("click", () => {
   race.phase = "splash";
   showRaceChrome(false);
@@ -240,12 +238,45 @@ document.getElementById("btn-history-back").addEventListener("click", () => {
 document.getElementById("btn-still-back").addEventListener("click", () => {
   stillEl.classList.add("hidden");
 });
+const EXHIBITS = {
+  "dam-loop": {
+    src: "assets/museum/dam-loop.jpg?v=gd2",
+    title: "Dam Loop",
+    cap: "The only circuit. Three laps. The line is the crest.",
+  },
+  "sling-kart": {
+    src: "assets/museum/sling-kart.jpg?v=gd2",
+    title: "Sling Kart",
+    cap: "Cedar bowl. Twin sling bands on the rear posts. Hold a turn until the bands spark, then let go.",
+  },
+};
+
+function openExhibit(id) {
+  const item = EXHIBITS[id];
+  if (!item) return;
+  document.getElementById("exhibit-img").src = item.src;
+  document.getElementById("exhibit-title").textContent = item.title;
+  document.getElementById("exhibit-cap").textContent = item.cap;
+  exhibitEl.classList.remove("hidden");
+}
+
+function closeExhibit() {
+  exhibitEl.classList.add("hidden");
+}
+
 document.getElementById("btn-museum").addEventListener("click", () => {
+  closeExhibit();
   museumEl.classList.remove("hidden");
 });
 document.getElementById("btn-museum-back").addEventListener("click", () => {
+  closeExhibit();
   museumEl.classList.add("hidden");
 });
+document.querySelectorAll("[data-exhibit]").forEach((btn) => {
+  btn.addEventListener("click", () => openExhibit(btn.getAttribute("data-exhibit")));
+});
+document.getElementById("exhibit-scrim").addEventListener("click", closeExhibit);
+document.getElementById("btn-exhibit-close").addEventListener("click", closeExhibit);
 document.querySelectorAll("[data-still]").forEach((btn) => {
   btn.addEventListener("click", () => openStill(btn.getAttribute("data-still")));
 });
@@ -331,6 +362,7 @@ window.__grand = {
       lap: lapOf(you),
       place: you.place || livePlace(race, "you"),
       progress: you.progress,
+      laps: you.laps,
       speed: you.speed,
       spark: you.spark,
       boost: you.boost,
@@ -338,7 +370,7 @@ window.__grand = {
       z: you.z,
       yaw: you.yaw,
       finished: you.finished,
-      laps: LAPS,
+      lapTarget: LAPS,
       advice: adviceFor(race, "you"),
       stageH: stageBox.height,
       viewH: window.innerHeight,

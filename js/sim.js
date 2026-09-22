@@ -4,6 +4,8 @@
 
 export const LAPS = 3;
 export const SAVE_KEY = "bober-grand-dam-v1";
+export const DNF_TIME = 180;
+const SECTORS = 8;
 
 export const ROSTER = [
   { id: "you", name: "YOU", scarf: 0xe6a322, cpu: false, lane: -0.46, style: "you" },
@@ -180,9 +182,12 @@ function nearest(track, x, z, hint) {
   let start = hint == null ? 0 : hint;
   let best = start;
   let bestD = Infinity;
-  const window = hint == null ? n : 36;
-  for (let k = -window; k <= window; k++) {
-    const i = (start + k + n * 4) % n;
+  const span = hint == null ? n : 28;
+  const nearSeam = hint != null && (start < 16 || start > n - 16);
+  for (let k = -span; k <= span; k++) {
+    const raw = start + k;
+    if (hint != null && (raw < 0 || raw >= n) && !nearSeam) continue;
+    const i = (raw % n + n) % n;
     const dx = f[i].p.x - x;
     const dz = f[i].p.z - z;
     const d = dx * dx + dz * dz;
@@ -224,12 +229,39 @@ function blankKart(def, track, slot) {
     stuck: 0,
     t,
     hint: frameIndex(track, t),
+    sector: sectorOf(t),
+    seenHalf: false,
+    laps: 0,
     progress: t,
     finished: false,
+    crossed: false,
     finishTime: 0,
     place: 0,
     slip: 0,
   };
+}
+
+function sectorOf(t) {
+  const tt = ((t % 1) + 1) % 1;
+  const s = Math.floor(tt * SECTORS);
+  return s >= SECTORS ? 0 : s;
+}
+
+function advanceSector(kart) {
+  const s = sectorOf(kart.t);
+  if (s === kart.sector) return;
+  const forward = (kart.sector + 1) % SECTORS;
+  const back = (kart.sector + SECTORS - 1) % SECTORS;
+  if (s === forward) {
+    if (s === 4) kart.seenHalf = true;
+    if (kart.sector === SECTORS - 1 && s === 0 && kart.seenHalf) {
+      kart.laps += 1;
+      kart.seenHalf = false;
+    }
+    kart.sector = s;
+  } else if (s === back) {
+    kart.sector = s;
+  }
 }
 
 const GRID = [0.024, 0.024, 0.007, 0.007];
@@ -339,7 +371,9 @@ function constrain(track, kart, dt) {
   }
   kart.hint = near.index;
   kart.t = frame.t;
-  kart.progress += dtS;
+  advanceSector(kart);
+  const wrapped = ((frame.t % 1) + 1) % 1;
+  kart.progress = kart.laps + wrapped;
   const lat =
     (kart.x - frame.p.x) * frame.right.x + (kart.z - frame.p.z) * frame.right.z;
   const half = frame.width * 0.5 - 1.05;
@@ -399,31 +433,29 @@ function separate(karts) {
   }
 }
 
+function markFinished(race, kart, crossed) {
+  kart.finished = true;
+  kart.crossed = crossed;
+  kart.finishTime = crossed ? race.time : 0;
+  race.places.push(kart.id);
+  kart.place = race.places.length;
+  kart.vx *= 0.45;
+  kart.vz *= 0.45;
+}
+
 function finishIfNeeded(race) {
-  const crossed = race.karts
-    .filter((k) => !k.finished && k.progress >= LAPS)
+  if (race.time < 8) return;
+  const done = race.karts
+    .filter((k) => !k.finished && k.laps >= LAPS)
     .sort((a, b) => b.progress - a.progress);
-  for (const k of crossed) {
-    k.finished = true;
-    k.crossed = true;
-    k.finishTime = race.time;
-    race.places.push(k.id);
-    k.place = race.places.length;
-    k.vx *= 0.4;
-    k.vz *= 0.4;
-  }
+  for (const k of done) markFinished(race, k, true);
   const you = race.karts.find((k) => k.id === "you");
-  if (you && you.finished && race.phase === "race") {
+  const dnf = race.time >= DNF_TIME;
+  if ((you && you.finished) || dnf) {
     const rest = race.karts
       .filter((k) => !k.finished)
       .sort((a, b) => b.progress - a.progress);
-    for (const k of rest) {
-      k.finished = true;
-      k.crossed = false;
-      k.finishTime = 0;
-      race.places.push(k.id);
-      k.place = race.places.length;
-    }
+    for (const k of rest) markFinished(race, k, k.laps >= LAPS);
     race.phase = "podium";
   }
 }
@@ -497,7 +529,7 @@ export function livePlace(race, id) {
 }
 
 export function lapOf(kart) {
-  return Math.min(LAPS, Math.floor(Math.max(0, kart.progress)) + 1);
+  return Math.min(LAPS, (kart.laps || 0) + 1);
 }
 
 export function loadSave() {
@@ -564,6 +596,25 @@ function testBoost(fails) {
   if (!(kart.speed > before - 1)) fails.push("boost speed");
 }
 
+function testNoInstant(fails) {
+  const track = createTrack();
+  for (let pass = 0; pass < 3; pass++) {
+    const race = createRace(track);
+    resetRace(race);
+    const inputs = {};
+    for (let i = 0; i < 60 * 5; i++) {
+      for (const k of race.karts) {
+        inputs[k.id] = k.cpu ? adviceFor(race, k.id) : { steer: 0, gas: 1, drift: false };
+      }
+      stepRace(race, inputs, 1 / 60);
+    }
+    const you = race.karts.find((k) => k.id === "you");
+    if (race.phase !== "race") fails.push("instant " + pass + " " + race.phase);
+    if (you.laps !== 0) fails.push("early lap " + pass + " " + you.laps);
+    if (you.progress >= 1) fails.push("early prog " + pass + " " + you.progress.toFixed(2));
+  }
+}
+
 export function selfTest() {
   const fails = [];
   const track = createTrack();
@@ -596,13 +647,15 @@ export function selfTest() {
   if (race.phase !== "podium") {
     fails.push(
       "no podium " +
-        race.karts.map((k) => k.id + ":" + k.progress.toFixed(2)).join(" ")
+        race.karts.map((k) => k.id + ":" + k.laps + ":" + k.progress.toFixed(2)).join(" ")
     );
   } else {
     const you = race.karts.find((k) => k.id === "you");
     if (!you.finished || you.place < 1 || you.place > 4) fails.push("place " + you.place);
-    if (you.progress < LAPS) fails.push("laps " + you.progress.toFixed(2));
+    if (you.laps < LAPS) fails.push("laps " + you.laps);
+    if (guard < 60 * 15) fails.push("too fast " + guard);
   }
+  testNoInstant(fails);
   return {
     ok: fails.length === 0,
     fails,

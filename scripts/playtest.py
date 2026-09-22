@@ -30,6 +30,83 @@ def assert_inside(b, w, h, name, min_h=36):
         raise AssertionError(name + " clipped " + str(b) + f" vp {w}x{h}")
 
 
+def snap(page):
+    return page.evaluate("() => window.__grand.snapshot()")
+
+
+def wrap_delta(a, b):
+    d = b - a
+    while d > 3.14159265:
+        d -= 6.2831853
+    while d < -3.14159265:
+        d += 6.2831853
+    return d
+
+
+def hold(page, sel, ms):
+    b = box(page, sel)
+    page.mouse.move(b["x"] + b["width"] / 2, b["y"] + b["height"] / 2)
+    page.mouse.down()
+    page.wait_for_timeout(ms)
+    page.mouse.up()
+
+
+def steer_delta(page, sel, ms=450):
+    y0 = snap(page)["yaw"]
+    hold(page, sel, ms)
+    return wrap_delta(y0, snap(page)["yaw"])
+
+
+def key_steer_delta(page, key, ms=450):
+    y0 = snap(page)["yaw"]
+    page.keyboard.down(key)
+    page.wait_for_timeout(ms)
+    page.keyboard.up(key)
+    return wrap_delta(y0, snap(page)["yaw"])
+
+
+def museum_round(page, w, h):
+    page.click("#btn-museum")
+    page.wait_for_selector("#museum", state="visible")
+    hit = page.evaluate(
+        """() => {
+          const img = document.querySelector('[data-exhibit="dam-loop"] img');
+          const r = img.getBoundingClientRect();
+          const el = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+          return !!(el && el.closest('[data-exhibit="dam-loop"]'));
+        }"""
+    )
+    if not hit:
+        raise AssertionError("museum art blocked")
+    page.click("[data-exhibit=dam-loop]")
+    page.wait_for_selector("#exhibit", state="visible")
+    if "Dam Loop" not in page.locator("#exhibit-title").inner_text():
+        raise AssertionError("dam detail")
+    page.click("#exhibit-scrim", position={"x": 4, "y": 4})
+    page.wait_for_selector("#exhibit", state="hidden")
+    page.click("[data-exhibit=sling-kart]")
+    page.wait_for_selector("#exhibit", state="visible")
+    if "Sling" not in page.locator("#exhibit-title").inner_text():
+        raise AssertionError("kart detail")
+    assert_inside(box(page, "#btn-exhibit-close"), w, h, "close", 40)
+    page.click("#btn-exhibit-close")
+    page.wait_for_selector("#exhibit", state="hidden")
+    page.click("#btn-museum-back")
+    page.wait_for_selector("#museum", state="hidden")
+
+
+def clean_starts(page, n=3):
+    for i in range(n):
+        page.click("#btn-start")
+        page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=9000)
+        page.wait_for_timeout(900)
+        s = snap(page)
+        if s["phase"] != "race" or s["laps"] != 0 or s["progress"] >= 0.55:
+            raise AssertionError("instant %s %s" % (i, s))
+        page.click("#btn-quit")
+        page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")
+
+
 def assert_race_chrome(page, w, h):
     stage = box(page, "#stage")
     assert stage["height"] >= h * 0.58, (stage, h)
@@ -70,9 +147,27 @@ def main():
         if not frame["ok"]:
             fails.append("frame " + str(frame))
 
+        try:
+            museum_round(page, 390, 844)
+            clean_starts(page, 3)
+        except Exception as exc:
+            fails.append("phone museum/start " + str(exc))
+            browser.close()
+            print("PLAYTEST_FAIL")
+            for f in fails:
+                print(" -", f)
+            sys.exit(1)
+
         page.click("#btn-start")
         page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=8000)
         assert_race_chrome(page, 390, 844)
+        right_d = steer_delta(page, "#btn-right")
+        left_d = steer_delta(page, "#btn-left")
+        print("steer R", round(right_d, 3), "L", round(left_d, 3))
+        if right_d >= -0.05:
+            fails.append("right not right " + str(right_d))
+        if left_d <= 0.05:
+            fails.append("left not left " + str(left_d))
         page.mouse.move(300, 780)
         gas = box(page, "#btn-gas")
         page.mouse.move(gas["x"] + gas["width"] / 2, gas["y"] + gas["height"] / 2)
@@ -91,6 +186,8 @@ def main():
         print("PODIUM", snap["place"], round(snap["time"], 2), snap["progress"])
         if snap["place"] < 1 or snap["place"] > 4:
             fails.append("place")
+        if snap["time"] < 15 or snap["laps"] < 3:
+            fails.append("short race %s laps %s" % (snap["time"], snap["laps"]))
         assert_inside(box(page, "#btn-rematch"), 390, 844, "rematch", 44)
         assert_inside(box(page, "#btn-splash"), 390, 844, "splash-back", 40)
         you_row = page.locator("#podium-list li.me").inner_text()
@@ -110,9 +207,22 @@ def main():
 
         page.set_viewport_size({"width": 1280, "height": 800})
         page.click("#btn-quit")
+        page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")
+        try:
+            museum_round(page, 1280, 800)
+            clean_starts(page, 3)
+        except Exception as exc:
+            fails.append("desk museum/start " + str(exc))
         page.click("#btn-start")
         page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=8000)
         assert_race_chrome(page, 1280, 800)
+        kr = key_steer_delta(page, "ArrowRight")
+        kl = key_steer_delta(page, "ArrowLeft")
+        print("keys R", round(kr, 3), "L", round(kl, 3))
+        if kr >= -0.05:
+            fails.append("key right " + str(kr))
+        if kl <= 0.05:
+            fails.append("key left " + str(kl))
         shot(page, "race-desk.png")
         browser.close()
     if fails:

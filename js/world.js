@@ -1,4 +1,4 @@
-import { ROSTER, frameAt, forward } from "./sim.js";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd2";
 
 function canvasTex(THREE, draw, w, h, repeat) {
   const c = document.createElement("canvas");
