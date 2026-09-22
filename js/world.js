@@ -1,4 +1,4 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd8";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd9";
 
 function canvasTex(THREE, draw, w, h, repeat) {
   const c = document.createElement("canvas");
@@ -323,7 +323,181 @@ function buildRoad(THREE, track, map) {
   return { mesh, skirt, rivets, curb, line };
 }
 
-function buildKart(THREE, scarfHex, woodMap) {
+function rigKart(THREE, g, wheels, scale) {
+  const rear = new THREE.Object3D();
+  rear.name = "rearPost";
+  rear.position.set(0, 1.0, -0.7);
+  g.add(rear);
+  const blob = new THREE.Mesh(
+    new THREE.CircleGeometry(1.15, 14),
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false })
+  );
+  blob.rotation.x = -Math.PI / 2;
+  blob.position.y = 0.04;
+  g.traverse((o) => {
+    if (o.isMesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  blob.castShadow = false;
+  g.scale.setScalar(scale);
+  return { group: g, wheels, blob, rear };
+}
+
+function addWheels(THREE, g, spots, radius, rubber, hub, brass) {
+  const wheels = [];
+  const wgeo = new THREE.CylinderGeometry(radius, radius, radius * 0.78, 12);
+  for (const [x, z] of spots) {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, radius + 0.06, z);
+    const m = new THREE.Mesh(wgeo, rubber);
+    m.rotation.z = Math.PI / 2;
+    pivot.add(m);
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.42, radius * 0.42, radius * 0.95, 8), hub);
+    cap.rotation.z = Math.PI / 2;
+    pivot.add(cap);
+    const tread = new THREE.Mesh(new THREE.TorusGeometry(radius * 1.02, radius * 0.12, 6, 12), brass);
+    tread.rotation.y = Math.PI / 2;
+    pivot.add(tread);
+    g.add(pivot);
+    wheels.push(pivot);
+  }
+  return wheels;
+}
+
+function buildNib(THREE, woodMap) {
+  const g = new THREE.Group();
+  const cedar = new THREE.MeshPhysicalMaterial({ map: woodMap, color: 0x6a4a28, roughness: 0.62, clearcoat: 0.2 });
+  const leaf = new THREE.MeshStandardMaterial({ color: 0x2f6a34, roughness: 0.72 });
+  const scarf = new THREE.MeshStandardMaterial({ color: 0x3e7a45, roughness: 0.48 });
+  const fur = new THREE.MeshStandardMaterial({ color: 0x6d4a32, roughness: 0.78 });
+  const rubber = new THREE.MeshStandardMaterial({ color: 0x1c1c1c, roughness: 0.9 });
+  const hub = new THREE.MeshStandardMaterial({ color: 0x8d9a86, metalness: 0.4, roughness: 0.4 });
+  const brass = new THREE.MeshStandardMaterial({ color: 0xc4b15a, metalness: 0.7, roughness: 0.32 });
+  const hull = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 0.95, 10), cedar);
+  hull.position.y = 0.62;
+  g.add(hull);
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 1.35, 7), cedar);
+  mast.position.set(0, 1.45, -0.05);
+  g.add(mast);
+  const sprig = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.55, 7), leaf);
+  sprig.position.set(0, 2.15, -0.05);
+  g.add(sprig);
+  const cape = new THREE.Mesh(new THREE.ConeGeometry(0.46, 0.7, 5), leaf);
+  cape.position.set(0, 0.95, -0.28);
+  cape.rotation.x = 0.5;
+  g.add(cape);
+  const wheels = addWheels(THREE, g, [[-0.46, 0.28], [0.46, 0.28], [-0.48, -0.42], [0.48, -0.42]], 0.22, rubber, hub, brass);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.62, 0.32), fur);
+  head.position.set(0, 1.22, 0.22);
+  g.add(head);
+  for (const x of [-0.16, 0.16]) {
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.38, 6), fur);
+    ear.position.set(x, 1.68, 0.16);
+    g.add(ear);
+  }
+  const wrap = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.06, 6, 12), scarf);
+  wrap.position.set(0, 0.95, 0.18);
+  wrap.rotation.x = Math.PI / 2;
+  g.add(wrap);
+  const eye = new THREE.MeshStandardMaterial({ color: 0x140e0a });
+  for (const x of [-0.08, 0.08]) {
+    const e = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 8), eye);
+    e.position.set(x, 1.28, 0.38);
+    g.add(e);
+  }
+  return rigKart(THREE, g, wheels, 1.18);
+}
+
+function buildPuddle(THREE, woodMap) {
+  const g = new THREE.Group();
+  const wood = new THREE.MeshPhysicalMaterial({ map: woodMap, roughness: 0.34, metalness: 0.05, clearcoat: 0.72, clearcoatRoughness: 0.16 });
+  const teal = new THREE.MeshPhysicalMaterial({ color: 0x1499a0, roughness: 0.22, metalness: 0.18, clearcoat: 0.9, clearcoatRoughness: 0.08 });
+  const fur = new THREE.MeshStandardMaterial({ color: 0xa56b42, roughness: 0.7 });
+  const scarf = new THREE.MeshStandardMaterial({ color: 0x0f8f86, roughness: 0.45 });
+  const rubber = new THREE.MeshStandardMaterial({ color: 0x20262a, roughness: 0.88 });
+  const hub = new THREE.MeshStandardMaterial({ color: 0xd7e8ea, metalness: 0.55, roughness: 0.28 });
+  const brass = new THREE.MeshStandardMaterial({ color: 0xd7a441, metalness: 0.8, roughness: 0.25 });
+  const tub = new THREE.Mesh(new THREE.SphereGeometry(0.72, 18, 12, 0, Math.PI * 2, Math.PI * 0.42, Math.PI * 0.55), wood);
+  tub.scale.set(1.35, 0.62, 1.05);
+  tub.position.y = 0.48;
+  g.add(tub);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.78, 0.12, 8, 18), teal);
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.62;
+  g.add(ring);
+  const oar = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, 1.35, 6), wood);
+  oar.position.set(0.95, 0.78, 0.1);
+  oar.rotation.z = 1.15;
+  g.add(oar);
+  const blade = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), wood);
+  blade.scale.set(0.5, 1, 1.4);
+  blade.position.set(1.35, 1.15, 0.1);
+  g.add(blade);
+  const wheels = addWheels(THREE, g, [[-0.78, 0.36], [0.78, 0.36], [-0.8, -0.4], [0.8, -0.4]], 0.24, rubber, hub, brass);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 14, 12), fur);
+  head.scale.set(1.15, 0.9, 1);
+  head.position.set(0, 1.02, 0.18);
+  g.add(head);
+  for (const x of [-0.28, 0.28]) {
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), fur);
+    ear.position.set(x, 1.28, 0.08);
+    g.add(ear);
+  }
+  const bow = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.05, 6, 10), scarf);
+  bow.position.set(0, 0.82, 0.28);
+  bow.rotation.x = 1.2;
+  g.add(bow);
+  return rigKart(THREE, g, wheels, 1.12);
+}
+
+function buildTwig(THREE, woodMap) {
+  const g = new THREE.Group();
+  const bark = new THREE.MeshPhysicalMaterial({ map: woodMap, color: 0x5c3a22, roughness: 0.78, clearcoat: 0.12 });
+  const fur = new THREE.MeshStandardMaterial({ color: 0x8a5a32, roughness: 0.8 });
+  const scarf = new THREE.MeshStandardMaterial({ color: 0xd06a32, roughness: 0.5 });
+  const rubber = new THREE.MeshStandardMaterial({ color: 0x24180f, roughness: 0.92 });
+  const hub = new THREE.MeshStandardMaterial({ color: 0xb08968, metalness: 0.35, roughness: 0.45 });
+  const brass = new THREE.MeshStandardMaterial({ color: 0x8c6239, metalness: 0.55, roughness: 0.4 });
+  for (const x of [-0.22, 0, 0.22]) {
+    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 2.15, 8), bark);
+    log.rotation.x = Math.PI / 2;
+    log.position.set(x, 0.36, 0.05);
+    g.add(log);
+  }
+  for (const z of [-0.55, 0.15, 0.7]) {
+    const lash = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.035, 6, 10), brass);
+    lash.rotation.y = Math.PI / 2;
+    lash.position.set(0, 0.4, z);
+    g.add(lash);
+  }
+  const wheels = addWheels(THREE, g, [[-0.42, 0.78], [0.42, 0.78], [-0.44, -0.72], [0.44, -0.72]], 0.26, rubber, hub, brass);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 12, 10), fur);
+  head.position.set(0, 0.78, 0.72);
+  g.add(head);
+  for (const side of [-1, 1]) {
+    const antler = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.045, 0.55, 5), bark);
+    antler.position.set(side * 0.16, 1.05, 0.62);
+    antler.rotation.z = side * -0.7;
+    antler.rotation.x = -0.3;
+    g.add(antler);
+  }
+  const scarfMesh = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.1, 0.28), scarf);
+  scarfMesh.position.set(0, 0.7, 0.62);
+  g.add(scarfMesh);
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.36, 5), scarf);
+  tail.position.set(0.2, 0.62, 0.4);
+  tail.rotation.z = 0.8;
+  g.add(tail);
+  return rigKart(THREE, g, wheels, 1.16);
+}
+
+function buildKart(THREE, def, woodMap) {
+  if (def && def.id === "nib") return buildNib(THREE, woodMap);
+  if (def && def.id === "puddle") return buildPuddle(THREE, woodMap);
+  if (def && def.id === "twig") return buildTwig(THREE, woodMap);
+  const scarfHex = def.scarf || 0xe6a322;
   const g = new THREE.Group();
   const wood = new THREE.MeshPhysicalMaterial({ map: woodMap, roughness: 0.42, metalness: 0.08, clearcoat: 0.55, clearcoatRoughness: 0.28 });
   const woodDark = new THREE.MeshPhysicalMaterial({ map: woodMap, color: 0x7a4a2c, roughness: 0.48, metalness: 0.12, clearcoat: 0.35, clearcoatRoughness: 0.3 });
@@ -609,6 +783,9 @@ export function createWorld(THREE, track) {
   sun.shadow.camera.bottom = -380;
   sun.shadow.bias = -0.0004;
   scene.add(sun);
+  const rim = new THREE.DirectionalLight(0x9fd4ff, 0.55);
+  rim.position.set(-60, 28, -40);
+  scene.add(rim);
 
   const woodMap = woodTexture(THREE);
   const concrete = concreteTexture(THREE);
@@ -726,11 +903,14 @@ export function createWorld(THREE, track) {
     }
   }
   const trunkG = new THREE.CylinderGeometry(0.22, 0.34, 1.6, 6);
-  const leafG = new THREE.ConeGeometry(1.15, 2.6, 7);
+  const leafG = new THREE.ConeGeometry(1.15, 1.7, 7);
+  const crownG = new THREE.ConeGeometry(0.72, 1.35, 7);
   const trunkM = new THREE.MeshStandardMaterial({ color: 0x5c3a22, roughness: 0.9 });
   const leafM = new THREE.MeshStandardMaterial({ color: 0x2f6a34, roughness: 0.85 });
+  const crownM = new THREE.MeshStandardMaterial({ color: 0x3e8a44, roughness: 0.7 });
   const trunks = new THREE.InstancedMesh(trunkG, trunkM, Math.max(1, treeSpots.length));
   const leaves = new THREE.InstancedMesh(leafG, leafM, Math.max(1, treeSpots.length));
+  const crowns = new THREE.InstancedMesh(crownG, crownM, Math.max(1, treeSpots.length));
   const dummy = new THREE.Object3D();
   treeSpots.forEach((s, idx) => {
     dummy.position.set(s.x, 0.85 * s.s, s.z);
@@ -738,16 +918,22 @@ export function createWorld(THREE, track) {
     dummy.rotation.set(0, 0, 0);
     dummy.updateMatrix();
     trunks.setMatrixAt(idx, dummy.matrix);
-    dummy.position.y = 2.5 * s.s;
+    dummy.position.y = 2.15 * s.s;
     dummy.updateMatrix();
     leaves.setMatrixAt(idx, dummy.matrix);
+    dummy.position.y = 3.15 * s.s;
+    dummy.scale.setScalar(s.s * 0.85);
+    dummy.updateMatrix();
+    crowns.setMatrixAt(idx, dummy.matrix);
   });
   trunks.count = treeSpots.length;
   leaves.count = treeSpots.length;
+  crowns.count = treeSpots.length;
   trunks.castShadow = true;
   leaves.castShadow = true;
-  scene.add(trunks, leaves);
-  foliage.push(trunks, leaves);
+  crowns.castShadow = true;
+  scene.add(trunks, leaves, crowns);
+  foliage.push(trunks, leaves, crowns);
 
   const lodgeMat = new THREE.MeshPhysicalMaterial({ map: woodMap, roughness: 0.55, metalness: 0.06, clearcoat: 0.28 });
   const roofMat = new THREE.MeshStandardMaterial({ color: 0x6a3a28, roughness: 0.75 });
@@ -935,8 +1121,8 @@ export function createWorld(THREE, track) {
   const lookGoal = new THREE.Vector3();
   const tmpF = new THREE.Vector3();
 
-  function mountKart(scarf) {
-    const view = buildKart(THREE, scarf, woodMap);
+  function mountKart(def) {
+    const view = buildKart(THREE, def, woodMap);
     scene.add(view.group);
     scene.add(view.blob);
     views.push(view);
@@ -968,7 +1154,7 @@ export function createWorld(THREE, track) {
     sparkCol[i * 3 + 2] = 0.15 * heat;
   }
 
-  for (const r of ROSTER) mountKart(r.scarf);
+  for (const r of ROSTER) mountKart(r);
 
   function resize(w, h, dprCap) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, dprCap));
@@ -1242,8 +1428,8 @@ export function createWorld(THREE, track) {
         done();
       }, undefined, done);
     };
-    take("assets/history/dam-loop.jpg?v=gd8", "dam");
-    take("assets/history/frost-ridge.jpg?v=gd8", "frost");
+    take("assets/history/dam-loop.jpg?v=gd9", "dam");
+    take("assets/history/frost-ridge.jpg?v=gd9", "frost");
   });
 
   let frostDress = null;
@@ -1296,6 +1482,10 @@ export function createWorld(THREE, track) {
           const cap = new THREE.Mesh(new THREE.BoxGeometry(8.4, 1.3, 5.9), snowCap);
           cap.position.y = hgt * 0.48;
           cliff.add(cap);
+          const crystal = new THREE.Mesh(new THREE.DodecahedronGeometry(1.4, 0), iceCliff);
+          crystal.position.set(1.2, hgt * 0.15, 0.4);
+          crystal.scale.y = 1.8;
+          cliff.add(crystal);
           frostDress.add(cliff);
         }
       }

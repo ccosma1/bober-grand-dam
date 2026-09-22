@@ -1,5 +1,5 @@
 /* Item boxes and place-weighted throws. Blue Lodge Orb only in 1st or 2nd. */
-import { frameAt, forward, livePlace } from "./sim.js?v=gd8";
+import { frameAt, forward, livePlace } from "./sim.js?v=gd9";
 
 export const ITEM_IDS = ["sap", "trap", "wall", "rocket", "star", "orb"];
 

@@ -12,11 +12,13 @@ import {
   selfTest,
   stepRace,
   launchHeld,
+  humanOf,
+  setDriver as chooseDriver,
   swapTrack,
   writeSave,
-} from "./sim.js?v=gd8";
-import { createWorld } from "./world.js?v=gd8";
-import { createSfx } from "./audio.js?v=gd8";
+} from "./sim.js?v=gd9";
+import { createWorld } from "./world.js?v=gd9";
+import { createSfx } from "./audio.js?v=gd9";
 
 const app = document.getElementById("app");
 const stage = document.getElementById("stage");
@@ -43,7 +45,8 @@ let savedThisRace = false;
 let lastTick = performance.now();
 let ceilSeen = 4;
 let hinted = false;
-const held = { left: false, right: false, gas: false, drift: false };
+const held = { left: false, right: false, gas: false, brake: false, drift: false };
+const joy = { active: false, steer: 0, gas: false, brake: false };
 
 function fmt(t) {
   const m = Math.floor(t / 60);
@@ -66,10 +69,21 @@ function paintBest() {
 
 function youInput() {
   if (scripted) return scripted;
-  if (auto) return adviceFor(race, "you");
+  const you = humanOf(race);
+  if (auto) return adviceFor(race, you.id);
+  const keySteer = (held.left ? 1 : 0) - (held.right ? 1 : 0);
+  if (joy.active) {
+    return {
+      steer: joy.steer,
+      gas: joy.gas && !joy.brake,
+      brake: joy.brake,
+      drift: !!held.drift,
+      fire: takeFire(),
+    };
+  }
   return {
     // +steer yaws toward screen-left in the chase view. Left is +1.
-    steer: (held.left ? 1 : 0) - (held.right ? 1 : 0),
+    steer: keySteer,
     gas: !!held.gas && !held.brake,
     drift: !!held.drift,
     brake: !!held.brake,
@@ -98,10 +112,44 @@ function bindHold(id, key) {
   el.addEventListener("pointerup", up);
   el.addEventListener("pointercancel", up);
 }
-bindHold("btn-left", "left");
-bindHold("btn-right", "right");
 bindHold("btn-drift", "drift");
-bindHold("btn-gas", "gas");
+const stick = document.getElementById("stick");
+const knob = document.getElementById("stick-knob");
+function stickAt(e) {
+  const rect = stick.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const rad = Math.max(24, Math.min(rect.width, rect.height) * 0.36);
+  let dx = e.clientX - cx;
+  let dy = e.clientY - cy;
+  const mag = Math.hypot(dx, dy) || 1;
+  const lim = Math.min(1, mag / rad);
+  const nx = (dx / mag) * lim;
+  const ny = (dy / mag) * lim;
+  joy.steer = Math.max(-1, Math.min(1, -nx));
+  joy.gas = ny < -0.2;
+  joy.brake = ny > 0.45;
+  knob.style.transform = "translate(calc(-50% + " + nx * rad + "px), calc(-50% + " + ny * rad + "px))";
+}
+stick.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  stick.setPointerCapture(e.pointerId);
+  joy.active = true;
+  stickAt(e);
+});
+stick.addEventListener("pointermove", (e) => {
+  if (!joy.active) return;
+  stickAt(e);
+});
+function stickUp() {
+  joy.active = false;
+  joy.steer = 0;
+  joy.gas = false;
+  joy.brake = false;
+  knob.style.transform = "translate(-50%, -50%)";
+}
+stick.addEventListener("pointerup", stickUp);
+stick.addEventListener("pointercancel", stickUp);
 document.getElementById("btn-fire").addEventListener("pointerdown", (e) => {
   e.preventDefault();
   firePulse = true;
@@ -119,6 +167,7 @@ function splashButtons() {
   return [
     document.querySelector("[data-track=dam]"),
     document.querySelector("[data-track=frost]"),
+    ...document.querySelectorAll("[data-driver]"),
     document.getElementById("btn-start"),
     document.getElementById("btn-how"),
     document.getElementById("btn-museum"),
@@ -132,7 +181,7 @@ function focusAt(list, index) {
   return i;
 }
 
-let splashFocus = 2;
+let splashFocus = 6;
 
 function menuKey(e) {
   if (!exhibitEl.classList.contains("hidden")) {
@@ -197,7 +246,7 @@ function menuKey(e) {
       return false;
     }
     const picked = row[splashFocus];
-    if (picked && picked.hasAttribute("data-track")) picked.click();
+    if (picked && (picked.hasAttribute("data-track") || picked.hasAttribute("data-driver"))) picked.click();
     return true;
   }
   return false;
@@ -264,6 +313,7 @@ function showRaceChrome(on) {
   splash.classList.toggle("hidden", on);
   controls.classList.toggle("hidden", !on);
   hud.classList.toggle("hidden", !on);
+  document.getElementById("minimap").classList.toggle("hidden", !on);
   if (!on) {
     podiumEl.classList.add("hidden");
     countdownEl.classList.add("hidden");
@@ -281,6 +331,7 @@ function startRace() {
   scripted = null;
   resetRace(race);
   showRaceChrome(true);
+  document.getElementById("minimap").classList.remove("hidden");
   museumEl.classList.add("hidden");
   document.getElementById("how").classList.add("hidden");
   exhibitEl.classList.add("hidden");
@@ -290,7 +341,7 @@ function startRace() {
 }
 
 function showPodium() {
-  const you = race.karts.find((k) => k.id === "you");
+  const you = humanOf(race);
   if (!savedThisRace) {
     savedThisRace = true;
     save = noteFinish(save, you.place, you.finishTime);
@@ -308,7 +359,7 @@ function showPodium() {
     li.textContent = k.crossed
       ? k.place + "  " + k.name + "  " + fmt(k.finishTime)
       : k.place + "  " + k.name;
-    if (k.id === "you") li.classList.add("me");
+    if (!k.cpu) li.classList.add("me");
     list.appendChild(li);
   }
   document.getElementById("podium-best").textContent =
@@ -335,17 +386,17 @@ document.getElementById("btn-quit").addEventListener("click", () => {
 });
 const EXHIBITS = {
   "dam-loop": {
-    src: "assets/history/dam-loop.jpg?v=gd8",
+    src: "assets/history/dam-loop.jpg?v=gd9",
     title: "Dam Loop",
     cap: "The crest road, the bank, the spillway. Three laps. The line is the crest.",
   },
   "frost-ridge": {
-    src: "assets/history/frost-ridge.jpg?v=gd8",
+    src: "assets/history/frost-ridge.jpg?v=gd9",
     title: "Frost Ridge",
     cap: "Ice, drifts, and two narrow bridges. Same three laps. Same four racers.",
   },
   "sling-kart": {
-    src: "assets/history/crest-drift.jpg?v=gd8",
+    src: "assets/history/crest-drift.jpg?v=gd9",
     title: "Sling Kart",
     cap: "Cedar bowl. Twin sling bands on the rear posts. Hold a turn until the bands spark, then let go.",
   },
@@ -379,6 +430,26 @@ const EXHIBITS = {
     title: "Blue Lodge Orb",
     cap: "Rare. Only while you are 1st or 2nd. A blue surge and a short push.",
   },
+  bober: {
+    src: "assets/museum/bober.jpg?v=gd9",
+    title: "Bober",
+    cap: "Wide cedar bowl, brass nose, amber scarf. The crest regular.",
+  },
+  nib: {
+    src: "assets/museum/nib.jpg?v=gd9",
+    title: "Nib",
+    cap: "Tall sled, leaf cape, and a twig mast. Long ears, green scarf.",
+  },
+  puddle: {
+    src: "assets/museum/puddle.jpg?v=gd9",
+    title: "Puddle",
+    cap: "Low tub and a teal ring. An oar on the right. Wide and squat.",
+  },
+  twig: {
+    src: "assets/museum/twig.jpg?v=gd9",
+    title: "Twig",
+    cap: "Three lashed logs, branch antlers, rust scarf. Long and low.",
+  },
 };
 
 function openExhibit(id) {
@@ -394,6 +465,13 @@ function closeExhibit() {
   exhibitEl.classList.add("hidden");
 }
 
+document.querySelectorAll("[data-driver]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    if (race.phase !== "splash" && race.phase !== "podium") return;
+    chooseDriver(race, btn.getAttribute("data-driver"));
+    document.querySelectorAll("[data-driver]").forEach((b) => b.classList.toggle("on", b === btn));
+  });
+});
 document.querySelectorAll("[data-track]").forEach((btn) => {
   btn.addEventListener("click", () => {
     if (race.phase !== "splash") return;
@@ -427,9 +505,59 @@ document.getElementById("exhibit-scrim").addEventListener("click", closeExhibit)
 document.getElementById("btn-exhibit-close").addEventListener("click", closeExhibit);
 
 
+function paintMinimap() {
+  const canvas = document.getElementById("minimap");
+  if (!canvas || canvas.classList.contains("hidden")) return;
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  const frames = race.track.frames;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (let i = 0; i < frames.length; i += 2) {
+    const p = frames[i].p;
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.z < minZ) minZ = p.z;
+    if (p.z > maxZ) maxZ = p.z;
+  }
+  const pad = 12;
+  const spanX = Math.max(1, maxX - minX);
+  const spanZ = Math.max(1, maxZ - minZ);
+  const s = Math.min((w - pad * 2) / spanX, (h - pad * 2) / spanZ);
+  const ox = (w - spanX * s) / 2;
+  const oy = (h - spanZ * s) / 2;
+  const pt = (x, z) => [ox + (x - minX) * s, oy + (maxZ - z) * s];
+  ctx.beginPath();
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = "#f0a024";
+  for (let i = 0; i < frames.length; i += 3) {
+    const [px, py] = pt(frames[i].p.x, frames[i].p.z);
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.stroke();
+  for (const k of race.karts) {
+    const [px, py] = pt(k.x, k.z);
+    ctx.fillStyle = k.color || "#f4e6c8";
+    ctx.beginPath();
+    ctx.arc(px, py, k.cpu ? 5 : 7, 0, Math.PI * 2);
+    ctx.fill();
+    if (!k.cpu) {
+      ctx.strokeStyle = "#f4e6c8";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+}
+
 function hudTick() {
-  const you = race.karts.find((k) => k.id === "you");
-  document.getElementById("hud-place").textContent = livePlace(race, "you") + "/" + race.karts.length;
+  const you = humanOf(race);
+  document.getElementById("hud-place").textContent = livePlace(race, you.id) + "/" + race.karts.length;
   document.getElementById("hud-lap").textContent = "LAP " + lapOf(you) + "/" + LAPS;
   document.getElementById("hud-time").textContent = fmt(race.time);
   const fill = document.getElementById("spark-fill");
@@ -450,6 +578,7 @@ function hudTick() {
   fireBtn.classList.toggle("armed", !!you.held && you.fireCd <= 0);
   const order = [...race.karts].sort((a, b) => b.progress - a.progress);
   document.getElementById("hud-order").textContent = order.map((k) => k.name).join("  ");
+  paintMinimap();
   if (race.phase === "countdown") {
     countdownEl.classList.remove("hidden");
     const n = Math.max(1, Math.ceil(race.countdown));
@@ -481,15 +610,17 @@ function frame(now) {
   for (const k of race.karts) {
     inputs[k.id] = k.cpu ? adviceFor(race, k.id) : youInput();
   }
-  const beforeBoost = race.karts[0].boost;
+  const pilot = humanOf(race);
+  const beforeBoost = pilot.boost;
   stepRace(race, inputs, dt);
-  if (race.karts[0].boost > 0 && beforeBoost <= 0) {
+  const youNow = humanOf(race);
+  if (youNow.boost > 0 && beforeBoost <= 0) {
     sfx.boost();
     if (navigator.vibrate) navigator.vibrate(12);
   }
   if (race.phase === "podium") showPodium();
   else podiumEl.classList.add("hidden");
-  const you = race.karts[0];
+  const you = humanOf(race);
   if (race.phase === "race" || race.phase === "countdown") sfx.engine(you.speed, you.boost > 0);
   hudTick();
   const portrait = window.innerHeight >= window.innerWidth;
@@ -510,14 +641,15 @@ world.ready.then(() => {
 const check = world.frameCheck();
 window.__grand = {
   snapshot() {
-    const you = race.karts.find((k) => k.id === "you");
+    const you = humanOf(race);
     const stageBox = stage.getBoundingClientRect();
     return {
       phase: race.phase,
       time: race.time,
       countdown: race.countdown,
+      driver: you.id,
       lap: lapOf(you),
-      place: you.place || livePlace(race, "you"),
+      place: you.place || livePlace(race, you.id),
       progress: you.progress,
       laps: you.laps,
       speed: you.speed,
@@ -531,11 +663,15 @@ window.__grand = {
       lastFx: race.lastFx || "",
       track: race.track.id,
       lapTarget: LAPS,
-      advice: adviceFor(race, "you"),
+      advice: adviceFor(race, you.id),
       stageH: stageBox.height,
       viewH: window.innerHeight,
       names: race.karts.map((k) => k.name),
+      colors: race.karts.map((k) => k.color),
     };
+  },
+  setDriver(id) {
+    return chooseDriver(race, id);
   },
   setInput(inp) {
     scripted = inp;
@@ -548,14 +684,14 @@ window.__grand = {
   frameCheck: () => check,
   save,
   grant(id) {
-    const you = race.karts.find((k) => k.id === "you");
+    const you = humanOf(race);
     you.held = id;
     you.fireCd = 0;
     you.holdAge = 0;
     you.stun = 0;
   },
   fireNow() {
-    const you = race.karts.find((k) => k.id === "you");
+    const you = humanOf(race);
     return launchHeld(race, you);
   },
   setTrack(id) {

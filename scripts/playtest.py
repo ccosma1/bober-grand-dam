@@ -7,7 +7,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "assets" / "ref"
 OUT.mkdir(parents=True, exist_ok=True)
-URL = "http://127.0.0.1:8771/?v=gd8"
+URL = "http://127.0.0.1:8771/?v=gd10"
 
 
 def shot(page, name):
@@ -157,14 +157,20 @@ def clean_starts(page, n=3):
 def assert_race_chrome(page, w, h):
     stage = box(page, "#stage")
     assert stage["height"] >= h * 0.58, (stage, h)
-    for sel in ("#btn-left", "#btn-right", "#btn-drift", "#btn-gas", "#btn-fire"):
+    for sel in ("#stick", "#btn-drift", "#btn-fire"):
         assert_inside(box(page, sel), w, h, sel, 52)
     assert_inside(box(page, "#spark"), w, h, "#spark", 16)
-    gas = box(page, "#btn-gas")
+    stick = box(page, "#stick")
+    fire = box(page, "#btn-fire")
     drift = box(page, "#btn-drift")
-    assert gas["height"] >= 52, gas
+    assert stick["width"] >= 90 and stick["height"] >= 64, stick
+    assert fire["height"] >= 64 and fire["width"] >= 64, fire
     assert drift["height"] >= 52, drift
-    sels = ["#btn-left", "#btn-right", "#btn-drift", "#btn-gas", "#btn-fire"]
+    mini = box(page, "#minimap")
+    assert_inside(mini, w, h, "minimap", 40)
+    if mini["x"] < w * 0.45:
+        raise AssertionError("minimap not right " + str(mini))
+    sels = ["#stick", "#btn-drift", "#btn-fire"]
     boxes = [box(page, sel) for sel in sels]
     for i in range(len(boxes)):
         for j in range(i + 1, len(boxes)):
@@ -173,7 +179,19 @@ def assert_race_chrome(page, w, h):
             iy = min(a["y"] + a["height"], b["y"] + b["height"]) - max(a["y"], b["y"])
             if ix > 4 and iy > 4:
                 raise AssertionError("overlap %s %s" % (sels[i], sels[j]))
-    print("stage", round(stage["height"] / h, 3), "gas", round(gas["height"]), "drift", round(drift["height"]))
+    print("stage", round(stage["height"] / h, 3), "stick", round(stick["width"]), "fire", round(fire["height"]))
+
+
+def nudge_stick(page, fx, fy, ms=450):
+    b = box(page, "#stick")
+    cx = b["x"] + b["width"] / 2
+    cy = b["y"] + b["height"] / 2
+    rad = min(b["width"], b["height"]) * 0.32
+    page.mouse.move(cx, cy)
+    page.mouse.down()
+    page.mouse.move(cx + fx * rad, cy + fy * rad)
+    page.wait_for_timeout(ms)
+    page.mouse.up()
 
 
 def main():
@@ -205,6 +223,15 @@ def main():
         print("FRAME", frame)
         if not frame["ok"]:
             fails.append("frame " + str(frame))
+        page.click("[data-driver=nib]")
+        picked = page.evaluate("() => window.__grand.snapshot()")
+        print("DRIVER", picked["driver"], picked["names"], picked["colors"])
+        if picked["driver"] != "nib":
+            fails.append("driver " + str(picked["driver"]))
+        if sorted(picked["names"]) != ["BOBER", "NIB", "PUDDLE", "TWIG"]:
+            fails.append("names " + str(picked["names"]))
+        if len(set(picked["colors"])) != 4:
+            fails.append("colors " + str(picked["colors"]))
 
         try:
             museum_round(page, 390, 844)
@@ -220,14 +247,30 @@ def main():
         page.click("#btn-start")
         page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=8000)
         assert_race_chrome(page, 390, 844)
-        hold(page, "#btn-left", 3000)
+        nudge_stick(page, -0.3, -0.2, 3000)
         selected = page.evaluate("() => window.getSelection().toString()")
-        selectable = page.evaluate("() => getComputedStyle(document.getElementById('btn-left')).userSelect")
+        selectable = page.evaluate("() => getComputedStyle(document.getElementById('stick')).userSelect")
         print("select", repr(selected), selectable)
         if selected.strip() or selectable != "none":
             fails.append("text select " + repr(selected) + " " + selectable)
-        right_d = steer_delta(page, "#btn-right")
-        left_d = steer_delta(page, "#btn-left")
+        ink = page.evaluate(
+            """() => {
+              const c = document.getElementById('minimap');
+              const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+              let n = 0;
+              for (let i = 3; i < d.length; i += 16) if (d[i] > 40) n++;
+              return n;
+            }"""
+        )
+        print("MINIMAP", ink)
+        if ink < 30:
+            fails.append("minimap blank " + str(ink))
+        y0 = snap(page)["yaw"]
+        nudge_stick(page, 1, -0.15, 450)
+        right_d = wrap_delta(y0, snap(page)["yaw"])
+        y1 = snap(page)["yaw"]
+        nudge_stick(page, -1, -0.15, 450)
+        left_d = wrap_delta(y1, snap(page)["yaw"])
         print("steer R", round(right_d, 3), "L", round(left_d, 3))
         if right_d >= -0.05:
             fails.append("right not right " + str(right_d))
@@ -243,10 +286,10 @@ def main():
         page.wait_for_timeout(120)
         if page.evaluate("() => window.__grand.snapshot().held"):
             fails.append("fire button held")
-        page.mouse.move(300, 780)
-        gas = box(page, "#btn-gas")
-        page.mouse.move(gas["x"] + gas["width"] / 2, gas["y"] + gas["height"] / 2)
+        stick = box(page, "#stick")
+        page.mouse.move(stick["x"] + stick["width"] / 2, stick["y"] + stick["height"] / 2)
         page.mouse.down()
+        page.mouse.move(stick["x"] + stick["width"] / 2, stick["y"] + stick["height"] * 0.18)
         page.wait_for_timeout(500)
         speed = page.evaluate("() => window.__grand.snapshot().speed")
         page.mouse.up()
@@ -272,8 +315,8 @@ def main():
         assert_inside(box(page, "#btn-splash"), 390, 844, "splash-back", 40)
         you_row = page.locator("#podium-list li.me").inner_text()
         print("YOU ROW", you_row)
-        if "YOU" not in you_row:
-            fails.append("podium you")
+        if "NIB" not in you_row:
+            fails.append("podium you " + you_row)
         shot(page, "podium-390.png")
         page.click("#btn-splash")
         page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")

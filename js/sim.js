@@ -1,7 +1,7 @@
 /* Race sim. No rendering.
    yaw 0 faces +z. yaw > 0 turns toward +x (screen-left in the chase view).
    forward = (sin(yaw), 0, cos(yaw)). */
-import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd8";
+import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd9";
 export { launchHeld };
 
 export const LAPS = 3;
@@ -10,10 +10,10 @@ export const DNF_TIME = 420;
 const SECTORS = 8;
 
 export const ROSTER = [
-  { id: "you", name: "YOU", scarf: 0xe6a322, cpu: false, lane: -0.46, style: "you" },
-  { id: "pip", name: "PIP", scarf: 0x3e7a45, cpu: true, lane: 0.46, style: "clean" },
-  { id: "nibs", name: "NIBS", scarf: 0x7eb6d6, cpu: true, lane: -0.46, style: "wide" },
-  { id: "reed", name: "REED", scarf: 0xd06a32, cpu: true, lane: 0.46, style: "spark" },
+  { id: "bober", name: "BOBER", scarf: 0xe6a322, color: "#e6a322", lane: -0.42, style: "clean" },
+  { id: "nib", name: "NIB", scarf: 0x2f6a34, color: "#3e7a45", lane: 0.42, style: "wide" },
+  { id: "puddle", name: "PUDDLE", scarf: 0x1499a0, color: "#1499a0", lane: -0.28, style: "spark" },
+  { id: "twig", name: "TWIG", scarf: 0xd06a32, color: "#d06a32", lane: 0.28, style: "clean" },
 ];
 
 const DAM_RAW = [
@@ -25,8 +25,8 @@ const DAM_RAW = [
   { x: 230.4, z: -232, y: 22.2 },
   { x: 296, z: -166.4, y: 16.9 },
   { x: 320, z: -76.8, y: 9.5 },
-  { x: 320, z: -25.6, y: 5.3 },
-  { x: 320, z: 25.6, y: 3.2 },
+  { x: 300, z: -25.6, y: 5.3 },
+  { x: 340, z: 25.6, y: 3.2 },
   { x: 320, z: 76.8, y: 3.2 },
   { x: 296, z: 166.4, y: 3.2 },
   { x: 230.4, z: 232, y: 3.2, bridge: true },
@@ -54,8 +54,8 @@ const FROST_RAW = [
   { x: 207.4, z: -273.2, y: 25.5 },
   { x: 261, z: -219.6, y: 22.1 },
   { x: 280.6, z: -146.4, y: 17.4 },
-  { x: 280.6, z: -48.8, y: 14, bridge: true },
-  { x: 280.6, z: 48.8, y: 14, bridge: true },
+  { x: 258, z: -48.8, y: 14, bridge: true },
+  { x: 302, z: 48.8, y: 14, bridge: true },
   { x: 280.6, z: 146.4, y: 14 },
   { x: 261, z: 219.6, y: 12 },
   { x: 207.4, z: 273.2, y: 10 },
@@ -74,7 +74,7 @@ const FROST_RAW = [
   { x: -207.4, z: -273.2, y: 25.5 },
 ];
 
-const MAX_SPEED = 34;
+const MAX_SPEED = 29;
 const ACCEL = 24;
 const SPARK_MIN = 0.42;
 
@@ -280,6 +280,7 @@ function blankKart(def, track, slot) {
     id: def.id,
     name: def.name,
     scarf: def.scarf,
+    color: def.color,
     cpu: def.cpu,
     lane: def.lane,
     style: def.style,
@@ -346,19 +347,28 @@ function advanceSector(kart) {
 
 const GRID = [0.024, 0.024, 0.007, 0.007];
 
-export function spawnKarts(track) {
-  return ROSTER.map((def, i) => blankKart(def, track, GRID[i]));
+export function humanOf(race) {
+  return race.karts.find((k) => !k.cpu) || race.karts[0];
 }
 
-export function createRace(track) {
+export function spawnKarts(track, driverId) {
+  const driver = ROSTER.some((r) => r.id === driverId) ? driverId : "bober";
+  return ROSTER.map((def, i) =>
+    blankKart({ ...def, cpu: def.id !== driver }, track, GRID[i])
+  );
+}
+
+export function createRace(track, driverId = "bober") {
   const race = {
     phase: "splash",
     countdown: 3,
     time: 0,
     places: [],
-    karts: spawnKarts(track),
+    driver: ROSTER.some((r) => r.id === driverId) ? driverId : "bober",
+    karts: [],
     track,
   };
+  race.karts = spawnKarts(track, race.driver);
   seedItems(race);
   return race;
 }
@@ -368,8 +378,18 @@ export function resetRace(race) {
   race.countdown = 3;
   race.time = 0;
   race.places = [];
-  race.karts = spawnKarts(race.track);
+  race.karts = spawnKarts(race.track, race.driver);
   seedItems(race);
+}
+
+export function setDriver(race, id) {
+  if (!ROSTER.some((r) => r.id === id)) return race.driver;
+  race.driver = id;
+  if (race.phase === "splash" || race.phase === "podium") {
+    race.karts = spawnKarts(race.track, id);
+    seedItems(race);
+  }
+  return race.driver;
 }
 
 export function swapTrack(race, id) {
@@ -378,7 +398,7 @@ export function swapTrack(race, id) {
   race.countdown = 3;
   race.time = 0;
   race.places = [];
-  race.karts = spawnKarts(race.track);
+  race.karts = spawnKarts(race.track, race.driver);
   seedItems(race);
 }
 
@@ -444,7 +464,10 @@ function integrate(kart, input, dt) {
   }
 
   let sp = Math.hypot(kart.vx, kart.vz);
-  const cap = (kart.cpu ? 27 : MAX_SPEED) * (kart.boost > 0 ? 1.32 : 1) * (kart.orb > 0 ? 1.18 : 1);
+  const cap =
+    (kart.baseCap || (kart.cpu ? 27 : MAX_SPEED)) *
+    (kart.boost > 0 ? 1.32 : 1) *
+    (kart.orb > 0 ? 1.18 : 1);
   if (sp > cap) {
     kart.vx *= cap / sp;
     kart.vz *= cap / sp;
@@ -549,13 +572,27 @@ function markFinished(race, kart, crossed) {
   kart.vz *= 0.45;
 }
 
+function tuneCaps(race) {
+  const you = humanOf(race);
+  for (const kart of race.karts) {
+    if (!kart.cpu) {
+      kart.baseCap = MAX_SPEED;
+      continue;
+    }
+    const gap = you ? you.progress - kart.progress : 0;
+    if (gap > 0.035) kart.baseCap = 31.4;
+    else if (gap < -0.07) kart.baseCap = 24.5;
+    else kart.baseCap = 27.2;
+  }
+}
+
 function finishIfNeeded(race) {
   if (race.time < 8) return;
   const done = race.karts
     .filter((k) => !k.finished && k.laps >= LAPS)
     .sort((a, b) => b.progress - a.progress);
   for (const k of done) markFinished(race, k, true);
-  const you = race.karts.find((k) => k.id === "you");
+  const you = humanOf(race);
   const dnf = race.time >= DNF_TIME;
   if ((you && you.finished) || dnf) {
     const rest = race.karts
@@ -579,6 +616,7 @@ export function stepRace(race, inputs, dt) {
   }
   if (race.phase !== "race") return;
   race.time += step;
+  tuneCaps(race);
   for (const kart of race.karts) {
     if (kart.finished) {
       kart.vx *= 0.98;
@@ -722,7 +760,7 @@ function testNoInstant(fails) {
       }
       stepRace(race, inputs, 1 / 60);
     }
-    const you = race.karts.find((k) => k.id === "you");
+    const you = humanOf(race);
     if (race.phase !== "race") fails.push("instant " + pass + " " + race.phase);
     if (you.laps !== 0) fails.push("early lap " + pass + " " + you.laps);
     if (you.progress >= 1) fails.push("early prog " + pass + " " + you.progress.toFixed(2));
@@ -753,11 +791,12 @@ export function selfTest() {
   race.phase = "race";
   let guard = 0;
   const lapSeen = new Set();
+  const watched = humanOf(race);
   while (race.phase !== "podium" && guard < 60 * 360) {
     const inputs = {};
     for (const k of race.karts) inputs[k.id] = adviceFor(race, k.id);
     stepRace(race, inputs, 1 / 60);
-    lapSeen.add(race.karts[0].laps);
+    lapSeen.add(watched.laps);
     guard++;
   }
   if (!lapSeen.has(1) || !lapSeen.has(2)) fails.push("lap hud " + [...lapSeen].join(","));
@@ -767,12 +806,15 @@ export function selfTest() {
         race.karts.map((k) => k.id + ":" + k.laps + ":" + k.progress.toFixed(2)).join(" ")
     );
   } else {
-    const you = race.karts.find((k) => k.id === "you");
+    const you = humanOf(race);
     if (!you.finished || you.place < 1 || you.place > 4) fails.push("place " + you.place);
     if (you.laps < LAPS) fails.push("laps " + you.laps);
     if (guard < 60 * 15) fails.push("too fast " + guard);
     const lapSec = guard / 60 / LAPS;
     if (lapSec < 48) fails.push("short lap " + lapSec.toFixed(1));
+    const sorted = [...race.karts].sort((a, b) => b.progress - a.progress);
+    const gap = sorted[0].progress - sorted[sorted.length - 1].progress;
+    if (gap > 0.75) fails.push("cheese gap " + gap.toFixed(2));
   }
   testNoInstant(fails);
   const itemRace = createRace(track);
