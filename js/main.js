@@ -11,10 +11,12 @@ import {
   resetRace,
   selfTest,
   stepRace,
+  launchHeld,
+  swapTrack,
   writeSave,
-} from "./sim.js?v=gd2";
-import { createWorld } from "./world.js?v=gd2";
-import { createSfx } from "./audio.js?v=gd2";
+} from "./sim.js?v=gd3";
+import { createWorld } from "./world.js?v=gd3";
+import { createSfx } from "./audio.js?v=gd3";
 
 const app = document.getElementById("app");
 const stage = document.getElementById("stage");
@@ -37,6 +39,7 @@ stage.insertBefore(world.renderer.domElement, stage.firstChild);
 
 let save = loadSave();
 let scripted = null;
+let firePulse = false;
 let auto = false;
 let savedThisRace = false;
 let lastTick = performance.now();
@@ -71,7 +74,14 @@ function youInput() {
     steer: (held.left ? 1 : 0) - (held.right ? 1 : 0),
     gas: !!held.gas,
     drift: !!held.drift,
+    fire: takeFire(),
   };
+}
+
+function takeFire() {
+  const fire = firePulse;
+  firePulse = false;
+  return fire;
 }
 
 function bindHold(id, key) {
@@ -93,6 +103,14 @@ bindHold("btn-left", "left");
 bindHold("btn-right", "right");
 bindHold("btn-drift", "drift");
 bindHold("btn-gas", "gas");
+document.getElementById("btn-fire").addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  firePulse = true;
+  document.getElementById("btn-fire").classList.add("on");
+});
+document.getElementById("btn-fire").addEventListener("pointerup", () => {
+  document.getElementById("btn-fire").classList.remove("on");
+});
 
 window.addEventListener("keydown", (e) => {
   const map = {
@@ -102,13 +120,15 @@ window.addEventListener("keydown", (e) => {
     KeyD: "right",
     ArrowUp: "gas",
     KeyW: "gas",
+    KeyF: "fire",
     Space: "drift",
     ShiftLeft: "drift",
     ShiftRight: "drift",
   };
   if (!map[e.code]) return;
   e.preventDefault();
-  held[map[e.code]] = true;
+  if (map[e.code] === "fire") firePulse = true;
+  else held[map[e.code]] = true;
 });
 window.addEventListener("keyup", (e) => {
   const map = {
@@ -118,6 +138,7 @@ window.addEventListener("keyup", (e) => {
     KeyD: "right",
     ArrowUp: "gas",
     KeyW: "gas",
+    KeyF: "fire",
     Space: "drift",
     ShiftLeft: "drift",
     ShiftRight: "drift",
@@ -249,6 +270,41 @@ const EXHIBITS = {
     title: "Sling Kart",
     cap: "Cedar bowl. Twin sling bands on the rear posts. Hold a turn until the bands spark, then let go.",
   },
+  "frost-ridge": {
+    src: "assets/museum/frost-ridge.jpg?v=gd3",
+    title: "Frost Ridge",
+    cap: "Ice, drifts, and two narrow bridges. Same three laps. Same four racers.",
+  },
+  sap: {
+    src: "assets/museum/sap.jpg?v=gd3",
+    title: "Sap Shell",
+    cap: "A soft homing blob. It sticks to whoever is ahead and slows them.",
+  },
+  trap: {
+    src: "assets/museum/trap.jpg?v=gd3",
+    title: "Stick Trap",
+    cap: "Drops behind the bowl. The next racer through it spins.",
+  },
+  wall: {
+    src: "assets/museum/wall.jpg?v=gd3",
+    title: "Snow Wall",
+    cap: "A short ice block ahead. There is still room to slip around it.",
+  },
+  rocket: {
+    src: "assets/museum/rocket.jpg?v=gd3",
+    title: "Yeet Rocket",
+    cap: "A forward rocket with a long trail and a wide blast.",
+  },
+  star: {
+    src: "assets/museum/star.jpg?v=gd3",
+    title: "Star Thaw",
+    cap: "A short sparkle. Hits and traps pass through you.",
+  },
+  orb: {
+    src: "assets/museum/orb.jpg?v=gd3",
+    title: "Blue Lodge Orb",
+    cap: "Rare. Only while you are 1st or 2nd. A blue surge and a short push.",
+  },
 };
 
 function openExhibit(id) {
@@ -264,6 +320,20 @@ function closeExhibit() {
   exhibitEl.classList.add("hidden");
 }
 
+document.querySelectorAll("[data-track]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    if (race.phase !== "splash") return;
+    swapTrack(race, btn.getAttribute("data-track"));
+    world.setTrack(race.track);
+    document.querySelectorAll("[data-track]").forEach((b) => b.classList.toggle("on", b === btn));
+  });
+});
+document.getElementById("btn-how").addEventListener("click", () => {
+  document.getElementById("how").classList.remove("hidden");
+});
+document.getElementById("btn-how-back").addEventListener("click", () => {
+  document.getElementById("how").classList.add("hidden");
+});
 document.getElementById("btn-museum").addEventListener("click", () => {
   closeExhibit();
   museumEl.classList.remove("hidden");
@@ -298,6 +368,10 @@ function hudTick() {
   else label.textContent = "SPARK";
   const driftBtn = document.getElementById("btn-drift");
   driftBtn.textContent = you.spark >= 0.42 ? "LET GO" : "DRIFT";
+  const fireBtn = document.getElementById("btn-fire");
+  const labels = { sap: "SAP", trap: "TRAP", wall: "WALL", rocket: "ROCKET", star: "THAW", orb: "ORB" };
+  fireBtn.textContent = you.held ? labels[you.held] || "FIRE" : you.fireCd > 0 ? "WAIT" : "FIRE";
+  fireBtn.classList.toggle("armed", !!you.held && you.fireCd <= 0);
   const order = [...race.karts].sort((a, b) => b.progress - a.progress);
   document.getElementById("hud-order").textContent = order.map((k) => k.name).join("  ");
   if (race.phase === "countdown") {
@@ -370,6 +444,9 @@ window.__grand = {
       z: you.z,
       yaw: you.yaw,
       finished: you.finished,
+      held: you.held || "",
+      lastFx: race.lastFx || "",
+      track: race.track.id,
       lapTarget: LAPS,
       advice: adviceFor(race, "you"),
       stageH: stageBox.height,
@@ -387,5 +464,20 @@ window.__grand = {
   selfTest,
   frameCheck: () => check,
   save,
+  grant(id) {
+    const you = race.karts.find((k) => k.id === "you");
+    you.held = id;
+    you.fireCd = 0;
+    you.holdAge = 0;
+    you.stun = 0;
+  },
+  fireNow() {
+    const you = race.karts.find((k) => k.id === "you");
+    return launchHeld(race, you);
+  },
+  setTrack(id) {
+    swapTrack(race, id);
+    world.setTrack(race.track);
+  },
 };
 requestAnimationFrame(frame);

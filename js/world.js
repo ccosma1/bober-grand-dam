@@ -1,4 +1,4 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd2";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd3";
 
 function canvasTex(THREE, draw, w, h, repeat) {
   const c = document.createElement("canvas");
@@ -428,6 +428,7 @@ function spillMaterial(THREE) {
 }
 
 export function createWorld(THREE, track) {
+  let liveTrack = track;
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
   renderer.setClearColor(0x87b4c4, 1);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -465,8 +466,10 @@ export function createWorld(THREE, track) {
   concrete.repeat.set(3.5, 1.6);
   const roadMap = roadTexture(THREE);
   roadMap.wrapS = THREE.RepeatWrapping;
+  const iceMap = roadTexture(THREE);
+  iceMap.wrapS = THREE.RepeatWrapping;
 
-  const road = buildRoad(THREE, track, roadMap);
+  let road = buildRoad(THREE, track, roadMap);
   scene.add(road.mesh, road.skirt);
 
   const concMat = new THREE.MeshStandardMaterial({ map: concrete, roughness: 0.88 });
@@ -503,6 +506,7 @@ export function createWorld(THREE, track) {
   spill.position.set(0, 6.2, -30);
   spill.rotation.x = -0.85;
   scene.add(spill);
+  const damBits = [damL, damR, sill, spill, reservoir];
 
   const ground = new THREE.Mesh(
     new THREE.CircleGeometry(150, 28),
@@ -546,6 +550,7 @@ export function createWorld(THREE, track) {
     scene.add(cap);
   }
 
+  const foliage = [];
   const trunkG = new THREE.CylinderGeometry(0.18, 0.26, 1.3, 5);
   const leafG = new THREE.ConeGeometry(0.9, 2.1, 6);
   const trunkM = new THREE.MeshStandardMaterial({ color: 0x5c3a22, roughness: 0.9 });
@@ -563,6 +568,7 @@ export function createWorld(THREE, track) {
     const leaf = new THREE.Mesh(leafG, leafM);
     leaf.position.set(ox, 2.1, oz);
     scene.add(trunk, leaf);
+    foliage.push(trunk, leaf);
   }
 
   const railMat = new THREE.MeshStandardMaterial({ map: woodMap, roughness: 0.75 });
@@ -597,6 +603,7 @@ export function createWorld(THREE, track) {
     );
     p.castShadow = true;
     scene.add(p);
+    posts.push(p);
   }
   const banner = new THREE.Mesh(
     new THREE.BoxGeometry(gate.width * 0.92, 0.55, 0.08),
@@ -614,6 +621,7 @@ export function createWorld(THREE, track) {
   line.rotation.y = face;
   line.receiveShadow = true;
   scene.add(line);
+  posts.push(banner, line);
 
   const mistMap = mistTexture(THREE);
   const mists = [];
@@ -734,7 +742,7 @@ export function createWorld(THREE, track) {
     for (let i = 0; i < race.karts.length; i++) {
       const k = race.karts[i];
       const view = views[i];
-      const fr = track.frames[k.hint] || frameAt(track, k.t);
+      const fr = liveTrack.frames[k.hint] || frameAt(liveTrack, k.t);
       const visualYaw = k.yaw + k.slip * 0.35;
       const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), visualYaw);
       const along = Math.sin(k.yaw) * fr.tangent.x + Math.cos(k.yaw) * fr.tangent.z;
@@ -801,8 +809,125 @@ export function createWorld(THREE, track) {
       camera.fov = fov;
       camera.updateProjectionMatrix();
     }
+    paintItems(race, dt);
     renderer.render(scene, camera);
   }
 
-  return { renderer, scene, camera, resize, update, frameCheck, views };
+  const fx = new THREE.Group();
+  scene.add(fx);
+  const sapGeo = new THREE.SphereGeometry(0.42, 10, 8);
+  const boxGeo = new THREE.BoxGeometry(0.7, 0.7, 0.7);
+  const ringGeo = new THREE.TorusGeometry(0.55, 0.06, 6, 12);
+  const stickGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.8, 5);
+  const iceGeo = new THREE.BoxGeometry(0.7, 0.85, 0.7);
+  const blastGeo = new THREE.SphereGeometry(1, 10, 8);
+  const sapMat = new THREE.MeshStandardMaterial({ color: 0xd6e24a, emissive: 0x8aaa18, emissiveIntensity: 1.1, transparent: true, opacity: 0.92 });
+  const rocketMat = new THREE.MeshStandardMaterial({ color: 0xf0a024, emissive: 0xff6a00, emissiveIntensity: 1.4 });
+  const crateMat = new THREE.MeshStandardMaterial({ map: woodMap, emissive: 0x145e66, emissiveIntensity: 0.35 });
+  const ringMat = new THREE.MeshStandardMaterial({ color: 0x7ee7e0, emissive: 0x14c8c0, emissiveIntensity: 1.2 });
+  const stickMat = new THREE.MeshStandardMaterial({ color: 0x6b3d22, roughness: 0.8 });
+  const iceMat = new THREE.MeshStandardMaterial({ color: 0xe7f4ff, emissive: 0x8ecfff, emissiveIntensity: 0.45, transparent: true, opacity: 0.88 });
+  const emberMat = new THREE.MeshBasicMaterial({ color: 0xffb703 });
+  const starMat = new THREE.MeshBasicMaterial({ color: 0xfff1c2 });
+  const orbMat = new THREE.MeshStandardMaterial({ color: 0x2f6dff, emissive: 0x1a4dff, emissiveIntensity: 1.3 });
+  const shockMat = new THREE.MeshBasicMaterial({ color: 0x8eb6ff, transparent: true, opacity: 0.7, side: THREE.DoubleSide });
+
+  function addMesh(geo, mat, x, y, z, s) {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    if (s) m.scale.setScalar(s);
+    fx.add(m);
+    return m;
+  }
+
+  function paintItems(race) {
+    while (fx.children.length) fx.remove(fx.children[0]);
+    if (!race.boxes) return;
+    for (const box of race.boxes) {
+      if (!box.alive) continue;
+      const fr = frameAt(liveTrack, box.t);
+      const bob = Math.sin(race.time * 3.2 + box.t * 12) * 0.12;
+      const g = new THREE.Group();
+      g.add(new THREE.Mesh(boxGeo, crateMat));
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = -0.15;
+      g.add(ring);
+      g.position.set(fr.p.x, fr.p.y + 1.05 + bob, fr.p.z);
+      g.rotation.y = race.time * 1.4;
+      fx.add(g);
+    }
+    for (const shot of race.shots || []) {
+      const mat = shot.kind === "rocket" ? rocketMat : sapMat;
+      const geo = shot.kind === "rocket" ? boxGeo : sapGeo;
+      const m = addMesh(geo, mat, shot.x, shot.y, shot.z, shot.kind === "rocket" ? 0.45 : 1);
+      m.lookAt(shot.x + shot.vx, shot.y, shot.z + shot.vz);
+      const trailMat = shot.kind === "rocket" ? emberMat : sapMat;
+      shot.trail.forEach((p, i) => addMesh(sapGeo, trailMat, p.x, p.y, p.z, 0.25 + i * 0.02));
+    }
+    for (const trap of race.traps || []) {
+      for (let i = 0; i < 5; i++) {
+        const m = addMesh(stickGeo, stickMat, trap.x + Math.cos(i) * 0.35, trap.y + 0.25, trap.z + Math.sin(i) * 0.35, 1);
+        m.rotation.z = i;
+      }
+    }
+    for (const wall of race.walls || []) {
+      for (const side of [-1, 0, 1]) {
+        addMesh(iceGeo, iceMat, wall.x + side * 0.75, wall.y + 0.55, wall.z, 1);
+      }
+    }
+    for (const b of race.bursts || []) {
+      const k = 1 - b.life / b.max;
+      const geo = b.kind === "shock" || b.kind === "blast" ? blastGeo : sapGeo;
+      const mat = b.kind === "orb" || b.kind === "shock" ? orbMat : b.kind === "blast" || b.kind === "rocket" ? rocketMat : starMat;
+      addMesh(geo, mat, b.x, b.y, b.z, 0.4 + k * (b.kind === "blast" ? 4.2 : 1.8));
+    }
+    for (const k of race.karts || []) {
+      if (k.invuln > 0) {
+        for (let i = 0; i < 8; i++) {
+          const a = race.time * 6 + i;
+          addMesh(sapGeo, starMat, k.x + Math.cos(a) * 1.1, k.y + 0.8 + Math.sin(a * 2) * 0.4, k.z + Math.sin(a) * 1.1, 0.18);
+        }
+      }
+      if (k.orb > 0) addMesh(sapGeo, orbMat, k.x, k.y + 1.5, k.z, 0.55);
+    }
+  }
+
+  let frostDress = null;
+  function setTrack(next) {
+    liveTrack = next;
+    scene.remove(road.mesh, road.skirt);
+    road.mesh.geometry.dispose();
+    road.skirt.geometry.dispose();
+    road = buildRoad(THREE, next, next.theme === "frost" ? iceMap : roadMap);
+    if (next.theme === "frost") road.mesh.material.color.set(0xd7e8f4);
+    scene.add(road.mesh, road.skirt);
+    const frost = next.theme === "frost";
+    for (const m of damBits) m.visible = !frost;
+    for (const m of foliage) m.visible = !frost;
+    for (const m of posts) m.visible = !frost;
+    if (!frostDress) {
+      frostDress = new THREE.Group();
+      scene.add(frostDress);
+    }
+    frostDress.visible = frost;
+    if (frost && frostDress.children.length === 0) {
+      for (let i = 0; i < next.frames.length; i += 4) {
+        const fr = next.frames[i];
+        for (const side of [-1, 1]) {
+          const post = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.8, 0.14), railMat);
+          post.position.set(
+            fr.p.x + fr.right.x * (fr.width * 0.5 + 0.2) * side,
+            fr.p.y + 0.45,
+            fr.p.z + fr.right.z * (fr.width * 0.5 + 0.2) * side
+          );
+          frostDress.add(post);
+        }
+      }
+    }
+    ground.material.color.set(frost ? 0xd5e4ee : 0x4e7a48);
+    scene.fog.color.set(frost ? 0xc5d6e6 : 0xe7c49a);
+  }
+
+  return { renderer, scene, camera, resize, update, frameCheck, views, setTrack };
 }

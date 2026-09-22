@@ -36,7 +36,7 @@ else:
         if need not in text:
             fails.append("splash missing " + need)
 
-for need in ("Sling Kart", "Dam Loop", "btn-left", "btn-right", "btn-drift", "btn-gas", "btn-rematch"):
+for need in ("Sling Kart", "Dam Loop", "Frost Ridge", "Sap Shell", "Stick Trap", "Snow Wall", "Yeet Rocket", "Star Thaw", "Blue Lodge Orb", "btn-left", "btn-right", "btn-drift", "btn-gas", "btn-fire", "btn-rematch"):
     if need not in html:
         fails.append("html missing " + need)
 if "58dvh" not in css:
@@ -49,6 +49,14 @@ for aid in (
     "assets/museum/sling-kart.jpg",
     "assets/vehicles/sheet.jpg",
     "assets/icons/bober-grand-dam.ico",
+    "assets/history/frost-ridge.jpg",
+    "assets/museum/frost-ridge.jpg",
+    "assets/museum/sap.jpg",
+    "assets/museum/trap.jpg",
+    "assets/museum/wall.jpg",
+    "assets/museum/rocket.jpg",
+    "assets/museum/star.jpg",
+    "assets/museum/orb.jpg",
 ):
     if not (ROOT / aid).exists():
         fails.append("missing " + aid)

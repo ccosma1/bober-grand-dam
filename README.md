@@ -4,7 +4,7 @@ Fan game by a holder. Unofficial — not the project team.
 
 Race the bank. Drift the dam. First to the crest wins.
 
-One local circuit, Dam Loop. Three laps. You and three racers. Hold a turn until the bands spark, then let go.
+Two local circuits, Dam Loop and Frost Ridge. Three laps. You and three racers. Hold a turn until the bands spark, then let go. Boxes on the road. FIRE throws what you hold. Blue Lodge Orb only in 1st or 2nd.
 
 No wallet.
 

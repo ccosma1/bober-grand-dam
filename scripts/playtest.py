@@ -7,7 +7,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "assets" / "ref"
 OUT.mkdir(parents=True, exist_ok=True)
-URL = "http://127.0.0.1:8771/?v=gd1"
+URL = "http://127.0.0.1:8771/?v=gd3"
 
 
 def shot(page, name):
@@ -91,6 +91,12 @@ def museum_round(page, w, h):
     assert_inside(box(page, "#btn-exhibit-close"), w, h, "close", 40)
     page.click("#btn-exhibit-close")
     page.wait_for_selector("#exhibit", state="hidden")
+    page.click("[data-exhibit=sap]")
+    page.wait_for_selector("#exhibit", state="visible")
+    if "Sap" not in page.locator("#exhibit-title").inner_text():
+        raise AssertionError("sap card")
+    page.click("#exhibit-scrim", position={"x": 4, "y": 4})
+    page.wait_for_selector("#exhibit", state="hidden")
     page.click("#btn-museum-back")
     page.wait_for_selector("#museum", state="hidden")
 
@@ -110,7 +116,7 @@ def clean_starts(page, n=3):
 def assert_race_chrome(page, w, h):
     stage = box(page, "#stage")
     assert stage["height"] >= h * 0.58, (stage, h)
-    for sel in ("#btn-left", "#btn-right", "#btn-drift", "#btn-gas"):
+    for sel in ("#btn-left", "#btn-right", "#btn-drift", "#btn-gas", "#btn-fire"):
         assert_inside(box(page, sel), w, h, sel, 52)
     assert_inside(box(page, "#spark"), w, h, "#spark", 16)
     gas = box(page, "#btn-gas")
@@ -168,6 +174,16 @@ def main():
             fails.append("right not right " + str(right_d))
         if left_d <= 0.05:
             fails.append("left not left " + str(left_d))
+        for item in ("sap", "trap", "wall", "rocket", "star", "orb"):
+            got = page.evaluate("(id) => { window.__grand.grant(id); return window.__grand.fireNow(); }", item)
+            print("fx", item, got)
+            if got != item:
+                fails.append("fx " + item + " " + str(got))
+        page.evaluate("() => window.__grand.grant('sap')")
+        page.click("#btn-fire")
+        page.wait_for_timeout(120)
+        if page.evaluate("() => window.__grand.snapshot().held"):
+            fails.append("fire button held")
         page.mouse.move(300, 780)
         gas = box(page, "#btn-gas")
         page.mouse.move(gas["x"] + gas["width"] / 2, gas["y"] + gas["height"] / 2)
@@ -182,12 +198,12 @@ def main():
         page.wait_for_timeout(3500)
         shot(page, "race-390.png")
         page.wait_for_function("() => window.__grand.snapshot().phase === 'podium'", timeout=100000)
-        snap = page.evaluate("() => window.__grand.snapshot()")
-        print("PODIUM", snap["place"], round(snap["time"], 2), snap["progress"])
-        if snap["place"] < 1 or snap["place"] > 4:
+        pod = page.evaluate("() => window.__grand.snapshot()")
+        print("PODIUM", pod["place"], round(pod["time"], 2), pod["progress"])
+        if pod["place"] < 1 or pod["place"] > 4:
             fails.append("place")
-        if snap["time"] < 15 or snap["laps"] < 3:
-            fails.append("short race %s laps %s" % (snap["time"], snap["laps"]))
+        if pod["time"] < 15 or pod["laps"] < 3:
+            fails.append("short race %s laps %s" % (pod["time"], pod["laps"]))
         assert_inside(box(page, "#btn-rematch"), 390, 844, "rematch", 44)
         assert_inside(box(page, "#btn-splash"), 390, 844, "splash-back", 40)
         you_row = page.locator("#podium-list li.me").inner_text()
@@ -195,6 +211,22 @@ def main():
         if "YOU" not in you_row:
             fails.append("podium you")
         shot(page, "podium-390.png")
+        page.click("#btn-splash")
+        page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")
+        page.click("[data-track=frost]")
+        page.click("#btn-start")
+        page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=9000)
+        page.wait_for_timeout(800)
+        fr = snap(page)
+        print("FROST", fr["track"], round(fr["progress"], 3), fr["laps"])
+        if fr["track"] != "frost" or fr["phase"] != "race" or fr["laps"] != 0:
+            fails.append("frost start " + str(fr["track"]) + " " + str(fr["laps"]))
+        page.evaluate("() => window.__grand.setAuto(true)")
+        page.wait_for_function("() => window.__grand.snapshot().phase === 'podium'", timeout=120000)
+        fr2 = snap(page)
+        print("FROST PODIUM", fr2["place"], round(fr2["time"], 2), fr2["laps"])
+        if fr2["laps"] < 3 or fr2["time"] < 15:
+            fails.append("frost short")
         page.click("#btn-splash")
         page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")
 

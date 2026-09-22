@@ -10,7 +10,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png" />
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="css/game.css?v=gd2" />
+  <link rel="stylesheet" href="css/game.css?v=gd3" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Bober Grand Dam" />
   <meta property="og:description" content="Race the bank. Drift the dam. First to the crest wins. Fan game by a holder." />
@@ -38,6 +38,7 @@
         <button id="btn-right" type="button">RIGHT</button>
         <button id="btn-drift" type="button">DRIFT</button>
         <button id="btn-gas" type="button">GAS</button>
+        <button id="btn-fire" type="button">FIRE</button>
       </div>
     </div>
 
@@ -50,13 +51,27 @@
         <p class="mission">Race the bank. Drift the dam. First to the crest wins.</p>
         <p class="scope">Local race. Three laps. You and three racers.</p>
         <p class="fan">Fan game by a holder. Unofficial — not the project team.</p>
+        <div class="tracks" id="track-pick">
+          <button class="ghost on" type="button" data-track="dam">DAM LOOP</button>
+          <button class="ghost" type="button" data-track="frost">FROST RIDGE</button>
+        </div>
         <button class="play" id="btn-start" type="button">START</button>
         <div class="row">
+          <button class="ghost" id="btn-how" type="button">HOW</button>
           <button class="ghost" id="btn-history" type="button">HISTORY</button>
           <button class="ghost" id="btn-museum" type="button">MUSEUM</button>
         </div>
         <p class="best" id="splash-best"></p>
       </div>
+    </section>
+
+    <section id="how" class="hidden" role="dialog" aria-label="How to play">
+      <h2>HOW TO PLAY</h2>
+      <p>Hold a turn. Let go when the bands spark.</p>
+      <p>Boxes sit on the road. Drive through one to hold a throw.</p>
+      <p>FIRE uses it. There is a short wait before the next throw.</p>
+      <p>Blue Lodge Orb only while you are 1st or 2nd.</p>
+      <button class="back" id="btn-how-back" type="button">BACK</button>
     </section>
 
     <section id="history" class="hidden" role="dialog" aria-label="History">
@@ -89,6 +104,34 @@
         <img src="assets/museum/sling-kart.jpg?v=gd2" alt="" />
         <span><strong>Sling Kart</strong>Cedar bowl. Twin sling bands on the rear posts. Hold a turn until the bands spark, then let go.</span>
       </button>
+      <button class="exh" type="button" data-exhibit="frost-ridge">
+        <img src="assets/museum/frost-ridge.jpg?v=gd3" alt="" />
+        <span><strong>Frost Ridge</strong>Ice, drifts, and two narrow bridges.</span>
+      </button>
+      <button class="exh" type="button" data-exhibit="sap">
+        <img src="assets/museum/sap.jpg?v=gd3" alt="" />
+        <span><strong>Sap Shell</strong>Soft homing blob.</span>
+      </button>
+      <button class="exh" type="button" data-exhibit="trap">
+        <img src="assets/museum/trap.jpg?v=gd3" alt="" />
+        <span><strong>Stick Trap</strong>Drops behind you.</span>
+      </button>
+      <button class="exh" type="button" data-exhibit="wall">
+        <img src="assets/museum/wall.jpg?v=gd3" alt="" />
+        <span><strong>Snow Wall</strong>A short block ahead.</span>
+      </button>
+      <button class="exh" type="button" data-exhibit="rocket">
+        <img src="assets/museum/rocket.jpg?v=gd3" alt="" />
+        <span><strong>Yeet Rocket</strong>Forward rocket and blast.</span>
+      </button>
+      <button class="exh" type="button" data-exhibit="star">
+        <img src="assets/museum/star.jpg?v=gd3" alt="" />
+        <span><strong>Star Thaw</strong>A short sparkle. Hits pass through.</span>
+      </button>
+      <button class="exh" type="button" data-exhibit="orb">
+        <img src="assets/museum/orb.jpg?v=gd3" alt="" />
+        <span><strong>Blue Lodge Orb</strong>Only in 1st or 2nd.</span>
+      </button>
       <button class="back" id="btn-museum-back" type="button">BACK</button>
     </section>
 
@@ -111,6 +154,6 @@
       <button class="ghost" id="btn-splash" type="button">SPLASH</button>
     </section>
   </div>
-  <script type="module" src="js/main.js?v=gd2"></script>
+  <script type="module" src="js/main.js?v=gd3"></script>
 </body>
 </html>

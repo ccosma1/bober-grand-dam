@@ -1,6 +1,8 @@
-/* Dam Loop race sim. No rendering.
-   yaw 0 faces +z. yaw > 0 turns toward +x.
+/* Race sim. No rendering.
+   yaw 0 faces +z. yaw > 0 turns toward +x (screen-left in the chase view).
    forward = (sin(yaw), 0, cos(yaw)). */
+import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd3";
+export { launchHeld };
 
 export const LAPS = 3;
 export const SAVE_KEY = "bober-grand-dam-v1";
@@ -14,7 +16,7 @@ export const ROSTER = [
   { id: "reed", name: "REED", scarf: 0xd06a32, cpu: true, lane: 0.46, style: "spark" },
 ];
 
-const RAW = [
+const DAM_RAW = [
   { x: 0, z: -32, y: 11.6 },
   { x: 26, z: -31, y: 11.45 },
   { x: 50, z: -26, y: 10.4 },
@@ -29,6 +31,21 @@ const RAW = [
   { x: -76, z: -12, y: 7.0 },
   { x: -60, z: -26, y: 10.2 },
   { x: -30, z: -32, y: 11.45 },
+];
+
+const FROST_RAW = [
+  { x: 0, z: -50, y: 14.2 },
+  { x: 34, z: -46, y: 13.4 },
+  { x: 64, z: -28, y: 12.2 },
+  { x: 78, z: -4, y: 11.2 },
+  { x: 70, z: 22, y: 9.4 },
+  { x: 40, z: 44, y: 7.6 },
+  { x: 4, z: 52, y: 7.2 },
+  { x: -34, z: 46, y: 8.4 },
+  { x: -66, z: 26, y: 10.2 },
+  { x: -80, z: 0, y: 12.0 },
+  { x: -68, z: -26, y: 13.2 },
+  { x: -34, z: -46, y: 14.0 },
 ];
 
 const MAX_SPEED = 32;
@@ -97,15 +114,16 @@ function cr(p0, p1, p2, p3, t) {
   return { x, y, z };
 }
 
-export function createTrack() {
-  const n = RAW.length;
+export function createTrack(id = "dam") {
+  const raw = id === "frost" ? FROST_RAW : DAM_RAW;
+  const n = raw.length;
   const per = 18;
   const pts = [];
   for (let i = 0; i < n; i++) {
-    const p0 = RAW[(i - 1 + n) % n];
-    const p1 = RAW[i];
-    const p2 = RAW[(i + 1) % n];
-    const p3 = RAW[(i + 2) % n];
+    const p0 = raw[(i - 1 + n) % n];
+    const p1 = raw[i];
+    const p2 = raw[(i + 1) % n];
+    const p3 = raw[(i + 2) % n];
     for (let s = 0; s < per; s++) pts.push(cr(p0, p1, p2, p3, s / per));
   }
   const frames = [];
@@ -151,12 +169,37 @@ export function createTrack() {
     const curv = dh / Math.max(0.4, frames[i].ds);
     frames[i].curvature = curv;
     frames[i].bank = Math.max(-0.22, Math.min(0.22, -curv * 7));
+    const p = frames[i].p;
     let w = 8.4;
-    if (frames[i].p.y > 8.5) w = 9.4;
-    if (Math.abs(curv) > 0.01) w = 7.6;
+    let bridge = false;
+    if (id === "frost") {
+      w = 6.5;
+      bridge = Math.abs(p.x) > 66;
+      if (bridge) w = 4.55;
+      if (Math.abs(curv) > 0.012) w = Math.min(w, 5.7);
+    } else {
+      if (p.y > 8.5) w = 9.4;
+      if (Math.abs(curv) > 0.01) w = 7.6;
+    }
     frames[i].width = w;
+    frames[i].bridge = bridge;
   }
-  return { frames, length, samples: frames.length };
+  let cx = 0;
+  let cz = 0;
+  for (const f of frames) {
+    cx += f.p.x;
+    cz += f.p.z;
+  }
+  return {
+    id,
+    name: id === "frost" ? "Frost Ridge" : "Dam Loop",
+    theme: id === "frost" ? "frost" : "dam",
+    frames,
+    length,
+    samples: frames.length,
+    cx: cx / frames.length,
+    cz: cz / frames.length,
+  };
 }
 
 function frameIndex(track, t) {
@@ -238,6 +281,12 @@ function blankKart(def, track, slot) {
     finishTime: 0,
     place: 0,
     slip: 0,
+    held: null,
+    holdAge: 0,
+    fireCd: 0,
+    stun: 0,
+    invuln: 0,
+    orb: 0,
   };
 }
 
@@ -271,7 +320,7 @@ export function spawnKarts(track) {
 }
 
 export function createRace(track) {
-  return {
+  const race = {
     phase: "splash",
     countdown: 3,
     time: 0,
@@ -279,6 +328,8 @@ export function createRace(track) {
     karts: spawnKarts(track),
     track,
   };
+  seedItems(race);
+  return race;
 }
 
 export function resetRace(race) {
@@ -287,9 +338,28 @@ export function resetRace(race) {
   race.time = 0;
   race.places = [];
   race.karts = spawnKarts(race.track);
+  seedItems(race);
+}
+
+export function swapTrack(race, id) {
+  race.track = createTrack(id);
+  race.phase = "splash";
+  race.countdown = 3;
+  race.time = 0;
+  race.places = [];
+  race.karts = spawnKarts(race.track);
+  seedItems(race);
 }
 
 function integrate(kart, input, dt) {
+  if (kart.fireCd > 0) kart.fireCd = Math.max(0, kart.fireCd - dt);
+  if (kart.invuln > 0) kart.invuln = Math.max(0, kart.invuln - dt);
+  if (kart.orb > 0) kart.orb = Math.max(0, kart.orb - dt);
+  let steerMul = 1;
+  if (kart.stun > 0) {
+    kart.stun = Math.max(0, kart.stun - dt);
+    steerMul = 0.22;
+  }
   const steer = Math.max(-1, Math.min(1, input.steer || 0));
   const gas = Math.max(0, Math.min(1, Number(input.gas) || 0));
   const speed = Math.hypot(kart.vx, kart.vz);
@@ -303,10 +373,10 @@ function integrate(kart, input, dt) {
   kart.drifting = wantDrift;
 
   const steerRate = (kart.drifting ? 3.15 : 2.45) * (0.62 + 0.38 * (1 - Math.min(1, speed / MAX_SPEED)));
-  kart.yaw = wrapAngle(kart.yaw + steer * steerRate * dt);
+  kart.yaw = wrapAngle(kart.yaw + steer * steerMul * steerRate * dt);
 
   const f = forward(kart.yaw);
-  const accel = ACCEL * (kart.cpu ? 0.84 : 1);
+  const accel = ACCEL * (kart.cpu ? 0.84 : 1) * (kart.stun > 0 ? 0.3 : 1) * (kart.orb > 0 ? 1.12 : 1);
   if (gas) {
     kart.vx += f.x * accel * dt;
     kart.vz += f.z * accel * dt;
@@ -342,7 +412,7 @@ function integrate(kart, input, dt) {
   }
 
   let sp = Math.hypot(kart.vx, kart.vz);
-  const cap = (kart.cpu ? 27 : MAX_SPEED) * (kart.boost > 0 ? 1.32 : 1);
+  const cap = (kart.cpu ? 27 : MAX_SPEED) * (kart.boost > 0 ? 1.32 : 1) * (kart.orb > 0 ? 1.18 : 1);
   if (sp > cap) {
     kart.vx *= cap / sp;
     kart.vz *= cap / sp;
@@ -482,12 +552,14 @@ export function stepRace(race, inputs, dt) {
       continue;
     }
     const input = inputs[kart.id] || { steer: 0, gas: 0, drift: false };
+    if (input.fire) launchHeld(race, kart);
     integrate(kart, input, step);
   }
   separate(race.karts);
   for (const kart of race.karts) {
     if (!kart.finished) constrain(race.track, kart, step);
   }
+  stepItems(race, step);
   finishIfNeeded(race);
 }
 
@@ -497,8 +569,8 @@ export function adviceFor(race, id) {
   const look = kart.style === "spark" ? 0.05 : kart.style === "wide" ? 0.075 : 0.06;
   const ahead = frameAt(track, kart.t + look + Math.min(0.03, kart.speed * 0.0008));
   const now = track.frames[kart.hint] || frameAt(track, kart.t);
-  const cx = 0;
-  const cz = 2;
+  const cx = track.cx || 0;
+  const cz = track.cz || 2;
   const toC = norm({ x: cx - ahead.p.x, y: 0, z: cz - ahead.p.z });
   const inward = toC.x * ahead.right.x + toC.z * ahead.right.z;
   const lane = kart.lane * 0.35;
@@ -519,8 +591,14 @@ export function adviceFor(race, id) {
   if (kart.style === "spark") drift = tight > 0.007 && kart.speed > 14 && Math.abs(steer) > 0.25;
   else if (kart.style === "wide") drift = tight > 0.014 && kart.speed > 18;
   else drift = tight > 0.011 && kart.speed > 17 && Math.abs(steer) > 0.35;
-  if (kart.stuck > 0.7) drift = false;
-  return { steer: kart.stuck > 0.7 ? Math.max(-1, Math.min(1, err / 0.3)) : steer, gas, drift };
+  if (kart.stuck > 0.7 || kart.stun > 0) drift = false;
+  const steerOut = kart.stuck > 0.7 ? Math.max(-1, Math.min(1, err / 0.3)) : steer;
+  let fire = false;
+  if (kart.cpu && kart.held && kart.fireCd <= 0 && kart.stun <= 0) {
+    const wait = kart.held === "trap" ? 0.7 : 0.35;
+    fire = (kart.holdAge || 0) > wait;
+  }
+  return { steer: steerOut, gas, drift, fire };
 }
 
 export function livePlace(race, id) {
@@ -656,6 +734,29 @@ export function selfTest() {
     if (guard < 60 * 15) fails.push("too fast " + guard);
   }
   testNoInstant(fails);
+  const itemRace = createRace(track);
+  testItems(itemRace, fails);
+  const frost = createTrack("frost");
+  if (frost.theme !== "frost" || frost.length < 250 || frost.length > 980) fails.push("frost " + frost.length.toFixed(0));
+  if (frost.frames.filter((f) => f.bridge).length < 6) fails.push("bridges");
+  for (let i = 0; i < frost.frames.length; i++) {
+    for (let j = i + 10; j < frost.frames.length - 10; j++) {
+      const d = Math.hypot(frost.frames[i].p.x - frost.frames[j].p.x, frost.frames[i].p.z - frost.frames[j].p.z);
+      if (d < 4) {
+        fails.push("frost pinch");
+        i = frost.frames.length;
+        break;
+      }
+    }
+  }
+  const frostRace = createRace(frost);
+  resetRace(frostRace);
+  for (let i = 0; i < 60 * 5; i++) {
+    const inputs = {};
+    for (const k of frostRace.karts) inputs[k.id] = k.cpu ? adviceFor(frostRace, k.id) : { steer: 0, gas: 1, drift: false };
+    stepRace(frostRace, inputs, 1 / 60);
+  }
+  if (frostRace.phase !== "race" || frostRace.karts[0].laps !== 0) fails.push("frost instant");
   return {
     ok: fails.length === 0,
     fails,
