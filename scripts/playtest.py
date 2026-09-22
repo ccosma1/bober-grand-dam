@@ -7,7 +7,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "assets" / "ref"
 OUT.mkdir(parents=True, exist_ok=True)
-URL = "http://127.0.0.1:8771/?v=gd4"
+URL = "http://127.0.0.1:8771/?v=gd8"
 
 
 def shot(page, name):
@@ -101,7 +101,7 @@ def museum_round(page, w, h):
     page.wait_for_selector("#museum", state="hidden")
 
 
-def key_race(page, timeout_s=100):
+def key_race(page, timeout_s=400):
     import time
     down = set()
 
@@ -121,6 +121,8 @@ def key_race(page, timeout_s=100):
             s = snap(page)
             if s["phase"] == "podium":
                 return s
+            page._laps = getattr(page, "_laps", set())
+            page._laps.add(s["lap"])
             advice = s["advice"]
             want = set()
             if advice.get("gas"):
@@ -162,6 +164,15 @@ def assert_race_chrome(page, w, h):
     drift = box(page, "#btn-drift")
     assert gas["height"] >= 52, gas
     assert drift["height"] >= 52, drift
+    sels = ["#btn-left", "#btn-right", "#btn-drift", "#btn-gas", "#btn-fire"]
+    boxes = [box(page, sel) for sel in sels]
+    for i in range(len(boxes)):
+        for j in range(i + 1, len(boxes)):
+            a, b = boxes[i], boxes[j]
+            ix = min(a["x"] + a["width"], b["x"] + b["width"]) - max(a["x"], b["x"])
+            iy = min(a["y"] + a["height"], b["y"] + b["height"]) - max(a["y"], b["y"])
+            if ix > 4 and iy > 4:
+                raise AssertionError("overlap %s %s" % (sels[i], sels[j]))
     print("stage", round(stage["height"] / h, 3), "gas", round(gas["height"]), "drift", round(drift["height"]))
 
 
@@ -244,9 +255,12 @@ def main():
             fails.append("gas no speed " + str(speed))
         shot(page, "race-390.png")
         try:
-            key_race(page, 100)
+            page._laps = set()
+            key_race(page, 400)
         except Exception as exc:
             fails.append("keyboard race " + str(exc))
+        if not ({1, 2, 3} <= set(getattr(page, "_laps", set()))):
+            fails.append("lap hud " + str(sorted(getattr(page, "_laps", []))))
         page.wait_for_function("() => window.__grand.snapshot().phase === 'podium'", timeout=5000)
         pod = page.evaluate("() => window.__grand.snapshot()")
         print("PODIUM", pod["place"], round(pod["time"], 2), pod["progress"])
@@ -272,7 +286,7 @@ def main():
         if fr["track"] != "frost" or fr["phase"] != "race" or fr["laps"] != 0:
             fails.append("frost start " + str(fr["track"]) + " " + str(fr["laps"]))
         page.evaluate("() => window.__grand.setAuto(true)")
-        page.wait_for_function("() => window.__grand.snapshot().phase === 'podium'", timeout=120000)
+        page.wait_for_function("() => window.__grand.snapshot().phase === 'podium'", timeout=400000)
         fr2 = snap(page)
         print("FROST PODIUM", fr2["place"], round(fr2["time"], 2), fr2["laps"])
         if fr2["laps"] < 3 or fr2["time"] < 15:

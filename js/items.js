@@ -1,5 +1,5 @@
 /* Item boxes and place-weighted throws. Blue Lodge Orb only in 1st or 2nd. */
-import { frameAt, forward, livePlace } from "./sim.js?v=gd4";
+import { frameAt, forward, livePlace } from "./sim.js?v=gd8";
 
 export const ITEM_IDS = ["sap", "trap", "wall", "rocket", "star", "orb"];
 
@@ -255,9 +255,11 @@ export function stepItems(race, dt) {
       if (gap > 0.5) gap = 1 - gap;
       const lat = (k.x - fr.p.x) * fr.right.x + (k.z - fr.p.z) * fr.right.z;
       if (gap < 0.012 && Math.abs(lat) < wall.half) {
+        if ((k.wallHit || 0) > race.time) continue;
+        k.wallHit = race.time + 0.85;
         const back = forward(k.yaw);
-        k.vx -= back.x * 14;
-        k.vz -= back.z * 14;
+        k.vx -= back.x * 8;
+        k.vz -= back.z * 8;
         hurt(race, k, 0.55, -back.x * 6, -back.z * 6);
       }
     }

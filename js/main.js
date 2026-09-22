@@ -14,9 +14,9 @@ import {
   launchHeld,
   swapTrack,
   writeSave,
-} from "./sim.js?v=gd4";
-import { createWorld } from "./world.js?v=gd4";
-import { createSfx } from "./audio.js?v=gd4";
+} from "./sim.js?v=gd8";
+import { createWorld } from "./world.js?v=gd8";
+import { createSfx } from "./audio.js?v=gd8";
 
 const app = document.getElementById("app");
 const stage = document.getElementById("stage");
@@ -335,17 +335,17 @@ document.getElementById("btn-quit").addEventListener("click", () => {
 });
 const EXHIBITS = {
   "dam-loop": {
-    src: "assets/history/dam-loop.jpg?v=gd4",
+    src: "assets/history/dam-loop.jpg?v=gd8",
     title: "Dam Loop",
     cap: "The crest road, the bank, the spillway. Three laps. The line is the crest.",
   },
   "frost-ridge": {
-    src: "assets/history/frost-ridge.jpg?v=gd4",
+    src: "assets/history/frost-ridge.jpg?v=gd8",
     title: "Frost Ridge",
     cap: "Ice, drifts, and two narrow bridges. Same three laps. Same four racers.",
   },
   "sling-kart": {
-    src: "assets/history/crest-drift.jpg?v=gd4",
+    src: "assets/history/crest-drift.jpg?v=gd8",
     title: "Sling Kart",
     cap: "Cedar bowl. Twin sling bands on the rear posts. Hold a turn until the bands spark, then let go.",
   },
