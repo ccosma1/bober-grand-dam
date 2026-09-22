@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#102A33" />
+  <meta name="description" content="Bober Grand Dam. Race the bank. Drift the dam. First to the crest wins. Fan game by a holder." />
+  <title>Bober Grand Dam</title>
+  <link rel="icon" href="assets/icons/bober-grand-dam.ico" />
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="assets/icons/icon-192.png" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="css/game.css?v=gd1" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Bober Grand Dam" />
+  <meta property="og:description" content="Race the bank. Drift the dam. First to the crest wins. Fan game by a holder." />
+  <meta property="og:image" content="assets/splash.jpg?v=gd1" />
+</head>
+<body>
+  <div id="app">
+    <div id="stage">
+      <div id="hud" class="hidden">
+        <div class="hud-row">
+          <span id="hud-place">1/4</span>
+          <span id="hud-lap">LAP 1/3</span>
+          <span id="hud-time">0:00.0</span>
+          <button id="btn-quit" type="button">QUIT</button>
+        </div>
+        <div id="hud-order">YOU</div>
+      </div>
+      <div id="hint" class="hidden">Hold a turn. Let go when it sparks.</div>
+      <div id="countdown" class="hidden"></div>
+    </div>
+    <div id="controls" class="hidden">
+      <div id="spark" aria-hidden="true"><div id="spark-fill"></div><span id="spark-label">SPARK</span></div>
+      <div class="pad">
+        <button id="btn-left" type="button">LEFT</button>
+        <button id="btn-right" type="button">RIGHT</button>
+        <button id="btn-drift" type="button">DRIFT</button>
+        <button id="btn-gas" type="button">GAS</button>
+      </div>
+    </div>
+
+    <section id="splash">
+      <img class="hero" src="assets/splash.jpg?v=gd1" alt="" />
+      <div class="top">
+        <h1>BOBER<br>GRAND DAM</h1>
+      </div>
+      <div class="band">
+        <p class="mission">Race the bank. Drift the dam. First to the crest wins.</p>
+        <p class="scope">Local race. Three laps. You and three racers.</p>
+        <p class="fan">Fan game by a holder. Unofficial — not the project team.</p>
+        <button class="play" id="btn-start" type="button">START</button>
+        <div class="row">
+          <button class="ghost" id="btn-history" type="button">HISTORY</button>
+          <button class="ghost" id="btn-museum" type="button">MUSEUM</button>
+        </div>
+        <p class="best" id="splash-best"></p>
+      </div>
+    </section>
+
+    <section id="history" class="hidden" role="dialog" aria-label="History">
+      <h2>HISTORY</h2>
+      <button class="hist-card" type="button" data-still="dam-loop">
+        <img src="assets/history/dam-loop.jpg?v=gd1" alt="" />
+        <span><strong>Dam Loop</strong>The crest road, the bank, the spillway.</span>
+      </button>
+      <button class="hist-card" type="button" data-still="crest-drift">
+        <img src="assets/history/crest-drift.jpg?v=gd1" alt="" />
+        <span><strong>Crest drift</strong>Hold the turn. Let the bands spark.</span>
+      </button>
+      <button class="back" id="btn-history-back" type="button">BACK</button>
+    </section>
+
+    <section id="still" class="hidden" role="dialog" aria-label="Still">
+      <h2 id="still-title">Still</h2>
+      <img id="still-img" alt="" />
+      <p id="still-cap"></p>
+      <button class="back" id="btn-still-back" type="button">BACK</button>
+    </section>
+
+    <section id="museum" class="hidden" role="dialog" aria-label="Museum">
+      <h2>MUSEUM</h2>
+      <article class="exh">
+        <img src="assets/museum/dam-loop.jpg?v=gd1" alt="" />
+        <div>
+          <strong>Dam Loop</strong>
+          <p>The only circuit. Three laps. The line is the crest.</p>
+        </div>
+      </article>
+      <article class="exh">
+        <img src="assets/museum/sling-kart.jpg?v=gd1" alt="" />
+        <div>
+          <strong>Sling Kart</strong>
+          <p>Cedar bowl. Twin sling bands on the rear posts. Hold a turn until the bands spark, then let go.</p>
+        </div>
+      </article>
+      <button class="back" id="btn-museum-back" type="button">BACK</button>
+    </section>
+
+    <section id="podium" class="hidden" role="dialog" aria-label="Podium">
+      <h2 id="podium-title">CREST</h2>
+      <p id="podium-place">1ST</p>
+      <ol id="podium-list"></ol>
+      <p class="best" id="podium-best"></p>
+      <button class="play" id="btn-rematch" type="button">REMATCH</button>
+      <button class="ghost" id="btn-splash" type="button">SPLASH</button>
+    </section>
+  </div>
+  <script type="module" src="js/main.js?v=gd1"></script>
+</body>
+</html>
