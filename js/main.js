@@ -16,9 +16,9 @@ import {
   setDriver as chooseDriver,
   swapTrack,
   writeSave,
-} from "./sim.js?v=gd9";
-import { createWorld } from "./world.js?v=gd9";
-import { createSfx } from "./audio.js?v=gd9";
+} from "./sim.js?v=gd11";
+import { createWorld } from "./world.js?v=gd11";
+import { createSfx } from "./audio.js?v=gd11";
 
 const app = document.getElementById("app");
 const stage = document.getElementById("stage");
@@ -112,7 +112,8 @@ function bindHold(id, key) {
   el.addEventListener("pointerup", up);
   el.addEventListener("pointercancel", up);
 }
-bindHold("btn-drift", "drift");
+const driftBtn = document.getElementById("btn-drift");
+if (driftBtn) bindHold("btn-drift", "drift");
 const stick = document.getElementById("stick");
 const knob = document.getElementById("stick-knob");
 function stickAt(e) {
@@ -386,17 +387,17 @@ document.getElementById("btn-quit").addEventListener("click", () => {
 });
 const EXHIBITS = {
   "dam-loop": {
-    src: "assets/history/dam-loop.jpg?v=gd9",
+    src: "assets/history/dam-loop.jpg?v=gd11",
     title: "Dam Loop",
     cap: "The crest road, the bank, the spillway. Three laps. The line is the crest.",
   },
   "frost-ridge": {
-    src: "assets/history/frost-ridge.jpg?v=gd9",
+    src: "assets/history/frost-ridge.jpg?v=gd11",
     title: "Frost Ridge",
     cap: "Ice, drifts, and two narrow bridges. Same three laps. Same four racers.",
   },
   "sling-kart": {
-    src: "assets/history/crest-drift.jpg?v=gd9",
+    src: "assets/history/crest-drift.jpg?v=gd11",
     title: "Sling Kart",
     cap: "Cedar bowl. Twin sling bands on the rear posts. Hold a turn until the bands spark, then let go.",
   },
@@ -431,24 +432,24 @@ const EXHIBITS = {
     cap: "Rare. Only while you are 1st or 2nd. A blue surge and a short push.",
   },
   bober: {
-    src: "assets/museum/bober.jpg?v=gd9",
+    src: "assets/museum/bober.jpg?v=gd11",
     title: "Bober",
-    cap: "Wide cedar bowl, brass nose, amber scarf. The crest regular.",
+    cap: "Chunky lodge beaver in the classic cedar cart. Amber scarf.",
+  },
+  muscle: {
+    src: "assets/museum/muscle.jpg?v=gd11",
+    title: "Muscle",
+    cap: "Bulky beaver in a heavy armored hauler. Big rear wheels.",
+  },
+  tall: {
+    src: "assets/museum/tall.jpg?v=gd11",
+    title: "Tall Handsome",
+    cap: "Tall lean beaver in a long sleek speed cart.",
   },
   nib: {
-    src: "assets/museum/nib.jpg?v=gd9",
+    src: "assets/museum/nib.jpg?v=gd11",
     title: "Nib",
-    cap: "Tall sled, leaf cape, and a twig mast. Long ears, green scarf.",
-  },
-  puddle: {
-    src: "assets/museum/puddle.jpg?v=gd9",
-    title: "Puddle",
-    cap: "Low tub and a teal ring. An oar on the right. Wide and squat.",
-  },
-  twig: {
-    src: "assets/museum/twig.jpg?v=gd9",
-    title: "Twig",
-    cap: "Three lashed logs, branch antlers, rust scarf. Long and low.",
+    cap: "Small scrappy beaver on a light scrap cart.",
   },
 };
 
@@ -571,7 +572,7 @@ function hudTick() {
   else if (you.spark >= 0.42) label.textContent = "HOT";
   else label.textContent = "SPARK";
   const driftBtn = document.getElementById("btn-drift");
-  driftBtn.textContent = you.spark >= 0.42 ? "LET GO" : "DRIFT";
+  if (driftBtn) driftBtn.textContent = you.spark >= 0.42 ? "LET GO" : "DRIFT";
   const fireBtn = document.getElementById("btn-fire");
   const labels = { sap: "SAP", trap: "TRAP", wall: "WALL", rocket: "ROCKET", star: "THAW", orb: "ORB" };
   fireBtn.textContent = you.held ? labels[you.held] || "FIRE" : you.fireCd > 0 ? "WAIT" : "FIRE";
@@ -668,6 +669,8 @@ window.__grand = {
       viewH: window.innerHeight,
       names: race.karts.map((k) => k.name),
       colors: race.karts.map((k) => k.color),
+      model: world.modelOf(you.id).kind,
+      sig: world.modelOf(you.id).sig,
     };
   },
   setDriver(id) {

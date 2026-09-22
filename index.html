@@ -10,7 +10,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png" />
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="css/game.css?v=gd10" />
+  <link rel="stylesheet" href="css/game.css?v=gd11" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Bober Grand Dam" />
   <meta property="og:description" content="Race the bank. Drift the dam. First to the crest wins. Fan game by a holder." />
@@ -38,7 +38,6 @@
         <div id="stick" aria-label="Steer and throttle">
           <div id="stick-knob"></div>
         </div>
-        <button id="btn-drift" type="button">DRIFT</button>
         <button id="btn-fire" type="button">FIRE</button>
       </div>
     </div>
@@ -57,10 +56,10 @@
           <button class="ghost" type="button" data-track="frost">FROST RIDGE</button>
         </div>
         <div class="roster" id="roster-pick">
-          <button class="who on" type="button" data-driver="bober"><img src="assets/museum/bober.jpg?v=gd9" alt="" /><span>BOBER</span></button>
-          <button class="who" type="button" data-driver="nib"><img src="assets/museum/nib.jpg?v=gd9" alt="" /><span>NIB</span></button>
-          <button class="who" type="button" data-driver="puddle"><img src="assets/museum/puddle.jpg?v=gd9" alt="" /><span>PUDDLE</span></button>
-          <button class="who" type="button" data-driver="twig"><img src="assets/museum/twig.jpg?v=gd9" alt="" /><span>TWIG</span></button>
+          <button class="who on" type="button" data-driver="bober"><img src="assets/museum/bober.jpg?v=gd11" alt="" /><span>BOBER</span></button>
+          <button class="who" type="button" data-driver="muscle"><img src="assets/museum/muscle.jpg?v=gd11" alt="" /><span>MUSCLE</span></button>
+          <button class="who" type="button" data-driver="tall"><img src="assets/museum/tall.jpg?v=gd11" alt="" /><span>TALL</span></button>
+          <button class="who" type="button" data-driver="nib"><img src="assets/museum/nib.jpg?v=gd11" alt="" /><span>NIB</span></button>
         </div>
         <button class="play" id="btn-start" type="button">LOADING</button>
         <div class="row">
@@ -74,7 +73,7 @@
 
     <section id="how" class="hidden" role="dialog" aria-label="How to play">
       <h2>HOW TO PLAY</h2>
-      <p>Push the stick to steer and to go. FIRE sits on the right. Drift is the small middle control.</p>
+      <p>On a phone, push the stick to steer and to go. FIRE is on the right. A laptop uses the keys.</p>
       <p>Hold a turn. Let go when the bands spark.</p>
       <p>Boxes sit on the road. Drive through one to hold a throw.</p>
       <p>FIRE uses it. There is a short wait before the next throw.</p>
@@ -86,32 +85,32 @@
     <section id="museum" class="hidden" role="dialog" aria-label="Museum">
       <h2>MUSEUM</h2>
       <button class="exh" type="button" data-exhibit="dam-loop">
-        <img src="assets/history/dam-loop.jpg?v=gd9" alt="" />
+        <img src="assets/history/dam-loop.jpg?v=gd11" alt="" />
         <span><strong>Dam Loop</strong>The crest road, the bank, the spillway. Three laps.</span>
       </button>
       <button class="exh" type="button" data-exhibit="frost-ridge">
-        <img src="assets/history/frost-ridge.jpg?v=gd9" alt="" />
+        <img src="assets/history/frost-ridge.jpg?v=gd11" alt="" />
         <span><strong>Frost Ridge</strong>Ice, drifts, and two narrow bridges.</span>
       </button>
       <button class="exh" type="button" data-exhibit="sling-kart">
-        <img src="assets/history/crest-drift.jpg?v=gd9" alt="" />
+        <img src="assets/history/crest-drift.jpg?v=gd11" alt="" />
         <span><strong>Sling Kart</strong>Cedar bowl. Twin sling bands. Hold a turn, then let go.</span>
       </button>
       <button class="exh" type="button" data-exhibit="bober">
-        <img src="assets/museum/bober.jpg?v=gd9" alt="" />
-        <span><strong>Bober</strong>Wide bowl, brass nose, amber scarf.</span>
+        <img src="assets/museum/bober.jpg?v=gd11" alt="" />
+        <span><strong>Bober</strong>Chunky lodge beaver. Classic cedar cart.</span>
       </button>
       <button class="exh" type="button" data-exhibit="nib">
-        <img src="assets/museum/nib.jpg?v=gd9" alt="" />
-        <span><strong>Nib</strong>Tall sled, leaf cape, twig mast.</span>
+        <img src="assets/museum/nib.jpg?v=gd11" alt="" />
+        <span><strong>Nib</strong>Small scrappy beaver. Light scrap cart.</span>
       </button>
-      <button class="exh" type="button" data-exhibit="puddle">
-        <img src="assets/museum/puddle.jpg?v=gd9" alt="" />
-        <span><strong>Puddle</strong>Low tub, teal ring, and an oar.</span>
+      <button class="exh" type="button" data-exhibit="muscle">
+        <img src="assets/museum/muscle.jpg?v=gd11" alt="" />
+        <span><strong>Muscle</strong>Bulky beaver. Heavy armored hauler.</span>
       </button>
-      <button class="exh" type="button" data-exhibit="twig">
-        <img src="assets/museum/twig.jpg?v=gd9" alt="" />
-        <span><strong>Twig</strong>Lashed logs, branch antlers, rust scarf.</span>
+      <button class="exh" type="button" data-exhibit="tall">
+        <img src="assets/museum/tall.jpg?v=gd11" alt="" />
+        <span><strong>Tall Handsome</strong>Lean beaver. Long sleek speed cart.</span>
       </button>
       <button class="exh" type="button" data-exhibit="sap">
         <img src="assets/museum/sap.jpg?v=gd3" alt="" />
@@ -159,6 +158,6 @@
       <button class="ghost" id="btn-splash" type="button">SPLASH</button>
     </section>
   </div>
-  <script type="module" src="js/main.js?v=gd9"></script>
+  <script type="module" src="js/main.js?v=gd11"></script>
 </body>
 </html>

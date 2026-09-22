@@ -7,7 +7,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "assets" / "ref"
 OUT.mkdir(parents=True, exist_ok=True)
-URL = "http://127.0.0.1:8771/?v=gd10"
+URL = "http://127.0.0.1:8771/?v=gd11"
 
 
 def shot(page, name):
@@ -157,20 +157,18 @@ def clean_starts(page, n=3):
 def assert_race_chrome(page, w, h):
     stage = box(page, "#stage")
     assert stage["height"] >= h * 0.58, (stage, h)
-    for sel in ("#stick", "#btn-drift", "#btn-fire"):
+    for sel in ("#stick", "#btn-fire"):
         assert_inside(box(page, sel), w, h, sel, 52)
     assert_inside(box(page, "#spark"), w, h, "#spark", 16)
     stick = box(page, "#stick")
     fire = box(page, "#btn-fire")
-    drift = box(page, "#btn-drift")
     assert stick["width"] >= 90 and stick["height"] >= 64, stick
     assert fire["height"] >= 64 and fire["width"] >= 64, fire
-    assert drift["height"] >= 52, drift
     mini = box(page, "#minimap")
     assert_inside(mini, w, h, "minimap", 40)
     if mini["x"] < w * 0.45:
         raise AssertionError("minimap not right " + str(mini))
-    sels = ["#stick", "#btn-drift", "#btn-fire"]
+    sels = ["#stick", "#btn-fire"]
     boxes = [box(page, sel) for sel in sels]
     for i in range(len(boxes)):
         for j in range(i + 1, len(boxes)):
@@ -228,10 +226,25 @@ def main():
         print("DRIVER", picked["driver"], picked["names"], picked["colors"])
         if picked["driver"] != "nib":
             fails.append("driver " + str(picked["driver"]))
-        if sorted(picked["names"]) != ["BOBER", "NIB", "PUDDLE", "TWIG"]:
+        if sorted(picked["names"]) != ["BOBER", "MUSCLE", "NIB", "TALL"]:
             fails.append("names " + str(picked["names"]))
         if len(set(picked["colors"])) != 4:
             fails.append("colors " + str(picked["colors"]))
+        sigs = {}
+        for driver in ("bober", "muscle", "tall", "nib"):
+            page.click("[data-driver=%s]" % driver)
+            page.click("#btn-start")
+            page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=8000)
+            body = page.evaluate("() => window.__grand.snapshot()")
+            print("MODEL", driver, body["model"], body["sig"], body["driver"])
+            if body["driver"] != driver or body["model"] != driver:
+                fails.append("model " + driver + " " + str(body["model"]))
+            sigs[driver] = body["sig"]
+            page.click("#btn-quit")
+            page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")
+        if len(set(sigs.values())) != 4:
+            fails.append("same mesh " + str(sigs))
+        page.click("[data-driver=nib]")
 
         try:
             museum_round(page, 390, 844)
@@ -365,7 +378,12 @@ def main():
             fails.append("desk museum/start " + str(exc))
         page.click("#btn-start")
         page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=8000)
-        assert_race_chrome(page, 1280, 800)
+        if page.locator("#stick").is_visible() or page.locator("#btn-fire").is_visible():
+            fails.append("desktop phone chrome")
+        stage = box(page, "#stage")
+        if stage["height"] < 800 * 0.58:
+            fails.append("desk stage " + str(stage))
+        print("DESK stick", page.locator("#stick").is_visible(), "stage", round(stage["height"] / 800, 3))
         kr = key_steer_delta(page, "ArrowRight")
         kl = key_steer_delta(page, "ArrowLeft")
         print("keys R", round(kr, 3), "L", round(kl, 3))

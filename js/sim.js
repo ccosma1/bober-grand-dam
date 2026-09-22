@@ -1,7 +1,7 @@
 /* Race sim. No rendering.
    yaw 0 faces +z. yaw > 0 turns toward +x (screen-left in the chase view).
    forward = (sin(yaw), 0, cos(yaw)). */
-import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd9";
+import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd11";
 export { launchHeld };
 
 export const LAPS = 3;
@@ -10,10 +10,10 @@ export const DNF_TIME = 420;
 const SECTORS = 8;
 
 export const ROSTER = [
-  { id: "bober", name: "BOBER", scarf: 0xe6a322, color: "#e6a322", lane: -0.42, style: "clean" },
-  { id: "nib", name: "NIB", scarf: 0x2f6a34, color: "#3e7a45", lane: 0.42, style: "wide" },
-  { id: "puddle", name: "PUDDLE", scarf: 0x1499a0, color: "#1499a0", lane: -0.28, style: "spark" },
-  { id: "twig", name: "TWIG", scarf: 0xd06a32, color: "#d06a32", lane: 0.28, style: "clean" },
+  { id: "bober", name: "BOBER", scarf: 0xe6a322, color: "#e6a322", lane: -0.36, style: "clean", handle: 1 },
+  { id: "muscle", name: "MUSCLE", scarf: 0xb6402a, color: "#b6402a", lane: 0.4, style: "clean", handle: 0.78 },
+  { id: "tall", name: "TALL", scarf: 0x7eb6d6, color: "#7eb6d6", lane: -0.22, style: "wide", handle: 1.08 },
+  { id: "nib", name: "NIB", scarf: 0x3e7a45, color: "#3e7a45", lane: 0.22, style: "spark", handle: 1.34 },
 ];
 
 const DAM_RAW = [
@@ -281,6 +281,7 @@ function blankKart(def, track, slot) {
     name: def.name,
     scarf: def.scarf,
     color: def.color,
+    handle: def.handle || 1,
     cpu: def.cpu,
     lane: def.lane,
     style: def.style,
@@ -424,7 +425,10 @@ function integrate(kart, input, dt) {
   const was = kart.drifting;
   kart.drifting = wantDrift;
 
-  const steerRate = (kart.drifting ? 3.15 : 2.45) * (0.62 + 0.38 * (1 - Math.min(1, speed / MAX_SPEED)));
+  const steerRate =
+    (kart.drifting ? 3.15 : 2.45) *
+    (0.62 + 0.38 * (1 - Math.min(1, speed / MAX_SPEED))) *
+    (kart.handle || 1);
   kart.yaw = wrapAngle(kart.yaw + steer * steerMul * steerRate * dt);
 
   const f = forward(kart.yaw);

@@ -174,7 +174,7 @@ html, body {
 }
 .drive {
   display: grid;
-  grid-template-columns: minmax(128px, 1.35fr) minmax(64px, 0.7fr) minmax(84px, 1fr);
+  grid-template-columns: minmax(140px, 1.4fr) minmax(96px, 1fr);
   gap: 10px;
   align-items: stretch;
 }
@@ -203,7 +203,6 @@ html, body {
   transform: translate(-50%, -50%);
   pointer-events: none;
 }
-#btn-drift { min-height: 72px; font-size: 15px; }
 #btn-fire {
   min-height: 132px;
   min-width: 84px;
@@ -503,11 +502,10 @@ button.back { min-height: 48px; background: var(--concrete); color: var(--ink); 
   #hud-place { font-size: 16px; }
   #hud-lap, #hud-time { font-size: 13px; }
   #spark { height: 18px; }
-  .drive { grid-template-columns: minmax(96px, 1.4fr) minmax(56px, 0.6fr) minmax(72px, 0.9fr); }
+  .drive { grid-template-columns: minmax(96px, 1.5fr) minmax(84px, 1fr); }
   #stick { min-height: 96px; min-width: 96px; }
   #stick-knob { width: 48px; height: 48px; }
   #btn-fire { min-height: 96px; font-size: 16px; }
-  #btn-drift, .drive button { min-height: 64px; font-size: 14px; }
   #minimap { width: 84px; height: 84px; top: 46px; }
   #hint { font-size: 12px; padding: 3px 6px; }
   #splash h1 { font-size: 22px; }
@@ -521,4 +519,21 @@ button.back { min-height: 48px; background: var(--concrete); color: var(--ink); 
   .fan { margin-bottom: 6px; }
   button.play { min-height: 44px; font-size: 18px; }
   button.ghost { min-height: 36px; }
+}
+
+@media (min-width: 960px) {
+  #controls {
+    position: absolute;
+    left: 10px;
+    top: 58px;
+    right: auto;
+    width: 168px;
+    max-height: none;
+    padding: 0;
+    background: transparent;
+    pointer-events: none;
+    z-index: 6;
+  }
+  .drive { display: none !important; }
+  #spark { height: 22px; }
 }

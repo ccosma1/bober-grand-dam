@@ -1,4 +1,5 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd9";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd11";
+import { buildKart } from "./racers.js?v=gd11";
 
 function canvasTex(THREE, draw, w, h, repeat) {
   const c = document.createElement("canvas");
@@ -321,340 +322,6 @@ function buildRoad(THREE, track, map) {
   );
   line.receiveShadow = true;
   return { mesh, skirt, rivets, curb, line };
-}
-
-function rigKart(THREE, g, wheels, scale) {
-  const rear = new THREE.Object3D();
-  rear.name = "rearPost";
-  rear.position.set(0, 1.0, -0.7);
-  g.add(rear);
-  const blob = new THREE.Mesh(
-    new THREE.CircleGeometry(1.15, 14),
-    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false })
-  );
-  blob.rotation.x = -Math.PI / 2;
-  blob.position.y = 0.04;
-  g.traverse((o) => {
-    if (o.isMesh) {
-      o.castShadow = true;
-      o.receiveShadow = true;
-    }
-  });
-  blob.castShadow = false;
-  g.scale.setScalar(scale);
-  return { group: g, wheels, blob, rear };
-}
-
-function addWheels(THREE, g, spots, radius, rubber, hub, brass) {
-  const wheels = [];
-  const wgeo = new THREE.CylinderGeometry(radius, radius, radius * 0.78, 12);
-  for (const [x, z] of spots) {
-    const pivot = new THREE.Group();
-    pivot.position.set(x, radius + 0.06, z);
-    const m = new THREE.Mesh(wgeo, rubber);
-    m.rotation.z = Math.PI / 2;
-    pivot.add(m);
-    const cap = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.42, radius * 0.42, radius * 0.95, 8), hub);
-    cap.rotation.z = Math.PI / 2;
-    pivot.add(cap);
-    const tread = new THREE.Mesh(new THREE.TorusGeometry(radius * 1.02, radius * 0.12, 6, 12), brass);
-    tread.rotation.y = Math.PI / 2;
-    pivot.add(tread);
-    g.add(pivot);
-    wheels.push(pivot);
-  }
-  return wheels;
-}
-
-function buildNib(THREE, woodMap) {
-  const g = new THREE.Group();
-  const cedar = new THREE.MeshPhysicalMaterial({ map: woodMap, color: 0x6a4a28, roughness: 0.62, clearcoat: 0.2 });
-  const leaf = new THREE.MeshStandardMaterial({ color: 0x2f6a34, roughness: 0.72 });
-  const scarf = new THREE.MeshStandardMaterial({ color: 0x3e7a45, roughness: 0.48 });
-  const fur = new THREE.MeshStandardMaterial({ color: 0x6d4a32, roughness: 0.78 });
-  const rubber = new THREE.MeshStandardMaterial({ color: 0x1c1c1c, roughness: 0.9 });
-  const hub = new THREE.MeshStandardMaterial({ color: 0x8d9a86, metalness: 0.4, roughness: 0.4 });
-  const brass = new THREE.MeshStandardMaterial({ color: 0xc4b15a, metalness: 0.7, roughness: 0.32 });
-  const hull = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 0.95, 10), cedar);
-  hull.position.y = 0.62;
-  g.add(hull);
-  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 1.35, 7), cedar);
-  mast.position.set(0, 1.45, -0.05);
-  g.add(mast);
-  const sprig = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.55, 7), leaf);
-  sprig.position.set(0, 2.15, -0.05);
-  g.add(sprig);
-  const cape = new THREE.Mesh(new THREE.ConeGeometry(0.46, 0.7, 5), leaf);
-  cape.position.set(0, 0.95, -0.28);
-  cape.rotation.x = 0.5;
-  g.add(cape);
-  const wheels = addWheels(THREE, g, [[-0.46, 0.28], [0.46, 0.28], [-0.48, -0.42], [0.48, -0.42]], 0.22, rubber, hub, brass);
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.62, 0.32), fur);
-  head.position.set(0, 1.22, 0.22);
-  g.add(head);
-  for (const x of [-0.16, 0.16]) {
-    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.38, 6), fur);
-    ear.position.set(x, 1.68, 0.16);
-    g.add(ear);
-  }
-  const wrap = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.06, 6, 12), scarf);
-  wrap.position.set(0, 0.95, 0.18);
-  wrap.rotation.x = Math.PI / 2;
-  g.add(wrap);
-  const eye = new THREE.MeshStandardMaterial({ color: 0x140e0a });
-  for (const x of [-0.08, 0.08]) {
-    const e = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 8), eye);
-    e.position.set(x, 1.28, 0.38);
-    g.add(e);
-  }
-  return rigKart(THREE, g, wheels, 1.18);
-}
-
-function buildPuddle(THREE, woodMap) {
-  const g = new THREE.Group();
-  const wood = new THREE.MeshPhysicalMaterial({ map: woodMap, roughness: 0.34, metalness: 0.05, clearcoat: 0.72, clearcoatRoughness: 0.16 });
-  const teal = new THREE.MeshPhysicalMaterial({ color: 0x1499a0, roughness: 0.22, metalness: 0.18, clearcoat: 0.9, clearcoatRoughness: 0.08 });
-  const fur = new THREE.MeshStandardMaterial({ color: 0xa56b42, roughness: 0.7 });
-  const scarf = new THREE.MeshStandardMaterial({ color: 0x0f8f86, roughness: 0.45 });
-  const rubber = new THREE.MeshStandardMaterial({ color: 0x20262a, roughness: 0.88 });
-  const hub = new THREE.MeshStandardMaterial({ color: 0xd7e8ea, metalness: 0.55, roughness: 0.28 });
-  const brass = new THREE.MeshStandardMaterial({ color: 0xd7a441, metalness: 0.8, roughness: 0.25 });
-  const tub = new THREE.Mesh(new THREE.SphereGeometry(0.72, 18, 12, 0, Math.PI * 2, Math.PI * 0.42, Math.PI * 0.55), wood);
-  tub.scale.set(1.35, 0.62, 1.05);
-  tub.position.y = 0.48;
-  g.add(tub);
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.78, 0.12, 8, 18), teal);
-  ring.rotation.x = Math.PI / 2;
-  ring.position.y = 0.62;
-  g.add(ring);
-  const oar = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, 1.35, 6), wood);
-  oar.position.set(0.95, 0.78, 0.1);
-  oar.rotation.z = 1.15;
-  g.add(oar);
-  const blade = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), wood);
-  blade.scale.set(0.5, 1, 1.4);
-  blade.position.set(1.35, 1.15, 0.1);
-  g.add(blade);
-  const wheels = addWheels(THREE, g, [[-0.78, 0.36], [0.78, 0.36], [-0.8, -0.4], [0.8, -0.4]], 0.24, rubber, hub, brass);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 14, 12), fur);
-  head.scale.set(1.15, 0.9, 1);
-  head.position.set(0, 1.02, 0.18);
-  g.add(head);
-  for (const x of [-0.28, 0.28]) {
-    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), fur);
-    ear.position.set(x, 1.28, 0.08);
-    g.add(ear);
-  }
-  const bow = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.05, 6, 10), scarf);
-  bow.position.set(0, 0.82, 0.28);
-  bow.rotation.x = 1.2;
-  g.add(bow);
-  return rigKart(THREE, g, wheels, 1.12);
-}
-
-function buildTwig(THREE, woodMap) {
-  const g = new THREE.Group();
-  const bark = new THREE.MeshPhysicalMaterial({ map: woodMap, color: 0x5c3a22, roughness: 0.78, clearcoat: 0.12 });
-  const fur = new THREE.MeshStandardMaterial({ color: 0x8a5a32, roughness: 0.8 });
-  const scarf = new THREE.MeshStandardMaterial({ color: 0xd06a32, roughness: 0.5 });
-  const rubber = new THREE.MeshStandardMaterial({ color: 0x24180f, roughness: 0.92 });
-  const hub = new THREE.MeshStandardMaterial({ color: 0xb08968, metalness: 0.35, roughness: 0.45 });
-  const brass = new THREE.MeshStandardMaterial({ color: 0x8c6239, metalness: 0.55, roughness: 0.4 });
-  for (const x of [-0.22, 0, 0.22]) {
-    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 2.15, 8), bark);
-    log.rotation.x = Math.PI / 2;
-    log.position.set(x, 0.36, 0.05);
-    g.add(log);
-  }
-  for (const z of [-0.55, 0.15, 0.7]) {
-    const lash = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.035, 6, 10), brass);
-    lash.rotation.y = Math.PI / 2;
-    lash.position.set(0, 0.4, z);
-    g.add(lash);
-  }
-  const wheels = addWheels(THREE, g, [[-0.42, 0.78], [0.42, 0.78], [-0.44, -0.72], [0.44, -0.72]], 0.26, rubber, hub, brass);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 12, 10), fur);
-  head.position.set(0, 0.78, 0.72);
-  g.add(head);
-  for (const side of [-1, 1]) {
-    const antler = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.045, 0.55, 5), bark);
-    antler.position.set(side * 0.16, 1.05, 0.62);
-    antler.rotation.z = side * -0.7;
-    antler.rotation.x = -0.3;
-    g.add(antler);
-  }
-  const scarfMesh = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.1, 0.28), scarf);
-  scarfMesh.position.set(0, 0.7, 0.62);
-  g.add(scarfMesh);
-  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.36, 5), scarf);
-  tail.position.set(0.2, 0.62, 0.4);
-  tail.rotation.z = 0.8;
-  g.add(tail);
-  return rigKart(THREE, g, wheels, 1.16);
-}
-
-function buildKart(THREE, def, woodMap) {
-  if (def && def.id === "nib") return buildNib(THREE, woodMap);
-  if (def && def.id === "puddle") return buildPuddle(THREE, woodMap);
-  if (def && def.id === "twig") return buildTwig(THREE, woodMap);
-  const scarfHex = def.scarf || 0xe6a322;
-  const g = new THREE.Group();
-  const wood = new THREE.MeshPhysicalMaterial({ map: woodMap, roughness: 0.42, metalness: 0.08, clearcoat: 0.55, clearcoatRoughness: 0.28 });
-  const woodDark = new THREE.MeshPhysicalMaterial({ map: woodMap, color: 0x7a4a2c, roughness: 0.48, metalness: 0.12, clearcoat: 0.35, clearcoatRoughness: 0.3 });
-  const brass = new THREE.MeshStandardMaterial({ color: 0xd7a441, metalness: 0.82, roughness: 0.28 });
-  const fur = new THREE.MeshStandardMaterial({ color: 0x8d5a32, roughness: 0.8 });
-  const cream = new THREE.MeshStandardMaterial({ color: 0xf3e2c4, roughness: 0.4 });
-  const scarf = new THREE.MeshStandardMaterial({ color: scarfHex, roughness: 0.52 });
-  const rubber = new THREE.MeshStandardMaterial({ color: 0x242424, roughness: 0.92 });
-  const hub = new THREE.MeshStandardMaterial({ color: 0x9aa0a6, metalness: 0.55, roughness: 0.35 });
-  const bandMat = new THREE.MeshStandardMaterial({ color: 0x2a1c14, roughness: 0.55 });
-
-  const bowl = new THREE.Mesh(
-    new THREE.SphereGeometry(0.78, 20, 12, 0, Math.PI * 2, Math.PI * 0.48, Math.PI * 0.52),
-    wood
-  );
-  bowl.scale.set(1.02, 0.9, 1.28);
-  bowl.position.y = 0.62;
-  g.add(bowl);
-
-  const lip = new THREE.Mesh(new THREE.TorusGeometry(0.74, 0.055, 6, 16), woodDark);
-  lip.rotation.x = Math.PI / 2;
-  lip.scale.set(1.02, 1.28, 1);
-  lip.position.y = 0.86;
-  g.add(lip);
-  const rivet = new THREE.SphereGeometry(0.045, 6, 5);
-  for (let i = 0; i < 12; i++) {
-    const a = (i / 12) * Math.PI * 2;
-    const stud = new THREE.Mesh(rivet, brass);
-    stud.position.set(Math.cos(a) * 0.78, 0.9, Math.sin(a) * 1.05);
-    g.add(stud);
-  }
-  for (const x of [-0.92, 0.92]) {
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 1.7), brass);
-    rail.position.set(x, 0.48, -0.05);
-    g.add(rail);
-  }
-
-  const wheels = [];
-  const wgeo = new THREE.CylinderGeometry(0.28, 0.28, 0.22, 12);
-  const spots = [
-    [-0.62, 0.42],
-    [0.62, 0.42],
-    [-0.66, -0.5],
-    [0.66, -0.5],
-  ];
-  for (const [x, z] of spots) {
-    const pivot = new THREE.Group();
-    pivot.position.set(x, 0.34, z);
-    const m = new THREE.Mesh(wgeo, rubber);
-    m.rotation.z = Math.PI / 2;
-    pivot.add(m);
-    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.28, 8), hub);
-    cap.rotation.z = Math.PI / 2;
-    pivot.add(cap);
-    const tread = new THREE.Mesh(new THREE.TorusGeometry(0.29, 0.035, 6, 12), brass);
-    tread.rotation.y = Math.PI / 2;
-    pivot.add(tread);
-    g.add(pivot);
-    wheels.push(pivot);
-  }
-
-  const body = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 10), fur);
-  body.scale.set(0.9, 0.85, 1.05);
-  body.position.set(0, 0.98, 0.05);
-  g.add(body);
-
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.42, 0.46), woodDark);
-  head.position.set(0, 1.38, 0.16);
-  g.add(head);
-  const earG = new THREE.BoxGeometry(0.12, 0.12, 0.08);
-  const earL = new THREE.Mesh(earG, woodDark);
-  earL.position.set(-0.22, 1.62, 0.1);
-  const earR = earL.clone();
-  earR.position.x = 0.22;
-  g.add(earL, earR);
-
-  const eyeM = new THREE.MeshStandardMaterial({ color: 0x140e0a, roughness: 0.3 });
-  const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), eyeM);
-  eyeL.position.set(-0.12, 1.4, 0.4);
-  const eyeR = eyeL.clone();
-  eyeR.position.x = 0.12;
-  g.add(eyeL, eyeR);
-  const tooth = new THREE.BoxGeometry(0.07, 0.12, 0.05);
-  const t1 = new THREE.Mesh(tooth, cream);
-  t1.position.set(-0.045, 1.22, 0.4);
-  const t2 = t1.clone();
-  t2.position.x = 0.045;
-  g.add(t1, t2);
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 8), eyeM);
-  nose.position.set(0, 1.32, 0.4);
-  g.add(nose);
-
-  const collar = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.12, 0.42), scarf);
-  collar.position.set(0, 1.12, 0.14);
-  g.add(collar);
-  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.36, 0.06), scarf);
-  tail.position.set(0.22, 0.92, 0.22);
-  tail.rotation.z = 0.4;
-  g.add(tail);
-
-  const postG = new THREE.CylinderGeometry(0.05, 0.06, 0.55, 7);
-  const postL = new THREE.Mesh(postG, woodDark);
-  postL.position.set(-0.42, 1.05, -0.62);
-  const postR = postL.clone();
-  postR.position.x = 0.42;
-  g.add(postL, postR);
-  const rear = new THREE.Object3D();
-  rear.name = "rearPost";
-  rear.position.set(0, 1.0, -0.7);
-  g.add(rear);
-  for (const hy of [0.98, 1.18]) {
-    const band = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.045, 0.045), bandMat);
-    band.position.set(0, hy, -0.62);
-    g.add(band);
-  }
-  const paddle = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), fur);
-  paddle.scale.set(1.6, 0.32, 0.9);
-  paddle.position.set(0, 0.78, -0.28);
-  g.add(paddle);
-
-  const deck = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.16, 2.15), wood);
-  deck.position.set(0, 0.4, 0.04);
-  g.add(deck);
-  const keel = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.18, 1.7), woodDark);
-  keel.position.set(0, 0.28, 0.05);
-  g.add(keel);
-  const noseCowl = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.3, 0.5), woodDark);
-  noseCowl.position.set(0, 0.74, 0.98);
-  g.add(noseCowl);
-  const nosePlate = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.16, 0.08), brass);
-  nosePlate.position.set(0, 0.8, 1.22);
-  g.add(nosePlate);
-  const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.13, 0.46, 8), brass);
-  stack.position.set(-0.32, 1.18, -0.38);
-  g.add(stack);
-  for (const [x, z] of spots) {
-    const fender = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.52), woodDark);
-    fender.position.set(x, 0.64, z);
-    g.add(fender);
-  }
-
-  const blob = new THREE.Mesh(
-    new THREE.CircleGeometry(1.15, 14),
-    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false })
-  );
-  blob.rotation.x = -Math.PI / 2;
-  blob.position.y = 0.04;
-
-  g.traverse((o) => {
-    if (o.isMesh) {
-      o.castShadow = true;
-      o.receiveShadow = true;
-    }
-  });
-  blob.castShadow = false;
-  g.scale.setScalar(1.2);
-  return { group: g, wheels, blob, rear };
 }
 
 function skyMaterial(THREE) {
@@ -1210,7 +877,7 @@ export function createWorld(THREE, track) {
   function update(race, dt, portrait) {
     waterMat.uniforms.uTime.value += dt;
     spillMat.uniforms.uTime.value += dt;
-    const you = race.karts[0];
+    const you = race.karts.find((k) => !k.cpu) || race.karts[0];
     for (let i = 0; i < race.karts.length; i++) {
       const k = race.karts[i];
       const view = views[i];
@@ -1383,6 +1050,7 @@ export function createWorld(THREE, track) {
     new THREE.MeshBasicMaterial({ color: 0xd7c4a8, depthWrite: false })
   );
   scene.add(backdrop);
+  backdrop.visible = false;
   function hangBackdrop(tr) {
     const c = crestOf(tr);
     backdrop.position.set(c.p.x - c.tangent.x * 110, c.p.y + 42, c.p.z - c.tangent.z * 110);
@@ -1428,8 +1096,8 @@ export function createWorld(THREE, track) {
         done();
       }, undefined, done);
     };
-    take("assets/history/dam-loop.jpg?v=gd9", "dam");
-    take("assets/history/frost-ridge.jpg?v=gd9", "frost");
+    take("assets/history/dam-loop.jpg?v=gd11", "dam");
+    take("assets/history/frost-ridge.jpg?v=gd11", "frost");
   });
 
   let frostDress = null;
@@ -1505,6 +1173,7 @@ export function createWorld(THREE, track) {
     ground.material.color.set(frost ? 0xd5e4ee : 0x4e7a48);
     scene.fog.color.set(frost ? 0xc5d6e6 : 0xe7c49a);
     hangBackdrop(next);
+    backdrop.visible = false;
     if (backdrop.userData.dam) {
       backdrop.material.map = frost ? backdrop.userData.frost : backdrop.userData.dam;
       backdrop.material.needsUpdate = true;
@@ -1513,5 +1182,12 @@ export function createWorld(THREE, track) {
     if (!frost) placeSpray(next);
   }
 
-  return { renderer, scene, camera, resize, update, frameCheck, views, setTrack, ready };
+  function modelOf(id) {
+    const i = ROSTER.findIndex((r) => r.id === id);
+    const g = views[i] && views[i].group;
+    if (!g) return { kind: "", sig: 0 };
+    return { kind: g.userData.kind || "", sig: g.userData.sig || 0 };
+  }
+
+  return { renderer, scene, camera, resize, update, frameCheck, views, setTrack, ready, modelOf };
 }
