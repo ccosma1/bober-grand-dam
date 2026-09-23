@@ -16,9 +16,9 @@ import {
   setDriver as chooseDriver,
   swapTrack,
   writeSave,
-} from "./sim.js?v=gd11";
-import { createWorld } from "./world.js?v=gd11";
-import { createSfx } from "./audio.js?v=gd11";
+} from "./sim.js?v=gd12";
+import { createWorld } from "./world.js?v=gd12";
+import { createSfx } from "./audio.js?v=gd12";
 
 const app = document.getElementById("app");
 const stage = document.getElementById("stage");
@@ -387,17 +387,17 @@ document.getElementById("btn-quit").addEventListener("click", () => {
 });
 const EXHIBITS = {
   "dam-loop": {
-    src: "assets/history/dam-loop.jpg?v=gd11",
+    src: "assets/history/dam-loop.jpg?v=gd12",
     title: "Dam Loop",
     cap: "The crest road, the bank, the spillway. Three laps. The line is the crest.",
   },
   "frost-ridge": {
-    src: "assets/history/frost-ridge.jpg?v=gd11",
+    src: "assets/history/frost-ridge.jpg?v=gd12",
     title: "Frost Ridge",
     cap: "Ice, drifts, and two narrow bridges. Same three laps. Same four racers.",
   },
   "sling-kart": {
-    src: "assets/history/crest-drift.jpg?v=gd11",
+    src: "assets/history/crest-drift.jpg?v=gd12",
     title: "Sling Kart",
     cap: "Cedar bowl. Twin sling bands on the rear posts. Hold a turn until the bands spark, then let go.",
   },
@@ -432,22 +432,22 @@ const EXHIBITS = {
     cap: "Rare. Only while you are 1st or 2nd. A blue surge and a short push.",
   },
   bober: {
-    src: "assets/museum/bober.jpg?v=gd11",
+    src: "assets/museum/bober.jpg?v=gd12",
     title: "Bober",
     cap: "Chunky lodge beaver in the classic cedar cart. Amber scarf.",
   },
   muscle: {
-    src: "assets/museum/muscle.jpg?v=gd11",
+    src: "assets/museum/muscle.jpg?v=gd12",
     title: "Muscle",
     cap: "Bulky beaver in a heavy armored hauler. Big rear wheels.",
   },
   tall: {
-    src: "assets/museum/tall.jpg?v=gd11",
+    src: "assets/museum/tall.jpg?v=gd12",
     title: "Tall Handsome",
     cap: "Tall lean beaver in a long sleek speed cart.",
   },
   nib: {
-    src: "assets/museum/nib.jpg?v=gd11",
+    src: "assets/museum/nib.jpg?v=gd12",
     title: "Nib",
     cap: "Small scrappy beaver on a light scrap cart.",
   },
@@ -659,6 +659,9 @@ window.__grand = {
       x: you.x,
       z: you.z,
       yaw: you.yaw,
+      y: you.y,
+      grounded: !!you.grounded,
+      splash: you.splash || 0,
       finished: you.finished,
       held: you.held || "",
       lastFx: race.lastFx || "",
