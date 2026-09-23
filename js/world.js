@@ -1,5 +1,5 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd13";
-import { buildKart } from "./racers.js?v=gd13";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd14";
+import { buildKart } from "./racers.js?v=gd14";
 
 function canvasTex(THREE, draw, w, h, repeat) {
   const c = document.createElement("canvas");
@@ -176,6 +176,7 @@ function buildRoad(THREE, track, map) {
     metalness: 0.12,
     clearcoat: 0.72,
     clearcoatRoughness: 0.22,
+    side: THREE.DoubleSide,
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = true;
@@ -187,9 +188,17 @@ function buildRoad(THREE, track, map) {
     const base = skirtPos.length / 3;
     for (let i = 0; i < n; i++) {
       const o = i * 2 + side;
-      const drop = Math.max(f[i].bridge ? 1.6 : 1.05, f[i].p.y - 0.08);
-      skirtPos.push(pos[o * 3], pos[o * 3 + 1], pos[o * 3 + 2]);
-      skirtPos.push(pos[o * 3], pos[o * 3 + 1] - drop, pos[o * 3 + 2]);
+      const px = pos[o * 3];
+      const py = pos[o * 3 + 1];
+      const pz = pos[o * 3 + 2];
+      skirtPos.push(px, py, pz);
+      if (f[i].loop && f[i].up) {
+        const drop = 0.5;
+        skirtPos.push(px - f[i].up.x * drop, py - f[i].up.y * drop, pz - f[i].up.z * drop);
+      } else {
+        const drop = Math.max(f[i].bridge ? 1.6 : 1.05, f[i].p.y - 0.08);
+        skirtPos.push(px, py - drop, pz);
+      }
     }
     for (let i = 0; i < n; i++) {
       const j = (i + 1) % n;
@@ -227,7 +236,7 @@ function buildRoad(THREE, track, map) {
   let ri = 0;
   for (let i = 0; i < n; i += 3) {
     const fr = f[i];
-    if (fr.gap) continue;
+    if (fr.gap || fr.loop) continue;
     for (const side of [-1, 1]) {
       dummy.position.set(
         fr.p.x + fr.right.x * (fr.width * 0.5 + 0.42) * side,
@@ -902,15 +911,29 @@ export function createWorld(THREE, track) {
       const k = race.karts[i];
       const view = views[i];
       const fr = liveTrack.frames[k.hint] || frameAt(liveTrack, k.t);
-      const visualYaw = k.yaw + k.slip * 0.35;
-      const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), visualYaw);
-      const along = Math.sin(k.yaw) * fr.tangent.x + Math.cos(k.yaw) * fr.tangent.z;
-      const pitch = k.grounded
-        ? -Math.atan(fr.tangent.y) * Math.max(-1, Math.min(1, along))
-        : -Math.atan2(k.vy || 0, Math.max(3, k.speed));
-      const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitch);
-      const qBank = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), k.grounded ? -fr.bank : 0);
-      view.group.quaternion.copy(qYaw).multiply(qPitch).multiply(qBank);
+      if (k.grounded && fr.loop && fr.up) {
+        const dir = k.loopDir || 1;
+        const fwd = new THREE.Vector3(fr.tangent.x * dir, fr.tangent.y * dir, fr.tangent.z * dir);
+        if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, 1);
+        fwd.normalize();
+        const roof = new THREE.Vector3(fr.up.x, fr.up.y, fr.up.z);
+        if (Math.abs(roof.dot(fwd)) > 0.96) roof.set(0, 1, 0);
+        roof.addScaledVector(fwd, -roof.dot(fwd)).normalize();
+        const right = new THREE.Vector3().crossVectors(roof, fwd);
+        if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
+        right.normalize();
+        view.group.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(right, roof, fwd));
+      } else {
+        const visualYaw = k.yaw + k.slip * 0.35;
+        const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), visualYaw);
+        const along = Math.sin(k.yaw) * fr.tangent.x + Math.cos(k.yaw) * fr.tangent.z;
+        const pitch = k.grounded
+          ? -Math.atan(fr.tangent.y) * Math.max(-1, Math.min(1, along))
+          : -Math.atan2(k.vy || 0, Math.max(3, k.speed));
+        const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitch);
+        const qBank = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), k.grounded ? -fr.bank : 0);
+        view.group.quaternion.copy(qYaw).multiply(qPitch).multiply(qBank);
+      }
       const hop = k.boost > 0 ? Math.sin(race.time * 28) * 0.05 : 0;
       view.group.position.set(k.x, k.y + hop, k.z);
       view.blob.position.set(k.x, (k.grounded ? k.y : 0.08) + 0.04, k.z);
@@ -951,14 +974,22 @@ export function createWorld(THREE, track) {
     }
 
     const air = !you.grounded;
-    const back = portrait ? 5.7 : 7.2;
+    const frYou = liveTrack.frames[you.hint] || frameAt(liveTrack, you.t);
+    const onLoop = you.grounded && frYou.loop && frYou.up;
+    const back = (portrait ? 5.7 : 7.2) + (onLoop ? 3.2 : 0);
     const up = (portrait ? 2.15 : 2.35) + (air ? 0.45 : 0);
     const ahead = air ? 3.3 : portrait ? 5.5 : 6.0;
     const sideAmt = portrait ? 0 : 0.9;
     tmpF.set(Math.sin(you.yaw), 0, Math.cos(you.yaw));
     const side = new THREE.Vector3(Math.cos(you.yaw), 0, -Math.sin(you.yaw));
     camGoal.set(you.x, Math.max(1.4, you.y + up), you.z).addScaledVector(tmpF, -back).addScaledVector(side, sideAmt);
-    lookGoal.set(you.x, you.y + 1.2, you.z).addScaledVector(tmpF, ahead);
+    lookGoal.set(you.x, you.y + 1.05, you.z).addScaledVector(tmpF, ahead * (onLoop ? 0.35 : 1));
+    if (onLoop) {
+      const inward = frYou.up.y < 0.2 ? 1.7 : 0.45;
+      camGoal.x += frYou.up.x * inward;
+      camGoal.y += frYou.up.y * inward;
+      camGoal.z += frYou.up.z * inward;
+    }
     const blend = 1 - Math.exp(-Math.max(0.001, dt) * 9);
     if (race.phase === "splash") {
       camera.position.lerp(new THREE.Vector3(18, 16, -6), 0.02);
@@ -1306,6 +1337,116 @@ export function createWorld(THREE, track) {
   });
 
   let frostDress = null;
+  let extraDress = null;
+  const cloverLeaf = new THREE.MeshStandardMaterial({ color: 0x3e8a44, roughness: 0.75 });
+  const cloverGold = new THREE.MeshStandardMaterial({ color: 0xe2c15a, roughness: 0.45, metalness: 0.2 });
+  const palmTrunk = new THREE.MeshStandardMaterial({ color: 0x8a5a32, roughness: 0.85 });
+  const palmLeaf = new THREE.MeshStandardMaterial({ color: 0x2f8f62, roughness: 0.7 });
+  const duneMat = new THREE.MeshStandardMaterial({ color: 0xe6c98a, roughness: 0.92 });
+  const pylonMat = new THREE.MeshStandardMaterial({ color: 0xd7c4a8, roughness: 0.55, metalness: 0.08 });
+  const skyRail = new THREE.MeshStandardMaterial({ color: 0xf0a024, roughness: 0.4, metalness: 0.2 });
+  function clearGroup(group) {
+    while (group.children.length) {
+      const child = group.children.pop();
+      child.traverse((obj) => {
+        if (obj.geometry) obj.geometry.dispose();
+      });
+    }
+  }
+  function fillExtra(next) {
+    if (!extraDress) {
+      extraDress = new THREE.Group();
+      scene.add(extraDress);
+    }
+    clearGroup(extraDress);
+    const theme = next.theme;
+    extraDress.visible = theme === "clover" || theme === "oasis" || theme === "sky";
+    if (!extraDress.visible) return;
+    const rail = theme === "clover" ? cloverGold : theme === "oasis" ? duneMat : skyRail;
+    for (let i = 0; i < next.frames.length; i += 4) {
+      const fr = next.frames[i];
+      if (!fr.rail || fr.gap) continue;
+      const up = fr.up || { x: 0, y: 1, z: 0 };
+      for (const side of [-1, 1]) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.05, 0.16), rail);
+        post.position.set(
+          fr.p.x + fr.right.x * (fr.width * 0.5 + 0.15) * side + up.x * 0.45,
+          fr.p.y + up.y * 0.45,
+          fr.p.z + fr.right.z * (fr.width * 0.5 + 0.15) * side + up.z * 0.45
+        );
+        const aim = new THREE.Vector3(up.x, up.y, up.z);
+        if (aim.lengthSq() > 1e-6) post.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), aim.normalize());
+        extraDress.add(post);
+      }
+    }
+    if (theme === "clover") {
+      for (const tr of next.trees || []) {
+        const bush = new THREE.Mesh(new THREE.SphereGeometry(0.9 * (tr.s || 1), 8, 6), cloverLeaf);
+        bush.position.set(tr.x, 0.7 * (tr.s || 1), tr.z);
+        bush.scale.set(1, 0.7, 1);
+        const bud = new THREE.Mesh(new THREE.SphereGeometry(0.28 * (tr.s || 1), 6, 5), cloverGold);
+        bud.position.set(tr.x, 1.35 * (tr.s || 1), tr.z);
+        extraDress.add(bush, bud);
+      }
+    }
+    if (theme === "oasis") {
+      for (const tr of next.trees || []) {
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, 3.2, 6), palmTrunk);
+        trunk.position.set(tr.x, 1.6, tr.z);
+        const fan = new THREE.Mesh(new THREE.ConeGeometry(1.3, 0.7, 6), palmLeaf);
+        fan.position.set(tr.x, 3.3, tr.z);
+        extraDress.add(trunk, fan);
+      }
+      for (const rk of next.rocks || []) {
+        const dune = new THREE.Mesh(new THREE.SphereGeometry(rk.s || 2, 8, 6), duneMat);
+        dune.scale.set(1.4, 0.45, 1.1);
+        dune.position.set(rk.x, 0.45 * (rk.s || 2), rk.z);
+        extraDress.add(dune);
+      }
+    }
+    if (theme === "sky") {
+      for (const rk of next.rocks || []) {
+        const hgt = rk.h || 12;
+        const mast = new THREE.Mesh(new THREE.BoxGeometry(1.1, hgt, 1.1), pylonMat);
+        mast.position.set(rk.x, hgt * 0.5, rk.z);
+        const cap = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.35, 2.4), skyRail);
+        cap.position.y = hgt * 0.48;
+        mast.add(cap);
+        extraDress.add(mast);
+      }
+    }
+    const gate = next.frames.find((f) => !f.loop && !f.gap && !f.ceiling) || next.frames[0];
+    for (const side of [-1, 1]) {
+      const pole = new THREE.Mesh(new THREE.BoxGeometry(0.28, 2.6, 0.28), rail);
+      pole.position.set(
+        gate.p.x + gate.right.x * gate.width * 0.46 * side,
+        gate.p.y + 1.3,
+        gate.p.z + gate.right.z * gate.width * 0.46 * side
+      );
+      extraDress.add(pole);
+    }
+    const banner = new THREE.Mesh(new THREE.BoxGeometry(Math.min(14, gate.width * 0.86), 0.42, 0.08), skyRail);
+    banner.position.set(gate.p.x, gate.p.y + 2.35, gate.p.z);
+    banner.rotation.y = Math.atan2(gate.right.x, gate.right.z);
+    extraDress.add(banner);
+    for (let i = 0; i < next.frames.length; i += 8) {
+      const fr = next.frames[i];
+      if (!fr.bridge) continue;
+      let overRoad = false;
+      for (const other of next.frames) {
+        if (other === fr || other.bridge) continue;
+        if (Math.hypot(other.p.x - fr.p.x, other.p.z - fr.p.z) < 7 && other.p.y < fr.p.y - 2) {
+          overRoad = true;
+          break;
+        }
+      }
+      if (overRoad) continue;
+      const h = Math.max(2.2, fr.p.y - 0.2);
+      const pier = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.65, h, 7), pylonMat);
+      pier.position.set(fr.p.x, h * 0.5, fr.p.z);
+      extraDress.add(pier);
+    }
+  }
   function setTrack(next) {
     liveTrack = next;
     scene.remove(road.mesh, road.skirt, road.rivets, road.curb, road.line, road.chevrons);
@@ -1316,10 +1457,21 @@ export function createWorld(THREE, track) {
     road.line.geometry.dispose();
     road.chevrons.geometry.dispose();
     road = buildRoad(THREE, next, next.theme === "frost" ? iceMap : roadMap);
-    road.mesh.material.roughness = next.theme === "frost" ? 0.22 : 0.34;
-    road.mesh.material.metalness = next.theme === "frost" ? 0.18 : 0.12;
-    road.mesh.material.clearcoat = next.theme === "frost" ? 0.88 : 0.72;
-    if (next.theme === "frost") road.mesh.material.color.set(0xd7e8f4);
+    const roadLook = {
+      frost: { color: 0xd7e8f4, rough: 0.22, metal: 0.18, coat: 0.88, curb: 0xd7eef8 },
+      clover: { color: 0xe2c15a, rough: 0.42, metal: 0.08, coat: 0.4, curb: 0x2f6a34 },
+      oasis: { color: 0xd7b07a, rough: 0.55, metal: 0.06, coat: 0.25, curb: 0xc47a3a },
+      sky: { color: 0xf4e6c8, rough: 0.32, metal: 0.14, coat: 0.66, curb: 0x8aa4b8 },
+      dam: { color: 0xffffff, rough: 0.34, metal: 0.12, coat: 0.72, curb: 0x6b3a24 },
+    };
+    const look = roadLook[next.theme] || roadLook.dam;
+    road.mesh.material.roughness = look.rough;
+    road.mesh.material.metalness = look.metal;
+    road.mesh.material.clearcoat = look.coat;
+    road.mesh.material.color.set(look.color);
+    road.mesh.material.emissive.set(next.theme === "sky" ? 0x6a5030 : 0x000000);
+    road.mesh.material.emissiveIntensity = next.theme === "sky" ? 0.28 : 0;
+    road.curb.material.color.set(look.curb);
     scene.add(road.mesh, road.skirt, road.rivets, road.curb, road.line, road.chevrons);
     scene.remove(waterGroup);
     waterGroup.traverse((o) => {
@@ -1328,10 +1480,12 @@ export function createWorld(THREE, track) {
     waterGroup = buildWaterGroup(next);
     scene.add(waterGroup);
     waterMat.uniforms.uIce.value = next.theme === "frost" ? 1 : 0;
-    const frost = next.theme === "frost";
-    for (const m of damBits) m.visible = !frost;
-    for (const m of foliage) m.visible = !frost;
-    for (const m of posts) m.visible = !frost;
+    const theme = next.theme;
+    const frost = theme === "frost";
+    const damOn = theme === "dam";
+    for (const m of damBits) m.visible = damOn;
+    for (const m of foliage) m.visible = damOn;
+    for (const m of posts) m.visible = damOn;
     if (!frostDress) {
       frostDress = new THREE.Group();
       scene.add(frostDress);
@@ -1371,18 +1525,21 @@ export function createWorld(THREE, track) {
         }
       }
     }
-    ground.material.map = frost ? snowMap : grassMap;
-    ground.material.color.set(0xffffff);
+    const groundTint = { dam: 0xffffff, frost: 0xffffff, clover: 0xc6e07a, oasis: 0xe7c98a, sky: 0xd7e6f2 };
+    const fogTint = { dam: 0xe7c49a, frost: 0xc5d6e6, clover: 0xb7d48a, oasis: 0xf0d2a0, sky: 0xc9dff0 };
+    ground.material.map = frost || theme === "sky" ? snowMap : grassMap;
+    ground.material.color.set(groundTint[theme] || 0xffffff);
     ground.material.needsUpdate = true;
-    scene.fog.color.set(frost ? 0xc5d6e6 : 0xe7c49a);
+    scene.fog.color.set(fogTint[theme] || fogTint.dam);
     hangBackdrop(next);
     backdrop.visible = false;
     if (backdrop.userData.dam) {
       backdrop.material.map = frost ? backdrop.userData.frost : backdrop.userData.dam;
       backdrop.material.needsUpdate = true;
     }
-    spray.visible = !frost;
-    if (!frost) placeSpray(next);
+    spray.visible = damOn;
+    if (damOn) placeSpray(next);
+    fillExtra(next);
   }
 
   function modelOf(id) {

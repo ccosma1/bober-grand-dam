@@ -7,7 +7,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "assets" / "ref"
 OUT.mkdir(parents=True, exist_ok=True)
-URL = "http://127.0.0.1:8771/?v=gd13"
+URL = "http://127.0.0.1:8771/?v=gd14"
 
 
 def shot(page, name):
@@ -349,6 +349,18 @@ def main():
             fails.append("frost short")
         page.click("#btn-splash")
         page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")
+        for tid in ("clover", "oasis", "sky"):
+            page.click("[data-track=%s]" % tid)
+            page.click("#btn-start")
+            page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=9000)
+            page.wait_for_timeout(700)
+            st = snap(page)
+            print("TRACK", tid, st["track"], st["phase"], st["laps"], round(st["y"], 1))
+            if st["track"] != tid or st["phase"] != "race" or st["laps"] != 0:
+                fails.append("start " + tid + " " + str(st["track"]) + " " + str(st["laps"]))
+            shot(page, "race-%s.png" % tid)
+            page.click("#btn-quit")
+            page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")
         page.locator("#btn-museum").focus()
         page.keyboard.press("Enter")
         page.wait_for_selector("#museum", state="visible")

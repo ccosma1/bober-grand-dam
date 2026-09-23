@@ -1,6 +1,6 @@
 /* Item boxes and place-weighted throws. Blue Lodge Orb only in 1st or 2nd.
    Thunder Twig, Log Roller, Mirror Mist, and Crest Bomb share that table. */
-import { frameAt, forward, livePlace } from "./sim.js?v=gd13";
+import { frameAt, forward, livePlace } from "./sim.js?v=gd14";
 
 export const ITEM_IDS = ["sap", "trap", "wall", "rocket", "star", "orb", "twig", "log", "mist", "bomb"];
 
@@ -57,14 +57,15 @@ function safeT(track, t) {
   let tt = ((t % 1) + 1) % 1;
   for (let n = 0; n < 8; n++) {
     const fr = frameAt(track, tt);
-    if (!fr.gap && !fr.lip) return fr.t;
+    if (!fr.gap && !fr.lip && !fr.loop && !fr.ceiling) return fr.t;
     tt = (tt + 0.028) % 1;
   }
   return tt;
 }
 
 export function seedItems(race) {
-  const seed = race.track && race.track.id === "frost" ? 91 : 17;
+  const seeds = { frost: 91, clover: 41, oasis: 63, sky: 77 };
+  const seed = seeds[race.track && race.track.id] || 17;
   const count = 12;
   const boxes = [];
   for (let i = 0; i < count; i++) {

@@ -16,9 +16,9 @@ import {
   setDriver as chooseDriver,
   swapTrack,
   writeSave,
-} from "./sim.js?v=gd13";
-import { createWorld } from "./world.js?v=gd13";
-import { createSfx } from "./audio.js?v=gd13";
+} from "./sim.js?v=gd14";
+import { createWorld } from "./world.js?v=gd14";
+import { createSfx } from "./audio.js?v=gd14";
 
 const app = document.getElementById("app");
 const stage = document.getElementById("stage");
@@ -166,8 +166,7 @@ function inRace() {
 
 function splashButtons() {
   return [
-    document.querySelector("[data-track=dam]"),
-    document.querySelector("[data-track=frost]"),
+    ...document.querySelectorAll("#track-pick [data-track]"),
     ...document.querySelectorAll("[data-driver]"),
     document.getElementById("btn-start"),
     document.getElementById("btn-how"),
@@ -182,7 +181,7 @@ function focusAt(list, index) {
   return i;
 }
 
-let splashFocus = 6;
+let splashFocus = 9;
 
 function menuKey(e) {
   if (!exhibitEl.classList.contains("hidden")) {
@@ -396,6 +395,21 @@ const EXHIBITS = {
     title: "Frost Ridge",
     cap: "Ice, drifts, and two narrow bridges. Same three laps. Same four racers.",
   },
+  "crown-clover": {
+    src: "assets/museum/crown-clover.jpg?v=gd14",
+    title: "Crown Clover",
+    cap: "A figure-eight. One pass is a bridge over the cross. Tight apexes, three laps.",
+  },
+  "oasis-leap": {
+    src: "assets/museum/oasis-leap.jpg?v=gd14",
+    title: "Oasis Leap",
+    cap: "Two ramps. You leave the lip, arc, and land on the deck. The pools under the holes are real.",
+  },
+  "sky-loop": {
+    src: "assets/museum/sky-loop.jpg?v=gd14",
+    title: "Sky Loop 360",
+    cap: "A full loop overhead. Carry speed or you fall. The camera stays upright.",
+  },
   "sling-kart": {
     src: "assets/history/crest-drift.jpg?v=gd12",
     title: "Sling Kart",
@@ -552,16 +566,37 @@ function paintMinimap() {
   const ox = (w - spanX * s) / 2;
   const oy = (h - spanZ * s) / 2;
   const pt = (x, z) => [ox + (x - minX) * s, oy + (maxZ - z) * s];
-  ctx.beginPath();
   ctx.lineWidth = 4;
-  ctx.strokeStyle = "#f0a024";
-  for (let i = 0; i < frames.length; i += 3) {
-    const [px, py] = pt(frames[i].p.x, frames[i].p.z);
-    if (i === 0) ctx.moveTo(px, py);
-    else ctx.lineTo(px, py);
+  ctx.lineJoin = "round";
+  let drawing = false;
+  let style = "";
+  const step = 2;
+  for (let i = 0; i < frames.length; i += step) {
+    const fr = frames[i];
+    const nxt = frames[(i + step) % frames.length];
+    const [px, py] = pt(fr.p.x, fr.p.z);
+    if (fr.gap || nxt.gap) {
+      if (drawing) ctx.stroke();
+      drawing = false;
+      continue;
+    }
+    const nextStyle = fr.loop ? "#7ec8e3" : fr.bridge ? "#f4e6c8" : "#f0a024";
+    if (!drawing) {
+      ctx.beginPath();
+      ctx.strokeStyle = nextStyle;
+      style = nextStyle;
+      ctx.moveTo(px, py);
+      drawing = true;
+    } else if (nextStyle !== style) {
+      ctx.lineTo(px, py);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.strokeStyle = nextStyle;
+      style = nextStyle;
+      ctx.moveTo(px, py);
+    } else ctx.lineTo(px, py);
   }
-  ctx.closePath();
-  ctx.stroke();
+  if (drawing) ctx.stroke();
   for (const k of race.karts) {
     const [px, py] = pt(k.x, k.z);
     ctx.fillStyle = k.color || "#f4e6c8";

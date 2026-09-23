@@ -1,7 +1,7 @@
 /* Race sim. No rendering.
    yaw 0 faces +z. yaw > 0 turns toward +x (screen-left in the chase view).
    forward = (sin(yaw), 0, cos(yaw)). */
-import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd13";
+import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd14";
 export { launchHeld };
 
 export const LAPS = 3;
@@ -71,6 +71,103 @@ const FROST_RAW = [
   { x: -86, z: -100, y: 10.6 },
 ];
 
+/* Crown Clover: one Gerono figure-8. The pass near pi lifts into a bridge;
+   the other pass stays on the ground, so the cross is two roads, not a pinch. */
+function cloverRaw() {
+  const pts = [];
+  const a = 148;
+  const n = 36;
+  for (let i = 0; i < n; i++) {
+    const t = (i / n) * Math.PI * 2;
+    const x = a * Math.sin(t);
+    const z = a * Math.sin(t) * Math.cos(t) * 1.12;
+    let delta = Math.abs(t - Math.PI);
+    if (delta > Math.PI) delta = Math.PI * 2 - delta;
+    const lift = Math.exp(-((delta / 0.48) ** 2));
+    pts.push({ x, y: 3.15 + lift * 9.4, z, bridge: lift > 0.45 });
+  }
+  return pts;
+}
+
+/* Oasis Leap: two dam-style lips. Two high gap samples, then a low deck.
+   The hole is air. Missing it meets the pool, not the next road. */
+const OASIS_RAW = [
+  { x: -150, z: -128, y: 4.0 },
+  { x: -96, z: -136, y: 4.15 },
+  { x: -48, z: -132, y: 4.4 },
+  { x: -10, z: -122, y: 7.2 },
+  { x: 4, z: -114, y: 10.2, lip: true },
+  { x: 12, z: -110, y: 13.8, gap: true },
+  { x: 20, z: -106, y: 13.2, gap: true },
+  { x: 30, z: -100, y: 6.15, deck: true },
+  { x: 48, z: -90, y: 5.7, deck: true },
+  { x: 118, z: -48, y: 4.3 },
+  { x: 156, z: 8, y: 4.0 },
+  { x: 150, z: 64, y: 4.0 },
+  { x: 112, z: 112, y: 4.15 },
+  { x: 58, z: 136, y: 4.3 },
+  { x: 8, z: 128, y: 7.0 },
+  { x: -6, z: 120, y: 10.2, lip: true },
+  { x: -14, z: 114, y: 13.8, gap: true },
+  { x: -22, z: 108, y: 13.2, gap: true },
+  { x: -32, z: 100, y: 6.15, deck: true },
+  { x: -52, z: 88, y: 5.6, deck: true },
+  { x: -128, z: 40, y: 4.25 },
+  { x: -164, z: -16, y: 4.0 },
+  { x: -158, z: -76, y: 4.0 },
+];
+
+/* Sky Loop 360: a vertical circle in the YZ plane, then a wide oval home.
+   Samples far from the circle drop the loop flag so the exit is ordinary road. */
+function skyRaw() {
+  const pts = [];
+  const before = [
+    [140, 4.8, 148],
+    [214, 5.4, 112],
+    [246, 5.6, 18],
+    [236, 5.3, -84],
+    [184, 4.8, -156],
+    [104, 4.35, -176],
+    [42, 4.12, -104],
+    [22, 4.05, -30],
+  ];
+  for (const p of before) pts.push({ x: p[0], y: p[1], z: p[2] });
+  const R = 10.5;
+  const cy = 4 + R;
+  const n = 22;
+  for (let i = 0; i < n; i++) {
+    const th = (i / n) * Math.PI * 2;
+    pts.push({
+      x: 0,
+      y: cy - R * Math.cos(th),
+      z: R * Math.sin(th),
+      loop: true,
+    });
+  }
+  const after = [
+    [24, 4.15, 18],
+    [70, 4.35, 78],
+  ];
+  for (const p of after) pts.push({ x: p[0], y: p[1], z: p[2] });
+  return pts;
+}
+
+const TRACK_RAW = {
+  dam: () => DAM_RAW,
+  frost: () => FROST_RAW,
+  clover: cloverRaw,
+  oasis: () => OASIS_RAW,
+  sky: skyRaw,
+};
+
+const TRACK_NAME = {
+  dam: "Dam Loop",
+  frost: "Frost Ridge",
+  clover: "Crown Clover",
+  oasis: "Oasis Leap",
+  sky: "Sky Loop 360",
+};
+
 const MAX_SPEED = 29;
 const ACCEL = 24;
 const SPARK_MIN = 0.42;
@@ -138,7 +235,7 @@ function cr(p0, p1, p2, p3, t) {
 }
 
 export function createTrack(id = "dam") {
-  const raw = id === "frost" ? FROST_RAW : DAM_RAW;
+  const raw = (TRACK_RAW[id] || TRACK_RAW.dam)();
   const n = raw.length;
   const per = 16;
   const pts = [];
@@ -153,6 +250,7 @@ export function createTrack(id = "dam") {
       sample.gap = !!p1.gap;
       sample.lip = !!p1.lip;
       sample.deck = !!p1.deck;
+      sample.loop = !!p1.loop;
       pts.push(sample);
     }
   }
@@ -181,6 +279,7 @@ export function createTrack(id = "dam") {
       gap: !!pts[i].gap,
       lip: !!pts[i].lip,
       deck: !!pts[i].deck,
+      loop: !!pts[i].loop,
     });
   }
   for (let i = 0; i < frames.length; i++) {
@@ -192,6 +291,46 @@ export function createTrack(id = "dam") {
     frames[i].dist = i === 0 ? 0 : length;
   }
   length += frames[frames.length - 1].ds;
+  const loopMarked = frames.filter((f) => f.loop);
+  if (loopMarked.length) {
+    let lx = 0;
+    let ly = 0;
+    let lz = 0;
+    for (const f of loopMarked) {
+      lx += f.p.x;
+      ly += f.p.y;
+      lz += f.p.z;
+    }
+    lx /= loopMarked.length;
+    ly /= loopMarked.length;
+    lz /= loopMarked.length;
+    for (const f of frames) {
+      if (!f.loop) continue;
+      if (Math.hypot(f.p.x - lx, f.p.y - ly, f.p.z - lz) > 14) f.loop = false;
+    }
+    const keep = frames.filter((f) => f.loop);
+    lx = 0;
+    ly = 0;
+    lz = 0;
+    for (const f of keep) {
+      lx += f.p.x;
+      ly += f.p.y;
+      lz += f.p.z;
+    }
+    const kn = keep.length || 1;
+    lx /= kn;
+    ly /= kn;
+    lz /= kn;
+    for (const f of frames) {
+      if (!f.loop) continue;
+      const ux = lx - f.p.x;
+      const uy = ly - f.p.y;
+      const uz = lz - f.p.z;
+      const ul = Math.hypot(ux, uy, uz) || 1;
+      f.up = { x: ux / ul, y: uy / ul, z: uz / ul };
+      f.ceiling = f.up.y < -0.25;
+    }
+  }
   for (let i = 0; i < frames.length; i++) {
     frames[i].t = frames[i].dist / length;
     const h0 = Math.atan2(frames[i].tangent.x, frames[i].tangent.z);
@@ -206,12 +345,14 @@ export function createTrack(id = "dam") {
     const p = frames[i].p;
     let w = id === "frost" ? 9.4 : 11.4;
     if (frames[i].bridge) w = id === "frost" ? 8.4 : 10.6;
-    if (frames[i].lip || frames[i].deck) w = Math.max(w, id === "frost" ? 10 : 13.2);
+    if (frames[i].lip || frames[i].deck) w = Math.max(w, 13.2);
+    if (frames[i].loop) w = Math.max(w, 12.2);
     if (id === "frost" && p.y > 11) w = Math.max(w, 10.6);
-    if (id !== "frost" && p.y > 10) w = Math.max(w, 12.4);
+    if (id === "dam" && p.y > 10) w = Math.max(w, 12.4);
     if (Math.abs(curv) > 0.007) w = Math.max(w, id === "frost" ? 11.2 : 13.4);
     frames[i].width = w;
-    const raised = frames[i].bridge || frames[i].lip || frames[i].deck || frames[i].p.y > 7.2;
+    if (frames[i].loop) frames[i].bank = 0;
+    const raised = frames[i].bridge || frames[i].lip || frames[i].deck || frames[i].loop || frames[i].p.y > 7.2;
     frames[i].rail = !frames[i].gap && raised;
     frames[i].shoulder = !frames[i].gap && !frames[i].rail;
   }
@@ -223,8 +364,8 @@ export function createTrack(id = "dam") {
   }
   const track = {
     id,
-    name: id === "frost" ? "Frost Ridge" : "Dam Loop",
-    theme: id === "frost" ? "frost" : "dam",
+    name: TRACK_NAME[id] || "Dam Loop",
+    theme: id === "frost" || id === "clover" || id === "oasis" || id === "sky" ? id : "dam",
     frames,
     length,
     samples: frames.length,
@@ -266,11 +407,44 @@ function buildWaters(track) {
     }
     run = [];
   };
-  for (const f of frames) {
-    if (f.bridge) run.push(f);
-    else flush();
+  if (track.id === "dam" || track.id === "frost") {
+    for (const f of frames) {
+      if (f.bridge) run.push(f);
+      else flush();
+    }
+    flush();
   }
-  flush();
+  if (track.id === "oasis") {
+    let gapRun = [];
+    const flushGap = () => {
+      if (!gapRun.length) return;
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minZ = Infinity;
+      let maxZ = -Infinity;
+      for (const f of gapRun) {
+        minX = Math.min(minX, f.p.x);
+        maxX = Math.max(maxX, f.p.x);
+        minZ = Math.min(minZ, f.p.z);
+        maxZ = Math.max(maxZ, f.p.z);
+      }
+      waters.push({
+        id: "leap" + waters.length,
+        kind: "box",
+        x: (minX + maxX) / 2,
+        z: (minZ + maxZ) / 2,
+        y: 0.72,
+        hx: (maxX - minX) / 2 + 9,
+        hz: (maxZ - minZ) / 2 + 12,
+      });
+      gapRun = [];
+    };
+    for (const f of frames) {
+      if (f.gap) gapRun.push(f);
+      else if (gapRun.length) flushGap();
+    }
+    flushGap();
+  }
   if (track.id !== "dam") return waters;
   const hole = frames.filter((f) => f.gap || f.lip || f.deck);
   if (hole.length) {
@@ -341,14 +515,16 @@ function roadClear(frames, x, z, extra) {
 
 function buildDress(track) {
   const frames = track.frames;
-  const frost = track.theme === "frost";
+  const theme = track.theme;
+  const frost = theme === "frost";
   const trees = [];
   const rocks = [];
   const lodges = [];
   const solids = [];
+  if (theme === "dam" || theme === "frost") {
   for (let i = 0; i < frames.length; i += frost ? 8 : 6) {
     const fr = frames[i];
-    if (fr.gap || fr.bridge || fr.lip || fr.deck) continue;
+    if (fr.gap || fr.bridge || fr.lip || fr.deck || fr.loop) continue;
     for (const side of [-1, 1]) {
       if (side > 0 && i % 12 !== 0) continue;
       const dist = fr.width * 0.5 + (frost ? 14 : 12) + (i % 4);
@@ -364,7 +540,33 @@ function buildDress(track) {
       }
     }
   }
-  if (!frost) {
+  }
+  if (theme === "clover" || theme === "oasis" || theme === "sky") {
+    const step = theme === "sky" ? 10 : theme === "oasis" ? 8 : 7;
+    for (let i = 0; i < frames.length; i += step) {
+      const fr = frames[i];
+      if (fr.gap || fr.bridge || fr.lip || fr.deck || fr.loop) continue;
+      const side = i % (step * 2) === 0 ? 1 : -1;
+      const dist = fr.width * 0.5 + (theme === "sky" ? 16 : 12) + (i % 4);
+      const x = fr.p.x + fr.right.x * dist * side;
+      const z = fr.p.z + fr.right.z * dist * side;
+      if (!roadClear(frames, x, z, theme === "sky" ? 4 : 2.4)) continue;
+      if (theme === "sky") {
+        rocks.push({
+          x, z, y: fr.p.y, h: 12 + (i % 3) * 3,
+          yaw: Math.atan2(fr.tangent.x, fr.tangent.z), pylon: true,
+        });
+        solids.push({ x, z, r: 1.35 });
+      } else if (theme === "oasis" && i % 16 !== 0) {
+        rocks.push({ x, z, s: 2.1 + (i % 3) * 0.45, dune: true });
+        solids.push({ x, z, r: 1.7 });
+      } else {
+        trees.push({ x, z, s: theme === "oasis" ? 1.2 : 0.85 + (i % 4) * 0.1, kind: theme });
+        solids.push({ x, z, r: 0.65 });
+      }
+    }
+  }
+  if (theme === "dam") {
     let nLodge = 0;
     for (let i = 10; i < frames.length && nLodge < 4; i += 36) {
       const fr = frames[i];
@@ -414,28 +616,30 @@ export function frameAt(track, t) {
   return track.frames[frameIndex(track, t)];
 }
 
-function nearest(track, x, z, hint) {
+function nearest(track, x, y, z, hint) {
   const f = track.frames;
   const n = f.length;
+  const yKnown = y != null && Number.isFinite(y);
   let start = hint == null ? 0 : hint;
   let best = start;
   let bestD = Infinity;
-  const span = hint == null ? n : 24;
+  const span = hint == null ? n : 28;
   const nearSeam = hint != null && (start < 16 || start > n - 16);
   for (let k = -span; k <= span; k++) {
     const raw = start + k;
     if (hint != null && (raw < 0 || raw >= n) && !nearSeam) continue;
     const i = (raw % n + n) % n;
     const dx = f[i].p.x - x;
+    const dy = yKnown ? f[i].p.y - y : 0;
     const dz = f[i].p.z - z;
-    const d = dx * dx + dz * dz;
+    const d = dx * dx + dy * dy + dz * dz;
     if (d < bestD) {
       bestD = d;
       best = i;
     }
   }
   if (hint != null && bestD > 18 * 18) {
-    return nearest(track, x, z, null);
+    return nearest(track, x, y, z, null);
   }
   return { index: best, dist2: bestD, frame: f[best] };
 }
@@ -468,6 +672,8 @@ function blankKart(def, track, slot) {
     wet: 0,
     splash: 0,
     safeHint: frameIndex(track, t),
+    loopSpeed: null,
+    loopDir: 1,
     respawnCd: 0,
     spark: 0,
     drifting: false,
@@ -679,7 +885,9 @@ function solidIndex(track, idx) {
   const n = track.frames.length;
   for (let k = 0; k < n; k++) {
     const i = (idx - k + n) % n;
-    if (!track.frames[i].gap) return i;
+    const fr = track.frames[i];
+    if (fr.gap || fr.ceiling || fr.loop) continue;
+    return i;
   }
   return 0;
 }
@@ -709,6 +917,7 @@ function respawnKart(track, kart) {
   kart.splash = 0.7;
   kart.hint = idx;
   kart.t = fr.t;
+  kart.loopSpeed = null;
   kart.sector = sectorOf(fr.t);
   kart.stun = Math.min(1.2, Math.max(kart.stun || 0, 0.4));
   kart.respawnCd = 0.75;
@@ -720,7 +929,7 @@ function respawnKart(track, kart) {
 function bodyStep(track, kart, dt) {
   if (kart.splash > 0) kart.splash = Math.max(0, kart.splash - dt);
   if (kart.respawnCd > 0) kart.respawnCd = Math.max(0, kart.respawnCd - dt);
-  const near = nearest(track, kart.x, kart.z, kart.hint);
+  const near = nearest(track, kart.x, kart.y, kart.z, kart.hint);
   const fr = near.frame;
   const lat = (kart.x - fr.p.x) * fr.right.x + (kart.z - fr.p.z) * fr.right.z;
   const edge = fr.width * 0.5 - 0.9;
@@ -750,11 +959,69 @@ function bodyStep(track, kart, dt) {
   } else if (!fr.gap && fr.shoulder && Math.abs(lat) <= edge + 2.45) {
     mode = "shoulder";
   }
+  let rodeLoop = false;
+  if (fr.loop && !fr.gap && mode === "road" && near.dist2 < fr.width * fr.width * 0.4 + 6) {
+    const hTan = Math.hypot(fr.tangent.x, fr.tangent.z);
+    if (hTan > 0.35) {
+      const alongH = kart.vx * fr.tangent.x + kart.vz * fr.tangent.z;
+      if (Math.abs(alongH) > 0.8) kart.loopDir = alongH > 0 ? 1 : -1;
+    }
+    const dir = kart.loopDir || 1;
+    let sp = kart.loopSpeed;
+    if (sp == null) {
+      const alongH = kart.vx * fr.tangent.x + kart.vz * fr.tangent.z;
+      sp = hTan > 0.2 ? Math.max(0, alongH / Math.max(0.25, hTan)) : Math.hypot(kart.vx, kart.vz);
+    } else {
+      const haveH = Math.hypot(kart.vx, kart.vz);
+      const added = haveH - (kart.loopHoriz || 0);
+      if (added > 0.01) sp += added;
+      sp -= 8 * fr.tangent.y * dir * dt;
+    }
+    const cap =
+      (kart.baseCap || (kart.cpu ? 27 : MAX_SPEED)) *
+      (kart.boost > 0 ? 1.32 : 1) *
+      (kart.orb > 0 ? 1.18 : 1);
+    sp = Math.max(0, Math.min(cap, sp));
+    const need = fr.ceiling ? 16 : fr.up && fr.up.y < 0.35 ? 11 : 0;
+    const nearRibbon = kart.y <= fr.p.y + 1.1 && kart.y >= fr.p.y - 2.4;
+    if (sp >= need && nearRibbon && Math.abs(latNow) <= fr.width * 0.5) {
+      kart.loopSpeed = sp;
+      const nt = fr.t + (dir * sp * dt) / Math.max(1, track.length);
+      const nf = frameAt(track, nt);
+      kart.loopHoriz = Math.hypot(nf.tangent.x, nf.tangent.z) * sp;
+      kart.x = nf.p.x;
+      kart.y = nf.p.y + 0.05;
+      kart.z = nf.p.z;
+      kart.vx = nf.tangent.x * sp * dir;
+      kart.vz = nf.tangent.z * sp * dir;
+      kart.vy = nf.tangent.y * sp * dir;
+      kart.speed = sp;
+      kart.grounded = true;
+      kart.air = 0;
+      kart.off = 0;
+      kart.wet = 0;
+      const h2 = Math.hypot(nf.tangent.x, nf.tangent.z);
+      if (h2 > 0.35) {
+        const aim = Math.atan2(nf.tangent.x * dir, nf.tangent.z * dir);
+        kart.yaw = wrapAngle(kart.yaw + wrapAngle(aim - kart.yaw) * Math.min(1, dt * 4));
+      }
+      kart.hint = frameIndex(track, nf.t);
+      kart.t = nf.t;
+      advanceSector(kart);
+      kart.progress = kart.laps + ((nf.t % 1) + 1) % 1;
+      rodeLoop = true;
+    } else {
+      kart.loopSpeed = null;
+      mode = "air";
+    }
+  } else if (!fr.loop) {
+    kart.loopSpeed = null;
+  }
   const bankY = fr.p.y + Math.sin(fr.bank) * latNow;
   const along = kart.vx * fr.tangent.x + kart.vz * fr.tangent.z;
   const roadY = mode === "shoulder" ? bankY - 0.16 : bankY + 0.05;
   const closeEnough = kart.y <= roadY + 0.45 && kart.y >= roadY - 1.35;
-  if ((mode === "road" || mode === "shoulder") && closeEnough && (kart.grounded || kart.vy <= 2.5)) {
+  if (!rodeLoop && (mode === "road" || mode === "shoulder") && closeEnough && (kart.grounded || kart.vy <= 2.5)) {
     kart.y = roadY;
     kart.vy = along * fr.tangent.y;
     kart.grounded = true;
@@ -774,19 +1041,19 @@ function bodyStep(track, kart, dt) {
       kart.vz -= fr.right.z * sign * 10 * dt;
       kart.off = (kart.off || 0) + dt;
       if (kart.off > 1.35) respawnKart(track, kart);
-    } else if (kart.respawnCd <= 0 && along > 8 && !fr.lip && !fr.deck) {
+    } else if (kart.respawnCd <= 0 && along > 8 && !fr.lip && !fr.deck && !fr.loop) {
       const back = frameAt(track, fr.t - 0.055);
       const soon = frameAt(track, fr.t + 0.04);
-      if (!back.gap && !back.lip && !back.deck && !soon.gap && !soon.lip) {
+      if (!back.gap && !back.lip && !back.deck && !back.loop && !soon.gap && !soon.lip && !soon.loop) {
         kart.safeHint = frameIndex(track, back.t);
         const clear = frameAt(track, fr.t + 0.14);
-        if (!clear.gap && !clear.lip && !clear.deck) kart.falls = 0;
+        if (!clear.gap && !clear.lip && !clear.deck && !clear.loop) kart.falls = 0;
       }
       kart.off = 0;
     } else {
       kart.off = 0;
     }
-  } else if ((mode === "road" || mode === "shoulder") && kart.y > roadY + 0.45) {
+  } else if (!rodeLoop && (mode === "road" || mode === "shoulder") && kart.y > roadY + 0.45) {
     kart.vy -= GRAVITY * dt;
     kart.y += kart.vy * dt;
     kart.grounded = false;
@@ -798,7 +1065,7 @@ function bodyStep(track, kart, dt) {
       kart.air = 0;
       kart.splash = Math.max(kart.splash || 0, 0.28);
     }
-  } else {
+  } else if (!rodeLoop) {
     kart.vy -= GRAVITY * dt;
     kart.y += kart.vy * dt;
     kart.grounded = false;
@@ -847,7 +1114,7 @@ function bodyStep(track, kart, dt) {
       }
     }
   }
-  if (kart.speed < 7 && kart.grounded) {
+  if (kart.loopSpeed == null && kart.speed < 7 && kart.grounded) {
     const aim = Math.atan2(fr.tangent.x, fr.tangent.z);
     kart.yaw = wrapAngle(kart.yaw + wrapAngle(aim - kart.yaw) * Math.min(1, dt * 3.2));
   }
@@ -858,7 +1125,7 @@ function bodyStep(track, kart, dt) {
       kart.vz += fr.tangent.z * 22 * dt;
     }
   } else kart.creep = 0;
-  kart.speed = Math.hypot(kart.vx, kart.vz);
+  kart.speed = kart.loopSpeed != null ? kart.loopSpeed : Math.hypot(kart.vx, kart.vz);
   if (kart.cpu) {
     if (kart.speed < 2.2 && kart.grounded) kart.stuck += dt;
     else kart.stuck = 0;
@@ -972,6 +1239,10 @@ export function stepRace(race, inputs, dt) {
 export function adviceFor(race, id) {
   const kart = race.karts.find((k) => k.id === id);
   const track = race.track;
+  const here0 = track.frames[kart.hint] || frameAt(track, kart.t);
+  if (kart.grounded && here0.loop) {
+    return { steer: 0, gas: 1, drift: false, brake: false, fire: false };
+  }
   if (!kart.grounded) {
     const land = frameAt(track, kart.t + 0.04);
     const desired = Math.atan2(land.tangent.x, land.tangent.z);
@@ -1233,7 +1504,7 @@ function testPhysics(fails) {
     if (w && fr.p.y < w.y + 1.15) fails.push("wet road " + w.id + " " + fr.p.y.toFixed(1));
   }
   for (const s of track.solids) {
-    const near = nearest(track, s.x, s.z, null);
+    const near = nearest(track, s.x, null, s.z, null);
     const lat = Math.abs(
       (s.x - near.frame.p.x) * near.frame.right.x + (s.z - near.frame.p.z) * near.frame.right.z
     );
@@ -1270,23 +1541,204 @@ function testNoInstant(fails) {
   }
 }
 
-export function selfTest() {
-  const fails = [];
-  const track = createTrack();
-  if (track.length < 700 || track.length > 1300) fails.push("length " + track.length.toFixed(1));
-  for (let i = 0; i < track.frames.length; i++) {
-    const a = track.frames[i];
-    if (!Number.isFinite(a.p.x) || !Number.isFinite(a.tangent.x)) fails.push("nan frame");
-    for (let j = i + 20; j < track.frames.length - 20; j++) {
-      const b = track.frames[j];
-      const d = Math.hypot(a.p.x - b.p.x, a.p.z - b.p.z);
-      if (d < 4) {
-        fails.push("pinch " + i + " " + j);
-        i = track.frames.length;
+function hardPinch(frames) {
+  for (let i = 0; i < frames.length; i++) {
+    const a = frames[i];
+    if (!Number.isFinite(a.p.x) || !Number.isFinite(a.tangent.x)) return "nan";
+    for (let j = i + 20; j < frames.length - 20; j++) {
+      const b = frames[j];
+      const dx = a.p.x - b.p.x;
+      const dz = a.p.z - b.p.z;
+      const dy = a.p.y - b.p.y;
+      if (dx * dx + dz * dz >= 16 || Math.abs(dy) >= 3.2 || (a.loop && b.loop)) continue;
+      const mouth = (a.loop && a.up && a.up.y > 0.65) || (b.loop && b.up && b.up.y > 0.65);
+      if (mouth && Math.abs(dy) < 2.6) continue;
+      return i + ":" + j;
+    }
+  }
+  return "";
+}
+
+function finishSim(track, fails, label) {
+  const pinch = hardPinch(track.frames);
+  if (pinch) fails.push(label + " pinch " + pinch);
+  if (track.length < 700 || track.length > 1400) fails.push(label + " len " + track.length.toFixed(0));
+  const race = createRace(track);
+  if (!race.boxes || race.boxes.length !== 12) fails.push(label + " boxes");
+  for (const b of race.boxes || []) {
+    const fr = frameAt(track, b.t);
+    if (fr.gap || fr.lip || fr.loop || fr.ceiling) {
+      fails.push(label + " box hazard");
+      break;
+    }
+  }
+  race.phase = "race";
+  let guard = 0;
+  while (race.phase !== "podium" && guard < 60 * 280) {
+    const inputs = {};
+    for (const k of race.karts) inputs[k.id] = adviceFor(race, k.id);
+    stepRace(race, inputs, 1 / 60);
+    guard++;
+  }
+  if (race.phase !== "podium") {
+    fails.push(label + " no podium " + race.karts.map((k) => k.laps).join(","));
+    return;
+  }
+  const lapSec = guard / 60 / LAPS;
+  if (lapSec < 32 || lapSec > 55) fails.push(label + " lap " + lapSec.toFixed(1));
+  const sorted = [...race.karts].sort((a, b) => b.progress - a.progress);
+  if (sorted[0].progress - sorted[sorted.length - 1].progress > 0.85) {
+    fails.push(label + " cheese " + (sorted[0].progress - sorted[sorted.length - 1].progress).toFixed(2));
+  }
+}
+
+function testClover(fails) {
+  const track = createTrack("clover");
+  if (track.theme !== "clover" || track.name !== "Crown Clover") fails.push("clover name");
+  if ((track.waters || []).length) fails.push("clover water");
+  let layered = false;
+  const frames = track.frames;
+  for (let i = 0; i < frames.length; i++) {
+    for (let j = i + 20; j < frames.length - 20; j++) {
+      const d = Math.hypot(frames[i].p.x - frames[j].p.x, frames[i].p.z - frames[j].p.z);
+      if (d < 6 && Math.abs(frames[i].p.y - frames[j].p.y) > 6) layered = true;
+    }
+  }
+  if (!layered) fails.push("clover flat cross");
+  let high = null;
+  let low = null;
+  for (let i = 0; i < frames.length && !high; i++) {
+    for (let j = i + 20; j < frames.length - 20; j++) {
+      const d = Math.hypot(frames[i].p.x - frames[j].p.x, frames[i].p.z - frames[j].p.z);
+      if (d < 8 && Math.abs(frames[i].p.y - frames[j].p.y) > 6) {
+        high = frames[i].p.y > frames[j].p.y ? frames[i] : frames[j];
+        low = high === frames[i] ? frames[j] : frames[i];
         break;
       }
     }
   }
+  if (!high || !low) fails.push("clover layers");
+  else {
+    const top = loneKart(track, high, 16);
+    const bot = loneKart(track, low, 16);
+    for (let i = 0; i < 40; i++) {
+      integrate(top, { steer: 0, gas: 1, drift: false }, 1 / 60);
+      bodyStep(track, top, 1 / 60);
+      integrate(bot, { steer: 0, gas: 1, drift: false }, 1 / 60);
+      bodyStep(track, bot, 1 / 60);
+    }
+    if (top.y < 8) fails.push("clover dropped " + top.y.toFixed(1));
+    if (bot.y > 6) fails.push("clover climbed " + bot.y.toFixed(1));
+  }
+  finishSim(track, fails, "clover");
+}
+
+function testLeap(track, fails, label) {
+  const lips = [];
+  for (let i = 0; i < track.frames.length; i++) {
+    if (track.frames[i].lip && (i === 0 || !track.frames[i - 1].lip)) lips.push(i);
+  }
+  if (lips.length < 2) fails.push(label + " lips " + lips.length);
+  for (const lip of lips) {
+    let steep = lip;
+    for (let i = lip; i < lip + 20 && i < track.frames.length; i++) {
+      if (track.frames[i].lip && track.frames[i].tangent.y > track.frames[steep].tangent.y) steep = i;
+    }
+    if (track.frames[steep].tangent.y < 0.18) fails.push(label + " flat " + track.frames[steep].tangent.y.toFixed(3));
+    const start = track.frames[lip];
+    const jumper = loneKart(track, start, 26);
+    let sawAir = false;
+    let landed = false;
+    let maxY = jumper.y;
+    const y0 = jumper.y;
+    for (let i = 0; i < 240; i++) {
+      integrate(jumper, { steer: 0, gas: 1, drift: false }, 1 / 60);
+      bodyStep(track, jumper, 1 / 60);
+      if (!jumper.grounded) sawAir = true;
+      if (jumper.y > maxY) maxY = jumper.y;
+      if (sawAir && jumper.grounded && jumper.splash < 0.5) landed = true;
+    }
+    if (!sawAir || maxY < y0 + 0.55 || !landed) {
+      fails.push(label + " jump air" + sawAir + " land" + landed + " y" + (maxY - y0).toFixed(2));
+    }
+    const slow = loneKart(track, start, 8);
+    let slowLand = false;
+    let slowWet = false;
+    for (let i = 0; i < 260; i++) {
+      integrate(slow, { steer: 0, gas: 0.15, drift: false }, 1 / 60);
+      bodyStep(track, slow, 1 / 60);
+      if (slow.splash > 0.5 || slow.wet > 0) slowWet = true;
+      if (slow.grounded && slow.t > start.t + 0.06 && slow.t < start.t + 0.4) slowLand = true;
+    }
+    if (slowLand && !slowWet) fails.push(label + " slow cleared");
+  }
+  const gap = track.frames.find((f) => f.gap);
+  if (gap) {
+    const floater = loneKart(track, gap, 0);
+    floater.y = gap.p.y + 1.2;
+    floater.vy = 0;
+    floater.vx = 0;
+    floater.vz = 0;
+    floater.grounded = true;
+    bodyStep(track, floater, 1 / 60);
+    if (floater.grounded || floater.vy > -0.2) fails.push(label + " air cruise");
+  }
+}
+
+function testOasis(fails) {
+  const track = createTrack("oasis");
+  if (track.name !== "Oasis Leap") fails.push("oasis name");
+  const leaps = (track.waters || []).filter((w) => String(w.id).startsWith("leap"));
+  if (leaps.length < 2) fails.push("oasis pools " + leaps.length);
+  for (const fr of track.frames) {
+    if (fr.gap) continue;
+    const w = waterUnder(track, fr.p.x, fr.p.z);
+    if (w && fr.p.y < w.y + 1.15) fails.push("oasis wet road");
+  }
+  testLeap(track, fails, "oasis");
+  finishSim(track, fails, "oasis");
+}
+
+function testSky(fails) {
+  const track = createTrack("sky");
+  if (track.name !== "Sky Loop 360") fails.push("sky name");
+  if ((track.waters || []).length) fails.push("sky water");
+  const tops = track.frames.filter((f) => f.loop && f.ceiling);
+  if (tops.length < 8) fails.push("sky ceiling");
+  const entry = track.frames.find((f) => f.loop && f.up && f.up.y > 0.8);
+  if (!entry) {
+    fails.push("sky entry");
+    return;
+  }
+  const fast = loneKart(track, entry, 28);
+  let maxY = fast.y;
+  let stayed = false;
+  for (let i = 0; i < 420; i++) {
+    integrate(fast, { steer: 0, gas: 1, drift: false }, 1 / 60);
+    bodyStep(track, fast, 1 / 60);
+    if (fast.y > maxY) maxY = fast.y;
+    if (fast.grounded && fast.y > 22) stayed = true;
+  }
+  if (maxY < 22 || !stayed) fails.push("sky loop " + maxY.toFixed(1) + " stay" + stayed);
+  const slow = loneKart(track, entry, 9);
+  let peak = slow.y;
+  let fell = false;
+  for (let i = 0; i < 200; i++) {
+    integrate(slow, { steer: 0, gas: 0.2, drift: false }, 1 / 60);
+    bodyStep(track, slow, 1 / 60);
+    if (slow.y > peak) peak = slow.y;
+    if (!slow.grounded && slow.y < peak - 3) fell = true;
+  }
+  if (!fell || peak > 24.2) fails.push("sky glue peak" + peak.toFixed(1) + " fell" + fell);
+  finishSim(track, fails, "sky");
+}
+
+export function selfTest() {
+  const fails = [];
+  const track = createTrack();
+  if (track.length < 700 || track.length > 1300) fails.push("length " + track.length.toFixed(1));
+  const pinch = hardPinch(track.frames);
+  if (pinch) fails.push("pinch " + pinch);
   testSteer(fails);
   testBoost(fails);
   testPhysics(fails);
@@ -1326,16 +1778,8 @@ export function selfTest() {
   const frost = createTrack("frost");
   if (frost.theme !== "frost" || frost.length < 640 || frost.length > 1300) fails.push("frost " + frost.length.toFixed(0));
   if (frost.frames.filter((f) => f.bridge).length < 6) fails.push("bridges");
-  for (let i = 0; i < frost.frames.length; i++) {
-    for (let j = i + 20; j < frost.frames.length - 20; j++) {
-      const d = Math.hypot(frost.frames[i].p.x - frost.frames[j].p.x, frost.frames[i].p.z - frost.frames[j].p.z);
-      if (d < 4) {
-        fails.push("frost pinch");
-        i = frost.frames.length;
-        break;
-      }
-    }
-  }
+  const frostPinch = hardPinch(frost.frames);
+  if (frostPinch) fails.push("frost pinch " + frostPinch);
   const frostRace = createRace(frost);
   resetRace(frostRace);
   for (let i = 0; i < 60 * 5; i++) {
@@ -1344,6 +1788,9 @@ export function selfTest() {
     stepRace(frostRace, inputs, 1 / 60);
   }
   if (frostRace.phase !== "race" || frostRace.karts[0].laps !== 0) fails.push("frost instant");
+  testClover(fails);
+  testOasis(fails);
+  testSky(fails);
   return {
     ok: fails.length === 0,
     fails,

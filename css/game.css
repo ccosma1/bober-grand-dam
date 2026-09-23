@@ -235,7 +235,8 @@ html, body {
   color: #102a33;
   box-shadow: 0 4px 0 #8a5a08;
 }
-.tracks { display: flex; gap: 8px; width: 100%; margin: 4px 0 8px; }
+.tracks { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; margin: 4px 0 8px; }
+.tracks .ghost { flex: 1 1 30%; min-height: 36px; font-size: 12px; padding: 4px 6px; }
 .tracks .ghost.on { background: var(--amber); color: var(--ink); }
 .roster { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; width: 100%; margin: 0 0 8px; }
 .who {

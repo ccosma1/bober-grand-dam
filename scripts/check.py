@@ -36,7 +36,7 @@ else:
         if need not in text:
             fails.append("splash missing " + need)
 
-for need in ("Sling Kart", "Dam Loop", "Frost Ridge", "Sap Shell", "Stick Trap", "Snow Wall", "Yeet Rocket", "Star Thaw", "Blue Lodge Orb", "Thunder Twig", "Log Roller", "Mirror Mist", "Crest Bomb", "BOBER", "MUSCLE", "TALL", "NIB", "Tall Handsome", "btn-fire", "id=\"stick\"", "id=\"minimap\"", "btn-rematch"):
+for need in ("Sling Kart", "Dam Loop", "Frost Ridge", "Crown Clover", "Oasis Leap", "Sky Loop 360", "Sap Shell", "Stick Trap", "Snow Wall", "Yeet Rocket", "Star Thaw", "Blue Lodge Orb", "Thunder Twig", "Log Roller", "Mirror Mist", "Crest Bomb", "BOBER", "MUSCLE", "TALL", "NIB", "Tall Handsome", "btn-fire", "id=\"stick\"", "id=\"minimap\"", "btn-rematch"):
     if need not in html:
         fails.append("html missing " + need)
 if "58dvh" not in css:
@@ -49,6 +49,9 @@ if html.lower().count("data-exhibit=\"dam-loop\"") != 1:
     fails.append("dup dam card")
 if html.lower().count("data-exhibit=\"frost-ridge\"") != 1:
     fails.append("dup frost card")
+for exhibit in ("crown-clover", "oasis-leap", "sky-loop"):
+    if html.lower().count('data-exhibit="%s"' % exhibit) != 1:
+        fails.append("dup " + exhibit)
 for aid in (
     "assets/splash.jpg",
     "assets/history/dam-loop.jpg",
@@ -59,6 +62,9 @@ for aid in (
     "assets/icons/bober-grand-dam.ico",
     "assets/history/frost-ridge.jpg",
     "assets/museum/frost-ridge.jpg",
+    "assets/museum/crown-clover.jpg",
+    "assets/museum/oasis-leap.jpg",
+    "assets/museum/sky-loop.jpg",
     "assets/museum/sap.jpg",
     "assets/museum/trap.jpg",
     "assets/museum/wall.jpg",
