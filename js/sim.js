@@ -1,7 +1,7 @@
 /* Race sim. No rendering.
    yaw 0 faces +z. yaw > 0 turns toward +x (screen-left in the chase view).
    forward = (sin(yaw), 0, cos(yaw)). */
-import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd15";
+import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd16";
 export { launchHeld };
 
 export const LAPS = 3;
@@ -347,14 +347,14 @@ export function createTrack(id = "dam") {
     frames[i].curvature = curv;
     frames[i].bank = Math.max(-0.22, Math.min(0.22, -curv * 7));
     const p = frames[i].p;
-    let w = id === "frost" ? 9.4 : 11.4;
-    if (frames[i].bridge) w = id === "frost" ? 8.4 : 10.6;
-    if (frames[i].lip || frames[i].deck) w = Math.max(w, 13.2);
-    if (frames[i].loop) w = Math.max(w, 12.2);
-    if (id === "frost" && p.y > 11) w = Math.max(w, 10.6);
-    if (id === "dam" && p.y > 10) w = Math.max(w, 12.4);
-    if (Math.abs(curv) > 0.007) w = Math.max(w, id === "frost" ? 11.2 : 13.4);
-    if ((id === "clover" || id === "oasis" || id === "sky") && Math.abs(curv) > 0.0055) w = Math.max(w, 14.6);
+    let w = id === "frost" ? 10.4 : 12.4;
+    if (frames[i].bridge) w = id === "frost" ? 9.2 : 11.4;
+    if (frames[i].lip || frames[i].deck) w = Math.max(w, 14);
+    if (frames[i].loop) w = Math.max(w, 13);
+    if (id === "frost" && p.y > 11) w = Math.max(w, 11.4);
+    if (id === "dam" && p.y > 10) w = Math.max(w, 13.2);
+    if (Math.abs(curv) > 0.007) w = Math.max(w, id === "frost" ? 12.2 : 14.4);
+    if ((id === "clover" || id === "oasis" || id === "sky") && Math.abs(curv) > 0.005) w = Math.max(w, 15.8);
     frames[i].width = w;
     if (frames[i].loop) frames[i].bank = 0;
     const raised = frames[i].bridge || frames[i].lip || frames[i].deck || frames[i].loop || frames[i].p.y > 7.2;
@@ -372,12 +372,23 @@ export function createTrack(id = "dam") {
       const ahead = frames[(i + 12) % frames.length];
       const soon = frames[(i + 28) % frames.length];
       const approach = !!(ahead.lip || soon.lip || (ahead.loop && !fr.loop));
-      const tight = Math.abs(fr.curvature) > 0.0065;
-      const guided = tight || approach || fr.bridge || fr.lip || fr.deck || fr.loop || fr.p.y > 6.4;
-      const vent = !tight && !approach && !fr.lip && !fr.deck && !fr.loop && !fr.bridge && (i % 16 === 0 || i % 16 === 1);
+      const tight = Math.abs(fr.curvature) > 0.0048;
+      const guided = tight || approach || fr.bridge || fr.lip || fr.deck || fr.loop || fr.p.y > 6.2;
+      const vent = !tight && !approach && !fr.lip && !fr.deck && !fr.loop && !fr.bridge && i % 24 === 0;
       const onWall = fr.loop && fr.up && fr.up.y < 0.7;
       const pocket = !fr.lip && !onWall && Math.abs(fr.curvature) > 0.02;
       fr.rail = guided && !vent && !pocket;
+      fr.shoulder = !fr.rail;
+    }
+  } else {
+    for (let i = 0; i < frames.length; i++) {
+      const fr = frames[i];
+      if (fr.gap) continue;
+      const ahead = frames[(i + 12) % frames.length];
+      const soon = frames[(i + 24) % frames.length];
+      const approach = !!(ahead.lip || soon.lip);
+      const tight = Math.abs(fr.curvature) > 0.006 && Math.abs(fr.curvature) < 0.028;
+      if (tight || approach) fr.rail = true;
       fr.shoulder = !fr.rail;
     }
   }
@@ -855,7 +866,9 @@ function integrate(kart, input, dt) {
     steerMul = 0.22;
   }
   const rawSteer = Math.max(-1, Math.min(1, input.steer || 0));
-  kart.steerSm = (kart.steerSm || 0) + (rawSteer - (kart.steerSm || 0)) * Math.min(1, dt * 22);
+  const assisted = !!(kart.cpu || kart.assist);
+  const damp = assisted ? 22 : 8;
+  kart.steerSm = (kart.steerSm || 0) + (rawSteer - (kart.steerSm || 0)) * Math.min(1, dt * damp);
   const steer = kart.steerSm;
   const gas = Math.max(0, Math.min(1, Number(input.gas) || 0));
   const brake = input.brake ? 1 : 0;
@@ -869,12 +882,14 @@ function integrate(kart, input, dt) {
   const was = kart.drifting;
   kart.drifting = wantDrift;
 
-  const steerRate =
-    (kart.drifting ? 2.15 : 1.7) *
-    (0.74 + 0.26 * (1 - Math.min(1, speed / MAX_SPEED))) *
-    (kart.handle || 1) *
-    (kart.cpu || kart.assist ? 1.22 : 1);
+  const slow = 1 - Math.min(1, speed / MAX_SPEED);
+  const steerRate = assisted
+    ? (kart.drifting ? 2.15 : 1.7) * (0.74 + 0.26 * slow) * (kart.handle || 1) * 1.22
+    : (kart.drifting ? 1.42 : 1.05) * (0.64 + 0.36 * slow) * (kart.handle || 1);
   kart.yaw = wrapAngle(kart.yaw + steer * steerMul * steerRate * dt);
+  if (!assisted && !kart.drifting && Math.abs(rawSteer) < 0.28 && Math.abs(kart.slip || 0) > 0.12) {
+    kart.yaw = wrapAngle(kart.yaw + (kart.slip || 0) * Math.min(1, dt * 2.1));
+  }
 
   const f = forward(kart.yaw);
   const accel = ACCEL * (kart.cpu ? 0.84 : 1) * (kart.stun > 0 ? 0.3 : 1) * (kart.orb > 0 ? 1.12 : 1);
@@ -1012,7 +1027,7 @@ function bodyStep(track, kart, dt) {
     mode = "road";
   } else if (!fr.gap && Math.abs(lat) <= edge) {
     mode = "road";
-  } else if (!fr.gap && fr.shoulder && Math.abs(lat) <= edge + 2.45) {
+  } else if (!fr.gap && fr.shoulder && Math.abs(lat) <= edge + 3.6) {
     mode = "shoulder";
   }
   let rodeLoop = false;
@@ -1095,15 +1110,17 @@ function bodyStep(track, kart, dt) {
       kart.vz -= fr.right.z * sign * shove * dt;
     }
     if (mode === "shoulder") {
-      const drag = track.theme === "frost" ? 3.4 : 2.4;
+      const drag = track.theme === "frost" ? 2.2 : 1.45;
       const keep = Math.exp(-drag * dt);
       kart.vx *= keep;
       kart.vz *= keep;
       const sign = Math.sign(latNow) || 1;
-      kart.vx -= fr.right.x * sign * 10 * dt;
-      kart.vz -= fr.right.z * sign * 10 * dt;
+      kart.vx -= fr.right.x * sign * 16 * dt;
+      kart.vz -= fr.right.z * sign * 16 * dt;
+      const aim = Math.atan2(fr.tangent.x, fr.tangent.z);
+      kart.yaw = wrapAngle(kart.yaw + wrapAngle(aim - kart.yaw) * Math.min(1, dt * 2.4));
       kart.off = (kart.off || 0) + dt;
-      if (kart.off > 1.35) respawnKart(track, kart);
+      if (kart.off > 2.5) respawnKart(track, kart);
     } else if (kart.respawnCd <= 0 && along > 8 && !fr.lip && !fr.deck && !fr.loop) {
       const back = frameAt(track, fr.t - 0.055);
       const soon = frameAt(track, fr.t + 0.04);
@@ -1146,10 +1163,10 @@ function bodyStep(track, kart, dt) {
       kart.y = GROUND_Y;
       kart.vy = 0;
       kart.off = (kart.off || 0) + dt;
-      const keep = Math.exp(-6.4 * dt);
+      const keep = Math.exp(-3.1 * dt);
       kart.vx *= keep;
       kart.vz *= keep;
-      if (kart.off > 1.05) respawnKart(track, kart);
+      if (kart.off > 1.85) respawnKart(track, kart);
     } else if (kart.y < -3.5 || kart.air > 2.5) {
       respawnKart(track, kart);
     }

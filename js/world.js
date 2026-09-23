@@ -1,5 +1,5 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd15";
-import { buildKart } from "./racers.js?v=gd15";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd16";
+import { buildKart } from "./racers.js?v=gd16";
 
 function canvasTex(THREE, draw, w, h, repeat) {
   const c = document.createElement("canvas");
@@ -708,8 +708,8 @@ export function createWorld(THREE, track) {
       railSpots.push({ fr, side });
     }
   }
-  const postMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.18, 1.15, 0.18), railMat, Math.max(1, railSpots.length));
-  const railMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.1, 3.4), railMat, Math.max(1, railSpots.length));
+  const postMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.48, 1.25, 0.72), railMat, Math.max(1, railSpots.length));
+  const railMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.22, 0.18, 3.6), railMat, Math.max(1, railSpots.length));
   railSpots.forEach((s, idx) => {
     const half = s.fr.width * 0.5 + 0.2;
     dummy.scale.set(1, 1, 1);
@@ -1404,7 +1404,7 @@ export function createWorld(THREE, track) {
       const across = new THREE.Vector3().crossVectors(upV, fwd).normalize();
       const basis = new THREE.Matrix4().makeBasis(across, upV, fwd);
       for (const side of [-1, 1]) {
-        const berm = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.9, 2.4), railMatGuide);
+        const berm = new THREE.Mesh(new THREE.BoxGeometry(0.95, 1.2, 2.7), railMatGuide);
         berm.position.set(
           fr.p.x + fr.right.x * (fr.width * 0.5 + 0.2) * side + upV.x * 0.48,
           fr.p.y + upV.y * 0.48,

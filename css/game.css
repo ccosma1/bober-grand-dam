@@ -546,6 +546,26 @@ button.back { min-height: 48px; background: var(--concrete); color: var(--ink); 
 }
 
 @media (min-width: 960px) {
+  #splash {
+    align-items: center;
+    justify-content: center;
+  }
+  #splash .top,
+  #splash .band {
+    width: min(480px, calc(100% - 48px));
+    max-width: 480px;
+  }
+  #splash .top { text-align: center; padding-left: 0; padding-right: 0; }
+  #splash .band {
+    margin-top: 8px;
+    border: 3px solid var(--amber);
+    border-radius: 18px;
+  }
+  #how, #museum, #podium { align-items: center; }
+  #how > *, #museum > *, #podium > * {
+    width: min(500px, 100%);
+    max-width: 500px;
+  }
   #controls {
     position: absolute;
     left: 10px;

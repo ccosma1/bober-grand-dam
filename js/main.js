@@ -16,9 +16,9 @@ import {
   setDriver as chooseDriver,
   swapTrack,
   writeSave,
-} from "./sim.js?v=gd15";
-import { createWorld } from "./world.js?v=gd15";
-import { createSfx } from "./audio.js?v=gd15";
+} from "./sim.js?v=gd16";
+import { createWorld } from "./world.js?v=gd16";
+import { createSfx } from "./audio.js?v=gd16";
 
 const app = document.getElementById("app");
 const stage = document.getElementById("stage");
@@ -406,17 +406,17 @@ const EXHIBITS = {
     cap: "Ice, drifts, and two narrow bridges. Same three laps. Same four racers.",
   },
   "crown-clover": {
-    src: "assets/museum/crown-clover.jpg?v=gd15",
+    src: "assets/museum/crown-clover.jpg?v=gd16",
     title: "Crown Clover",
     cap: "A figure-eight. One pass is a bridge over the cross. Tight apexes, three laps.",
   },
   "oasis-leap": {
-    src: "assets/museum/oasis-leap.jpg?v=gd15",
+    src: "assets/museum/oasis-leap.jpg?v=gd16",
     title: "Oasis Leap",
     cap: "Two ramps. You leave the lip, arc, and land on the deck. The pools under the holes are real.",
   },
   "sky-loop": {
-    src: "assets/museum/sky-loop.jpg?v=gd15",
+    src: "assets/museum/sky-loop.jpg?v=gd16",
     title: "Sky Loop 360",
     cap: "A full loop overhead. Carry speed or you fall. The camera stays upright.",
   },
