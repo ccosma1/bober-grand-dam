@@ -64,12 +64,31 @@ function furMat(THREE, base, strand, light) {
   });
 }
 
+function plateMap(THREE) {
+  return canvasRepeat(THREE, (g) => {
+    g.fillStyle = "#9aa4ae";
+    g.fillRect(0, 0, 128, 128);
+    g.strokeStyle = "#6e7882";
+    g.lineWidth = 4;
+    g.strokeRect(8, 8, 112, 112);
+    g.fillStyle = "#d7a441";
+    for (let i = 0; i < 4; i++) {
+      for (let j = 0; j < 4; j++) {
+        g.beginPath();
+        g.arc(24 + i * 28, 24 + j * 28, 3.2, 0, 6.28);
+        g.fill();
+      }
+    }
+  });
+}
+
 function mat(THREE, woodMap) {
+  const plate = plateMap(THREE);
   return {
     wood: new THREE.MeshPhysicalMaterial({ map: woodMap, roughness: 0.48, metalness: 0.05, clearcoat: 0.35, clearcoatRoughness: 0.3 }),
     woodDark: new THREE.MeshPhysicalMaterial({ map: woodMap, color: 0x6a3c22, roughness: 0.58, clearcoat: 0.16 }),
-    iron: new THREE.MeshStandardMaterial({ color: 0x9aa3ad, metalness: 0.78, roughness: 0.28 }),
-    ironDark: new THREE.MeshStandardMaterial({ color: 0x3c434c, metalness: 0.7, roughness: 0.38 }),
+    iron: new THREE.MeshStandardMaterial({ map: plate, color: 0xd5dde4, metalness: 0.62, roughness: 0.32 }),
+    ironDark: new THREE.MeshStandardMaterial({ map: plate, color: 0xb7c2cc, metalness: 0.55, roughness: 0.4 }),
     brass: new THREE.MeshStandardMaterial({ color: 0xd7a441, metalness: 0.84, roughness: 0.26 }),
     rubber: new THREE.MeshStandardMaterial({ color: 0x1c1c1c, roughness: 0.94 }),
     hub: new THREE.MeshStandardMaterial({ color: 0xd5dde2, metalness: 0.55, roughness: 0.32 }),
@@ -112,6 +131,23 @@ const HEAD_PTS = [
   [0.08, 0.88],
 ];
 
+function tailMaterial(THREE) {
+  const map = canvasRepeat(THREE, (g) => {
+    g.fillStyle = "#8d5a36";
+    g.fillRect(0, 0, 128, 128);
+    g.strokeStyle = "rgba(62,34,18,0.7)";
+    g.lineWidth = 3;
+    for (let i = 0; i < 9; i++) {
+      const y = 8 + i * 13;
+      g.beginPath();
+      g.moveTo(2, y);
+      g.quadraticCurveTo(64, y + 9, 126, y);
+      g.stroke();
+    }
+  });
+  return new THREE.MeshStandardMaterial({ map, roughness: 0.68 });
+}
+
 function paddle(THREE, length, width, thick, material) {
   const shape = new THREE.Shape();
   shape.moveTo(0, 0);
@@ -135,22 +171,20 @@ function paddle(THREE, length, width, thick, material) {
 function wheel(THREE, g, x, y, z, radius, width, mats, capMat) {
   const pivot = new THREE.Group();
   pivot.position.set(x, y, z);
-  const tire = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, width, 18), mats.rubber);
-  tire.rotation.z = Math.PI / 2;
+  const tire = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.82, Math.max(0.06, radius * 0.18), 8, 18), mats.rubber);
+  tire.rotation.y = Math.PI / 2;
   pivot.add(tire);
   for (let i = 0; i < 6; i++) {
-    const tread = new THREE.Mesh(new THREE.BoxGeometry(radius * 0.18, width * 0.92, radius * 0.22), mats.rubber);
-    const a = (i / 6) * Math.PI * 2;
-    tread.position.set(0, Math.cos(a) * radius * 0.92, Math.sin(a) * radius * 0.92);
-    tread.rotation.x = a;
-    pivot.add(tread);
+    const spoke = new THREE.Mesh(new THREE.BoxGeometry(width * 0.22, radius * 0.08, radius * 0.72), capMat);
+    spoke.rotation.x = (i / 6) * Math.PI;
+    pivot.add(spoke);
   }
-  const hub = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.34, radius * 0.34, width * 1.08, 8), mats.hub);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.22, radius * 0.22, width * 0.7, 10), mats.hub);
   hub.rotation.z = Math.PI / 2;
   pivot.add(hub);
-  const ring = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.72, radius * 0.72, width * 0.28, 14), capMat);
-  ring.rotation.z = Math.PI / 2;
-  pivot.add(ring);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.7, Math.max(0.025, radius * 0.045), 6, 16), capMat);
+  rim.rotation.y = Math.PI / 2;
+  pivot.add(rim);
   g.add(pivot);
   return pivot;
 }
@@ -219,14 +253,16 @@ function addBeaver(THREE, g, spec) {
   hang.rotation.z = 0.35;
   g.add(hang);
 
-  const tail = paddle(THREE, spec.tailL, spec.tailW, spec.tailT, spec.tailMark);
-  tail.position.set(spec.tailX || 0, spec.tailY, spec.bodyZ - spec.bodyL * 0.42);
+  const tail = paddle(THREE, spec.tailL, spec.tailW, spec.tailT, tailMaterial(THREE));
+  tail.position.set(spec.tailX || 0, spec.tailY + 0.08, spec.bodyZ - spec.bodyL * 0.95);
+  tail.rotation.x = -1.05;
   tail.rotation.z = spec.tailRoll || 0;
   tail.rotation.y = spec.tailYaw || 0;
   g.add(tail);
   for (const side of [-1, 1]) {
-    const ear = new THREE.Mesh(new THREE.BoxGeometry(spec.earThick, spec.earH, spec.earW), fur);
-    ear.position.set(side * spec.earSpan, spec.headY + spec.headH * 0.35 + spec.earH * 0.45, spec.headZ - spec.headL * 0.1);
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.5, 10, 8), fur);
+    ear.scale.set(spec.earThick, spec.earH, spec.earW);
+    ear.position.set(side * spec.earSpan, spec.headY + spec.headH * 0.35 + spec.earH * 0.35, spec.headZ - spec.headL * 0.1);
     ear.rotation.z = side * (spec.earLean || 0.15);
     g.add(ear);
   }
@@ -421,7 +457,7 @@ function buildTall(THREE, woodMap) {
     headW: 0.22, headL: 0.26, headH: 0.2, headY: 1.48, headZ: 0.28,
     toothW: 0.045, toothH: 0.16, toothD: 0.05,
     eye: 0.035,
-    earThick: 0.05, earH: 0.62, earW: 0.1, earSpan: 0.12, earLean: 0.08,
+    earThick: 0.14, earH: 0.46, earW: 0.18, earSpan: 0.14, earLean: 0.12,
     tailL: 0.48, tailW: 0.14, tailT: 0.035, tailY: 0.95,
     arms: true, armR: 0.04, armL: 0.4,
   });

@@ -1,7 +1,7 @@
 /* Race sim. No rendering.
    yaw 0 faces +z. yaw > 0 turns toward +x (screen-left in the chase view).
    forward = (sin(yaw), 0, cos(yaw)). */
-import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd16";
+import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd18";
 export { launchHeld };
 
 export const LAPS = 3;

@@ -1,5 +1,5 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd16";
-import { buildKart } from "./racers.js?v=gd16";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd18";
+import { buildKart } from "./racers.js?v=gd20";
 
 function canvasTex(THREE, draw, w, h, repeat) {
   const c = document.createElement("canvas");
@@ -89,6 +89,46 @@ function concreteTexture(THREE) {
       g.fillRect(Math.random() * w, Math.random() * h, 10, 30 + Math.random() * 90);
     }
   }, 512, 512, true);
+}
+
+function crateTexture(THREE) {
+  return canvasTex(THREE, (g, w, h) => {
+    g.fillStyle = "#8d4e2a";
+    g.fillRect(0, 0, w, h);
+    g.strokeStyle = "rgba(74,36,16,0.4)";
+    g.lineWidth = 5;
+    for (let y = 16; y < h; y += 26) {
+      g.beginPath();
+      g.moveTo(0, y);
+      g.bezierCurveTo(w * 0.35, y + 7, w * 0.65, y - 6, w, y + 3);
+      g.stroke();
+    }
+    g.strokeStyle = "#4e2a14";
+    g.lineWidth = 16;
+    g.strokeRect(20, 20, w - 40, h - 40);
+    g.beginPath();
+    g.moveTo(20, 20);
+    g.lineTo(w - 20, h - 20);
+    g.moveTo(w - 20, 20);
+    g.lineTo(20, h - 20);
+    g.stroke();
+    g.fillStyle = "#f0a024";
+    g.beginPath();
+    g.moveTo(w * 0.5, h * 0.3);
+    g.lineTo(w * 0.68, h * 0.5);
+    g.lineTo(w * 0.5, h * 0.7);
+    g.lineTo(w * 0.32, h * 0.5);
+    g.closePath();
+    g.fill();
+    g.fillStyle = "#12b3ab";
+    g.beginPath();
+    g.arc(w * 0.5, h * 0.5, 22, 0, 6.28);
+    g.fill();
+    g.fillStyle = "#e7fff8";
+    g.beginPath();
+    g.arc(w * 0.46, h * 0.46, 7, 0, 6.28);
+    g.fill();
+  }, 256, 256, false);
 }
 
 function woodTexture(THREE) {
@@ -566,16 +606,18 @@ export function createWorld(THREE, track) {
 
   function landTexture(THREE, frost) {
     return canvasTex(THREE, (g, w, h) => {
-      g.fillStyle = frost ? "#e7eef3" : "#3f6a3c";
+      g.fillStyle = frost ? "#d5e6ef" : "#3d6e3a";
       g.fillRect(0, 0, w, h);
-      for (let i = 0; i < 80; i++) {
-        g.fillStyle = frost ? "rgba(255,255,255,0.35)" : "rgba(30,70,28,0.35)";
+      for (let i = 0; i < 160; i++) {
+        const x = (i * 67) % w;
+        const y = (i * 43) % h;
+        g.fillStyle = frost
+          ? `rgba(${210 + (i % 40)},${226 + (i % 24)},${236},0.45)`
+          : `rgba(${28 + (i % 36)},${92 + (i % 50)},${32},0.4)`;
         g.beginPath();
-        g.ellipse((i * 97) % w, (i * 53) % h, 18 + (i % 5) * 4, 10, i, 0, 6.3);
+        g.ellipse(x, y, 10 + (i % 9) * 3, 6 + (i % 5) * 2, i * 0.7, 0, 6.28);
         g.fill();
       }
-      g.fillStyle = frost ? "rgba(120,150,160,0.25)" : "rgba(90,70,40,0.28)";
-      for (let i = 0; i < 24; i++) g.fillRect((i * 61) % w, (i * 37) % h, 8, 22);
     }, 256, 256, true);
   }
   const grassMap = landTexture(THREE, false);
@@ -758,9 +800,29 @@ export function createWorld(THREE, track) {
     scene.add(p);
     posts.push(p);
   }
+  const bannerMap = canvasTex(THREE, (g, w, h) => {
+    g.fillStyle = "#e09018";
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = "#f4c56a";
+    for (let x = 0; x < w; x += 48) {
+      g.beginPath();
+      g.moveTo(x, 8);
+      g.lineTo(x + 22, h / 2);
+      g.lineTo(x, h - 8);
+      g.lineTo(x + 10, h - 8);
+      g.lineTo(x + 32, h / 2);
+      g.lineTo(x + 10, 8);
+      g.closePath();
+      g.fill();
+    }
+    g.fillStyle = "#14998a";
+    g.fillRect(0, 0, w, 8);
+    g.fillRect(0, h - 8, w, 8);
+  }, 256, 64, false);
+  const bannerMat = new THREE.MeshStandardMaterial({ map: bannerMap, roughness: 0.42, emissive: 0x5a3208, emissiveIntensity: 0.2 });
   const banner = new THREE.Mesh(
     new THREE.BoxGeometry(gate.width * 0.92, 0.55, 0.08),
-    new THREE.MeshStandardMaterial({ color: 0xf0a024, roughness: 0.45, emissive: 0x5a3208, emissiveIntensity: 0.35 })
+    bannerMat
   );
   banner.position.set(gate.p.x, gate.p.y + 2.55, gate.p.z);
   const face = Math.atan2(gate.right.x, gate.right.z);
@@ -817,18 +879,37 @@ export function createWorld(THREE, track) {
   const lookGoal = new THREE.Vector3();
   const tmpF = new THREE.Vector3();
 
+  const flameMap = canvasTex(THREE, (g, w, h) => {
+    const grd = g.createLinearGradient(0, h, 0, 0);
+    grd.addColorStop(0, "rgba(255,70,8,0)");
+    grd.addColorStop(0.32, "rgba(255,96,16,0.95)");
+    grd.addColorStop(0.7, "rgba(255,186,48,0.95)");
+    grd.addColorStop(1, "rgba(255,246,214,0.15)");
+    g.fillStyle = grd;
+    g.beginPath();
+    g.moveTo(w * 0.5, h * 0.06);
+    g.bezierCurveTo(w * 0.94, h * 0.42, w * 0.76, h * 0.78, w * 0.5, h * 0.96);
+    g.bezierCurveTo(w * 0.24, h * 0.78, w * 0.06, h * 0.42, w * 0.5, h * 0.06);
+    g.fill();
+  }, 64, 128, false);
+  const flameMat = new THREE.MeshBasicMaterial({
+    map: flameMap,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+
   function mountKart(def) {
     const view = buildKart(THREE, def, woodMap);
     const pipes = def.id === "muscle" ? [-0.34, 0.34] : [0];
     const fy = def.id === "muscle" ? 1.72 : 0.82;
     const fz = def.id === "muscle" ? -1.05 : -1.15;
     view.flames = pipes.map((x) => {
-      const flame = new THREE.Mesh(
-        new THREE.ConeGeometry(0.18, 0.7, 8),
-        new THREE.MeshBasicMaterial({ color: 0xff5a12 })
-      );
-      flame.position.set(x, fy, fz);
-      flame.rotation.x = -Math.PI / 2;
+      const flame = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.95), flameMat);
+      flame.position.set(x, fy + 0.12, fz);
+      const side = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.8), flameMat);
+      side.rotation.y = Math.PI / 2;
+      flame.add(side);
       view.group.add(flame);
       return flame;
     });
@@ -978,8 +1059,8 @@ export function createWorld(THREE, track) {
       const power = k.boost > 0 ? 1.7 : 0.45 + Math.min(1, (k.speed || 0) / 29) * 0.85;
       for (const flame of view.flames || []) {
         const flick = 0.7 + Math.random() * 0.55;
-        flame.scale.set(flick, Math.max(0.35, power) * flick, flick);
-        flame.material.color.set(k.boost > 0 ? 0xffe08a : 0xff4d10);
+        flame.scale.set(flick, Math.max(0.55, power) * flick, flick);
+        flame.material.color.set(k.boost > 0 ? 0xfff6d0 : 0xffffff);
       }
     }
     for (let i = 0; i < sparkN; i++) {
@@ -1061,15 +1142,16 @@ export function createWorld(THREE, track) {
   const diskGeo = new THREE.CircleGeometry(0.9, 14);
   const sapMat = new THREE.MeshStandardMaterial({ color: 0xd6e24a, emissive: 0x8aaa18, emissiveIntensity: 1.2, transparent: true, opacity: 0.94 });
   const rocketMat = new THREE.MeshStandardMaterial({ color: 0xf0a024, emissive: 0xff6a00, emissiveIntensity: 1.5 });
-  const crateMat = new THREE.MeshStandardMaterial({ map: woodMap, emissive: 0x145e66, emissiveIntensity: 0.45 });
+  const crateMap = crateTexture(THREE);
+  const crateMat = new THREE.MeshStandardMaterial({ map: crateMap, roughness: 0.48, emissive: 0x145e66, emissiveIntensity: 0.35 });
   const ringMat = new THREE.MeshStandardMaterial({ color: 0x7ee7e0, emissive: 0x14c8c0, emissiveIntensity: 1.3 });
-  const stickMat = new THREE.MeshStandardMaterial({ color: 0x6b3d22, roughness: 0.8 });
+  const stickMat = new THREE.MeshStandardMaterial({ map: woodMap, color: 0x8a4b28, roughness: 0.8 });
   const iceMat = new THREE.MeshStandardMaterial({ color: 0xe7f4ff, emissive: 0x8ecfff, emissiveIntensity: 0.55, transparent: true, opacity: 0.9 });
   const emberMat = new THREE.MeshBasicMaterial({ color: 0xffb703 });
   const starMat = new THREE.MeshStandardMaterial({ color: 0xfff1c2, emissive: 0xffc94a, emissiveIntensity: 1.1 });
   const orbMat = new THREE.MeshStandardMaterial({ color: 0x2f6dff, emissive: 0x1a4dff, emissiveIntensity: 1.4 });
   const boltMat = new THREE.MeshStandardMaterial({ color: 0xd7f6ff, emissive: 0x8ee7ff, emissiveIntensity: 1.8 });
-  const logMat = new THREE.MeshStandardMaterial({ color: 0x8a4b28, roughness: 0.82 });
+  const logMat = new THREE.MeshStandardMaterial({ map: woodMap, color: 0xc47a3a, roughness: 0.72 });
   const logEnd = new THREE.MeshStandardMaterial({ color: 0xd7b48a, roughness: 0.7 });
   const mistMat = new THREE.MeshStandardMaterial({ color: 0xd5e4ee, emissive: 0x9fb4c4, emissiveIntensity: 0.4, transparent: true, opacity: 0.42 });
   const bombMat = new THREE.MeshStandardMaterial({ color: 0x2a2420, roughness: 0.45, emissive: 0xf0a024, emissiveIntensity: 0.35 });
@@ -1389,6 +1471,7 @@ export function createWorld(THREE, track) {
     extraDress.visible = theme === "clover" || theme === "oasis" || theme === "sky";
     if (!extraDress.visible) return;
     const railMatGuide = skyRail;
+    const bermMat = new THREE.MeshStandardMaterial({ map: woodMap, color: 0xe8b15a, roughness: 0.55 });
     for (let i = 0; i < next.frames.length; i += 3) {
       const fr = next.frames[i];
       if (!fr.rail || fr.gap) continue;
@@ -1404,7 +1487,7 @@ export function createWorld(THREE, track) {
       const across = new THREE.Vector3().crossVectors(upV, fwd).normalize();
       const basis = new THREE.Matrix4().makeBasis(across, upV, fwd);
       for (const side of [-1, 1]) {
-        const berm = new THREE.Mesh(new THREE.BoxGeometry(0.95, 1.2, 2.7), railMatGuide);
+        const berm = new THREE.Mesh(new THREE.BoxGeometry(0.95, 1.2, 2.7), bermMat);
         berm.position.set(
           fr.p.x + fr.right.x * (fr.width * 0.5 + 0.2) * side + upV.x * 0.48,
           fr.p.y + upV.y * 0.48,
@@ -1461,7 +1544,7 @@ export function createWorld(THREE, track) {
       );
       extraDress.add(pole);
     }
-    const banner = new THREE.Mesh(new THREE.BoxGeometry(Math.min(14, gate.width * 0.86), 0.42, 0.08), skyRail);
+    const banner = new THREE.Mesh(new THREE.BoxGeometry(Math.min(14, gate.width * 0.86), 0.42, 0.08), bannerMat);
     banner.position.set(gate.p.x, gate.p.y + 2.35, gate.p.z);
     banner.rotation.y = Math.atan2(gate.right.x, gate.right.z);
     extraDress.add(banner);
