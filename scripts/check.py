@@ -36,7 +36,7 @@ else:
         if need not in text:
             fails.append("splash missing " + need)
 
-for need in ("Sling Kart", "Dam Loop", "Frost Ridge", "Sap Shell", "Stick Trap", "Snow Wall", "Yeet Rocket", "Star Thaw", "Blue Lodge Orb", "BOBER", "MUSCLE", "TALL", "NIB", "Tall Handsome", "btn-fire", "id=\"stick\"", "id=\"minimap\"", "btn-rematch"):
+for need in ("Sling Kart", "Dam Loop", "Frost Ridge", "Sap Shell", "Stick Trap", "Snow Wall", "Yeet Rocket", "Star Thaw", "Blue Lodge Orb", "Thunder Twig", "Log Roller", "Mirror Mist", "Crest Bomb", "BOBER", "MUSCLE", "TALL", "NIB", "Tall Handsome", "btn-fire", "id=\"stick\"", "id=\"minimap\"", "btn-rematch"):
     if need not in html:
         fails.append("html missing " + need)
 if "58dvh" not in css:
@@ -65,6 +65,10 @@ for aid in (
     "assets/museum/rocket.jpg",
     "assets/museum/star.jpg",
     "assets/museum/orb.jpg",
+    "assets/museum/twig.jpg",
+    "assets/museum/log.jpg",
+    "assets/museum/mist.jpg",
+    "assets/museum/bomb.jpg",
     "assets/museum/bober.jpg",
     "assets/museum/nib.jpg",
     "assets/museum/muscle.jpg",

@@ -7,7 +7,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "assets" / "ref"
 OUT.mkdir(parents=True, exist_ok=True)
-URL = "http://127.0.0.1:8771/?v=gd12"
+URL = "http://127.0.0.1:8771/?v=gd13"
 
 
 def shot(page, name):
@@ -289,7 +289,7 @@ def main():
             fails.append("right not right " + str(right_d))
         if left_d <= 0.05:
             fails.append("left not left " + str(left_d))
-        for item in ("sap", "trap", "wall", "rocket", "star", "orb"):
+        for item in ("sap", "trap", "wall", "rocket", "star", "orb", "twig", "log", "mist", "bomb"):
             got = page.evaluate("(id) => { window.__grand.grant(id); return window.__grand.fireNow(); }", item)
             print("fx", item, got)
             if got != item:

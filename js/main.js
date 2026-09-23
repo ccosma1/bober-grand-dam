@@ -16,9 +16,9 @@ import {
   setDriver as chooseDriver,
   swapTrack,
   writeSave,
-} from "./sim.js?v=gd12";
-import { createWorld } from "./world.js?v=gd12";
-import { createSfx } from "./audio.js?v=gd12";
+} from "./sim.js?v=gd13";
+import { createWorld } from "./world.js?v=gd13";
+import { createSfx } from "./audio.js?v=gd13";
 
 const app = document.getElementById("app");
 const stage = document.getElementById("stage");
@@ -431,6 +431,26 @@ const EXHIBITS = {
     title: "Blue Lodge Orb",
     cap: "Rare. Only while you are 1st or 2nd. A blue surge and a short push.",
   },
+  twig: {
+    src: "assets/museum/twig.jpg?v=gd13",
+    title: "Thunder Twig",
+    cap: "A bright chain. It zaps the nearest rival ahead, then the next, and stops.",
+  },
+  log: {
+    src: "assets/museum/log.jpg?v=gd13",
+    title: "Log Roller",
+    cap: "A heavy log rolls down the racing line. Slip wide and it passes.",
+  },
+  mist: {
+    src: "assets/museum/mist.jpg?v=gd13",
+    title: "Mirror Mist",
+    cap: "A pale ghost sits behind you for a moment and takes the next hit.",
+  },
+  bomb: {
+    src: "assets/museum/bomb.jpg?v=gd13",
+    title: "Crest Bomb",
+    cap: "Lobs ahead, then a wide flash and a crater of light. The road stays whole.",
+  },
   bober: {
     src: "assets/museum/bober.jpg?v=gd12",
     title: "Bober",
@@ -574,7 +594,15 @@ function hudTick() {
   const driftBtn = document.getElementById("btn-drift");
   if (driftBtn) driftBtn.textContent = you.spark >= 0.42 ? "LET GO" : "DRIFT";
   const fireBtn = document.getElementById("btn-fire");
-  const labels = { sap: "SAP", trap: "TRAP", wall: "WALL", rocket: "ROCKET", star: "THAW", orb: "ORB" };
+  const labels = { sap: "SAP", trap: "TRAP", wall: "WALL", rocket: "ROCKET", star: "THAW", orb: "ORB", twig: "TWIG", log: "LOG", mist: "MIST", bomb: "BOMB" };
+  const juice = document.getElementById("juice");
+  if (juice && race.flash) {
+    const kind = race.flash;
+    race.flash = "";
+    juice.className = "";
+    void juice.offsetWidth;
+    juice.className = "pop " + kind;
+  }
   fireBtn.textContent = you.held ? labels[you.held] || "FIRE" : you.fireCd > 0 ? "WAIT" : "FIRE";
   fireBtn.classList.toggle("armed", !!you.held && you.fireCd <= 0);
   const order = [...race.karts].sort((a, b) => b.progress - a.progress);

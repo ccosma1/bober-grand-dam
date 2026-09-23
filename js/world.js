@@ -1,5 +1,5 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd12";
-import { buildKart } from "./racers.js?v=gd12";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd13";
+import { buildKart } from "./racers.js?v=gd13";
 
 function canvasTex(THREE, draw, w, h, repeat) {
   const c = document.createElement("canvas");
@@ -967,6 +967,12 @@ export function createWorld(THREE, track) {
       camera.position.lerp(camGoal, Math.min(1, blend));
       look.lerp(lookGoal, Math.min(1, blend));
     }
+    if (race.shake > 0) {
+      const kick = race.shake * 0.55;
+      camera.position.x += Math.sin(race.time * 54) * kick;
+      camera.position.y += Math.cos(race.time * 47) * kick * 0.45;
+      camera.position.z += Math.sin(race.time * 41) * kick * 0.35;
+    }
     camera.lookAt(look);
     const boostFov = you.boost > 0 ? 5 : 0;
     const fov = (portrait ? 74 : 52) + boostFov;
@@ -985,29 +991,90 @@ export function createWorld(THREE, track) {
 
   const fx = new THREE.Group();
   scene.add(fx);
-  const sapGeo = new THREE.SphereGeometry(0.42, 10, 8);
-  const boxGeo = new THREE.BoxGeometry(0.7, 0.7, 0.7);
-  const ringGeo = new THREE.TorusGeometry(0.55, 0.06, 6, 12);
-  const stickGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.8, 5);
-  const iceGeo = new THREE.BoxGeometry(0.7, 0.85, 0.7);
-  const blastGeo = new THREE.SphereGeometry(1, 10, 8);
-  const sapMat = new THREE.MeshStandardMaterial({ color: 0xd6e24a, emissive: 0x8aaa18, emissiveIntensity: 1.1, transparent: true, opacity: 0.92 });
-  const rocketMat = new THREE.MeshStandardMaterial({ color: 0xf0a024, emissive: 0xff6a00, emissiveIntensity: 1.4 });
-  const crateMat = new THREE.MeshStandardMaterial({ map: woodMap, emissive: 0x145e66, emissiveIntensity: 0.35 });
-  const ringMat = new THREE.MeshStandardMaterial({ color: 0x7ee7e0, emissive: 0x14c8c0, emissiveIntensity: 1.2 });
+  const sapGeo = new THREE.SphereGeometry(0.55, 12, 10);
+  const boxGeo = new THREE.BoxGeometry(1.05, 1.05, 1.05);
+  const ringGeo = new THREE.TorusGeometry(0.85, 0.08, 8, 18);
+  const stickGeo = new THREE.CylinderGeometry(0.09, 0.09, 1.35, 6);
+  const iceGeo = new THREE.BoxGeometry(0.85, 1.7, 0.55);
+  const blastGeo = new THREE.SphereGeometry(1.2, 12, 10);
+  const boltGeo = new THREE.BoxGeometry(0.16, 0.16, 1);
+  const logGeo = new THREE.CylinderGeometry(0.42, 0.42, 3.4, 12);
+  const starArm = new THREE.BoxGeometry(0.72, 0.16, 0.16);
+  const coneGeo = new THREE.ConeGeometry(0.28, 0.7, 8);
+  const diskGeo = new THREE.CircleGeometry(0.9, 14);
+  const sapMat = new THREE.MeshStandardMaterial({ color: 0xd6e24a, emissive: 0x8aaa18, emissiveIntensity: 1.2, transparent: true, opacity: 0.94 });
+  const rocketMat = new THREE.MeshStandardMaterial({ color: 0xf0a024, emissive: 0xff6a00, emissiveIntensity: 1.5 });
+  const crateMat = new THREE.MeshStandardMaterial({ map: woodMap, emissive: 0x145e66, emissiveIntensity: 0.45 });
+  const ringMat = new THREE.MeshStandardMaterial({ color: 0x7ee7e0, emissive: 0x14c8c0, emissiveIntensity: 1.3 });
   const stickMat = new THREE.MeshStandardMaterial({ color: 0x6b3d22, roughness: 0.8 });
-  const iceMat = new THREE.MeshStandardMaterial({ color: 0xe7f4ff, emissive: 0x8ecfff, emissiveIntensity: 0.45, transparent: true, opacity: 0.88 });
+  const iceMat = new THREE.MeshStandardMaterial({ color: 0xe7f4ff, emissive: 0x8ecfff, emissiveIntensity: 0.55, transparent: true, opacity: 0.9 });
   const emberMat = new THREE.MeshBasicMaterial({ color: 0xffb703 });
-  const starMat = new THREE.MeshBasicMaterial({ color: 0xfff1c2 });
-  const orbMat = new THREE.MeshStandardMaterial({ color: 0x2f6dff, emissive: 0x1a4dff, emissiveIntensity: 1.3 });
-  const shockMat = new THREE.MeshBasicMaterial({ color: 0x8eb6ff, transparent: true, opacity: 0.7, side: THREE.DoubleSide });
+  const starMat = new THREE.MeshStandardMaterial({ color: 0xfff1c2, emissive: 0xffc94a, emissiveIntensity: 1.1 });
+  const orbMat = new THREE.MeshStandardMaterial({ color: 0x2f6dff, emissive: 0x1a4dff, emissiveIntensity: 1.4 });
+  const boltMat = new THREE.MeshStandardMaterial({ color: 0xd7f6ff, emissive: 0x8ee7ff, emissiveIntensity: 1.8 });
+  const logMat = new THREE.MeshStandardMaterial({ color: 0x8a4b28, roughness: 0.82 });
+  const logEnd = new THREE.MeshStandardMaterial({ color: 0xd7b48a, roughness: 0.7 });
+  const mistMat = new THREE.MeshStandardMaterial({ color: 0xd5e4ee, emissive: 0x9fb4c4, emissiveIntensity: 0.4, transparent: true, opacity: 0.42 });
+  const bombMat = new THREE.MeshStandardMaterial({ color: 0x2a2420, roughness: 0.45, emissive: 0xf0a024, emissiveIntensity: 0.35 });
+  const craterMat = new THREE.MeshStandardMaterial({ color: 0xf0a024, emissive: 0xff6a00, emissiveIntensity: 1.2, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+  const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false });
 
   function addMesh(geo, mat, x, y, z, s) {
     const m = new THREE.Mesh(geo, mat);
     m.position.set(x, y, z);
     if (s) m.scale.setScalar(s);
+    m.castShadow = true;
     fx.add(m);
     return m;
+  }
+
+  function groundBlob(x, y, z, s) {
+    const blob = addMesh(diskGeo, shadowMat, x, y + 0.06, z, s || 1);
+    blob.rotation.x = -Math.PI / 2;
+    blob.castShadow = false;
+    return blob;
+  }
+
+  function starShape(x, y, z, s) {
+    const g = new THREE.Group();
+    const a = new THREE.Mesh(starArm, starMat);
+    const b = new THREE.Mesh(starArm, starMat);
+    b.rotation.z = Math.PI / 2;
+    const c = new THREE.Mesh(starArm, starMat);
+    c.rotation.y = Math.PI / 2;
+    g.add(a, b, c);
+    g.position.set(x, y, z);
+    g.scale.setScalar(s || 1);
+    fx.add(g);
+    return g;
+  }
+
+  function boltBetween(a, b) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const dz = b.z - a.z;
+    const len = Math.hypot(dx, dy, dz) || 0.2;
+    const steps = Math.max(6, Math.min(18, Math.round(len / 0.55)));
+    let px = a.x;
+    let py = a.y;
+    let pz = a.z;
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const jag = i === steps ? 0 : (i % 2 === 0 ? 0.85 : -0.85);
+      const x = a.x + dx * t + jag;
+      const y = a.y + dy * t + 0.65 + (i % 3) * 0.35;
+      const z = a.z + dz * t - jag * 0.35;
+      const segLen = Math.hypot(x - px, y - py, z - pz) || 0.2;
+      const seg = new THREE.Mesh(boltGeo, boltMat);
+      seg.scale.set(1.15, 1.15, segLen);
+      seg.position.set((px + x) / 2, (py + y) / 2, (pz + z) / 2);
+      seg.lookAt(x, y, z);
+      seg.castShadow = true;
+      fx.add(seg);
+      px = x;
+      py = y;
+      pz = z;
+    }
   }
 
   function paintItems(race) {
@@ -1016,59 +1083,170 @@ export function createWorld(THREE, track) {
     for (const box of race.boxes) {
       if (!box.alive) continue;
       const fr = frameAt(liveTrack, box.t);
-      const bob = Math.sin(race.time * 3.2 + box.t * 12) * 0.12;
+      const bob = Math.sin(race.time * 3.2 + box.t * 12) * 0.16;
+      const lat = (box.lane || 0) * fr.width * 0.5;
       const g = new THREE.Group();
-      g.add(new THREE.Mesh(boxGeo, crateMat));
+      const crate = new THREE.Mesh(boxGeo, crateMat);
+      crate.castShadow = true;
+      g.add(crate);
       const ring = new THREE.Mesh(ringGeo, ringMat);
       ring.rotation.x = Math.PI / 2;
-      ring.position.y = -0.15;
+      ring.position.y = -0.35;
       g.add(ring);
-      g.position.set(fr.p.x, fr.p.y + 1.05 + bob, fr.p.z);
-      g.rotation.y = race.time * 1.4;
+      const beam = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.08, 0.22, 1.6, 8),
+        new THREE.MeshBasicMaterial({ color: 0x7ee7e0, transparent: true, opacity: 0.45 })
+      );
+      beam.position.y = 1.15;
+      g.add(beam);
+      g.position.set(fr.p.x + fr.right.x * lat, fr.p.y + 1.2 + bob, fr.p.z + fr.right.z * lat);
+      g.rotation.y = race.time * 1.3 + box.t * 8;
       fx.add(g);
+      groundBlob(g.position.x, fr.p.y, g.position.z, 1.3);
     }
     for (const shot of race.shots || []) {
+      groundBlob(shot.x, shot.y - 0.7, shot.z, shot.kind === "rocket" ? 1.1 : 1.4);
       if (shot.kind === "rocket") {
         const g = new THREE.Group();
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 1.15, 8), rocketMat);
-        const nose = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.48, 8), rocketMat);
-        nose.position.y = 0.75;
-        g.add(body, nose);
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.36, 1.55, 10), rocketMat);
+        const nose = new THREE.Mesh(new THREE.ConeGeometry(0.36, 0.62, 10), rocketMat);
+        nose.position.y = 1.0;
+        const fin = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.28, 0.08), rocketMat);
+        fin.position.y = -0.45;
+        g.add(body, nose, fin);
         g.position.set(shot.x, shot.y, shot.z);
         g.lookAt(shot.x + shot.vx, shot.y, shot.z + shot.vz);
         g.rotateX(Math.PI / 2);
         fx.add(g);
       } else {
-        addMesh(sapGeo, sapMat, shot.x, shot.y, shot.z, 1.7);
+        const blob = addMesh(sapGeo, sapMat, shot.x, shot.y, shot.z, 1.55);
+        blob.scale.set(1.35, 1.7, 1.35);
       }
-      const trailMat = shot.kind === "rocket" ? emberMat : sapMat;
-      shot.trail.forEach((p, i) => addMesh(sapGeo, trailMat, p.x, p.y, p.z, 0.45 + i * 0.04));
+      shot.trail.forEach((p, i) => {
+        const geo = shot.kind === "rocket" ? coneGeo : sapGeo;
+        const mat = shot.kind === "rocket" ? emberMat : sapMat;
+        const m = addMesh(geo, mat, p.x, p.y, p.z, 0.55 + i * 0.06);
+        if (shot.kind === "rocket") m.rotation.x = Math.PI / 2;
+      });
     }
     for (const trap of race.traps || []) {
-      for (let i = 0; i < 5; i++) {
-        const m = addMesh(stickGeo, stickMat, trap.x + Math.cos(i) * 0.7, trap.y + 0.55, trap.z + Math.sin(i) * 0.7, 1.8);
-        m.rotation.z = i;
+      groundBlob(trap.x, trap.y, trap.z, 1.8);
+      const ring = addMesh(ringGeo, new THREE.MeshStandardMaterial({ color: 0xc4522a, emissive: 0x8a3018, emissiveIntensity: 0.8 }), trap.x, trap.y + 0.08, trap.z, 1.6);
+      ring.rotation.x = -Math.PI / 2;
+      for (let i = 0; i < 6; i++) {
+        const m = addMesh(stickGeo, stickMat, trap.x + Math.cos(i) * 0.85, trap.y + 0.7, trap.z + Math.sin(i) * 0.85, 1.5);
+        m.rotation.z = i * 0.7;
+        m.rotation.x = 0.4;
       }
     }
     for (const wall of race.walls || []) {
-      for (const side of [-1, 0, 1]) {
-        addMesh(iceGeo, iceMat, wall.x + side * 1.15, wall.y + 0.9, wall.z, 1.55);
+      const g = new THREE.Group();
+      g.position.set(wall.x, wall.y, wall.z);
+      g.rotation.y = wall.yaw || 0;
+      for (const side of [-1.35, 0, 1.35]) {
+        const slab = new THREE.Mesh(iceGeo, iceMat);
+        slab.position.set(side, 1.15, 0);
+        slab.castShadow = true;
+        const cap = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.22, 0.7), starMat);
+        cap.position.y = 0.95;
+        slab.add(cap);
+        g.add(slab);
+      }
+      fx.add(g);
+      groundBlob(wall.x, wall.y, wall.z, 2.2);
+    }
+    for (const bolt of race.bolts || []) {
+      const links = bolt.links || [];
+      for (let i = 0; i < links.length - 1; i++) boltBetween(links[i], links[i + 1]);
+      for (const p of links) starShape(p.x, p.y + 0.5, p.z, 0.42);
+    }
+    for (const log of race.logs || []) {
+      const g = new THREE.Group();
+      g.position.set(log.x || 0, (log.y || 0) + 0.62, log.z || 0);
+      g.rotation.y = log.yaw || 0;
+      const roller = new THREE.Group();
+      roller.rotation.x = log.spin || 0;
+      const body = new THREE.Mesh(logGeo, logMat);
+      body.rotation.z = Math.PI / 2;
+      body.castShadow = true;
+      const capA = new THREE.Mesh(new THREE.CircleGeometry(0.48, 10), logEnd);
+      capA.position.x = 1.7;
+      capA.rotation.y = Math.PI / 2;
+      const capB = capA.clone();
+      capB.position.x = -1.7;
+      capB.rotation.y = -Math.PI / 2;
+      roller.add(body, capA, capB);
+      g.add(roller);
+      fx.add(g);
+      groundBlob(log.x || 0, log.y || 0, log.z || 0, 1.8);
+      for (let i = 0; i < 3; i++) {
+        addMesh(sapGeo, mistMat, (log.x || 0) - Math.cos(log.yaw || 0) * i * 0.7, (log.y || 0) + 0.3, (log.z || 0) - Math.sin(log.yaw || 0) * i * 0.7, 0.45);
+      }
+    }
+    for (const d of race.decoys || []) {
+      const g = new THREE.Group();
+      g.position.set(d.x, d.y + 0.4, d.z);
+      g.rotation.y = d.yaw || 0;
+      g.scale.setScalar(0.82);
+      const hull = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.36, 1.55), mistMat);
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 8), mistMat);
+      body.position.set(0, 0.62, 0.12);
+      body.scale.set(1.15, 0.8, 0.9);
+      const tail = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.08, 0.4), mistMat);
+      tail.position.set(0, 0.4, -0.85);
+      g.add(hull, body, tail);
+      fx.add(g);
+    }
+    for (const bomb of race.bombs || []) {
+      const g = new THREE.Group();
+      g.position.set(bomb.x, bomb.y, bomb.z);
+      const shell = new THREE.Mesh(new THREE.SphereGeometry(0.48, 12, 10), bombMat);
+      shell.castShadow = true;
+      const band = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.08, 6, 14), craterMat);
+      band.rotation.x = Math.PI / 2;
+      const spark = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), emberMat);
+      spark.position.y = 0.55;
+      g.add(shell, band, spark);
+      g.rotation.y = race.time * 4;
+      fx.add(g);
+      groundBlob(bomb.x, bomb.y - 1.2, bomb.z, 1.2);
+    }
+    for (const c of race.craters || []) {
+      const k = 1 - c.life / c.max;
+      const ring = addMesh(ringGeo, craterMat, c.x, c.y + 0.12, c.z, 3.2 + k * 5.5);
+      ring.rotation.x = -Math.PI / 2;
+      const disk = addMesh(diskGeo, craterMat, c.x, c.y + 0.08, c.z, 1.8 + k * 2.4);
+      disk.rotation.x = -Math.PI / 2;
+      disk.castShadow = false;
+      for (let i = 0; i < 6; i++) {
+        const a = i + race.time * 3;
+        addMesh(sapGeo, emberMat, c.x + Math.cos(a) * (1 + k * 2), c.y + 0.6 + k, c.z + Math.sin(a) * (1 + k * 2), 0.35);
       }
     }
     for (const b of race.bursts || []) {
       const k = 1 - b.life / b.max;
-      const geo = b.kind === "shock" || b.kind === "blast" ? blastGeo : sapGeo;
-      const mat = b.kind === "orb" || b.kind === "shock" ? orbMat : b.kind === "blast" || b.kind === "rocket" ? rocketMat : starMat;
-      addMesh(geo, mat, b.x, b.y, b.z, 0.35 + k * (b.kind === "blast" ? 2.4 : 0.9));
+      const kind = b.kind;
+      const big = kind === "bomb" || kind === "blast" || kind === "shock";
+      const mat = kind === "orb" || kind === "shock" ? orbMat : kind === "twig" ? boltMat : big || kind === "rocket" ? rocketMat : kind === "mist" ? mistMat : kind === "log" ? logMat : starMat;
+      const geo = big ? blastGeo : sapGeo;
+      addMesh(geo, mat, b.x, b.y + 0.4, b.z, big ? 0.7 + k * 1.6 : 0.4 + k * 0.55);
+      if (big) {
+        const ring = addMesh(ringGeo, mat, b.x, b.y + 0.1, b.z, 1.1 + k * 1.8);
+        ring.rotation.x = -Math.PI / 2;
+      }
     }
     for (const k of race.karts || []) {
       if (k.invuln > 0) {
-        for (let i = 0; i < 8; i++) {
+        for (let i = 0; i < 6; i++) {
           const a = race.time * 6 + i;
-          addMesh(sapGeo, starMat, k.x + Math.cos(a) * 1.6, k.y + 1.1 + Math.sin(a * 2) * 0.55, k.z + Math.sin(a) * 1.6, 0.38);
+          starShape(k.x + Math.cos(a) * 1.7, k.y + 1.15 + Math.sin(a * 2) * 0.45, k.z + Math.sin(a) * 1.7, 0.7);
         }
       }
-      if (k.orb > 0) addMesh(sapGeo, orbMat, k.x, k.y + 1.8, k.z, 1.15);
+      if (k.orb > 0) {
+        addMesh(sapGeo, orbMat, k.x, k.y + 1.7, k.z, 0.95);
+        const ring = addMesh(ringGeo, orbMat, k.x, k.y + 0.3, k.z, 2.1);
+        ring.rotation.x = -Math.PI / 2;
+      }
     }
   }
 

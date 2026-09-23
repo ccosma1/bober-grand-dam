@@ -119,6 +119,25 @@ html, body {
   pointer-events: none;
 }
 #hint.hidden, .hidden { display: none !important; }
+#juice {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0;
+}
+#juice.pop { animation: juice-flash 0.32s ease-out; }
+#juice.twig { box-shadow: inset 0 0 70px 16px rgba(140, 220, 255, 0.95); }
+#juice.bomb, #juice.rocket { box-shadow: inset 0 0 80px 18px rgba(255, 120, 30, 0.95); }
+#juice.orb { box-shadow: inset 0 0 70px 16px rgba(50, 110, 255, 0.95); }
+#juice.star { box-shadow: inset 0 0 60px 12px rgba(255, 210, 80, 0.9); }
+#juice.log { box-shadow: inset 0 0 60px 12px rgba(120, 70, 30, 0.9); }
+#juice.mist { box-shadow: inset 0 0 60px 14px rgba(220, 235, 240, 0.95); }
+#juice.sap { box-shadow: inset 0 0 60px 12px rgba(170, 190, 40, 0.9); }
+@keyframes juice-flash {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
 #countdown {
   position: absolute;
   inset: 0;

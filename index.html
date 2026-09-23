@@ -10,7 +10,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png" />
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="css/game.css?v=gd12" />
+  <link rel="stylesheet" href="css/game.css?v=gd13" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Bober Grand Dam" />
   <meta property="og:description" content="Race the bank. Drift the dam. First to the crest wins. Fan game by a holder." />
@@ -31,6 +31,7 @@
       <canvas id="minimap" class="hidden" width="160" height="160" aria-hidden="true"></canvas>
       <div id="hint" class="hidden">Hold a turn. Let go when it sparks.</div>
       <div id="countdown" class="hidden"></div>
+      <div id="juice" aria-hidden="true"></div>
     </div>
     <div id="controls" class="hidden">
       <div id="spark" aria-hidden="true"><div id="spark-fill"></div><span id="spark-label">SPARK</span></div>
@@ -78,6 +79,7 @@
       <p>Boxes sit on the road. Drive through one to hold a throw.</p>
       <p>FIRE uses it. There is a short wait before the next throw.</p>
       <p>Blue Lodge Orb only while you are 1st or 2nd.</p>
+      <p>Boxes also hold Thunder Twig, Log Roller, Mirror Mist, and Crest Bomb.</p>
       <p class="keys">A D or arrows steer. W or up goes. S or down brakes. Shift or Space drifts. F, E, or Enter fires. Arrows and Enter run the menus.</p>
       <button class="back" id="btn-how-back" type="button">BACK</button>
     </section>
@@ -136,6 +138,22 @@
         <img src="assets/museum/orb.jpg?v=gd3" alt="" />
         <span><strong>Blue Lodge Orb</strong>Only in 1st or 2nd.</span>
       </button>
+      <button class="exh" type="button" data-exhibit="twig">
+        <img src="assets/museum/twig.jpg?v=gd13" alt="" />
+        <span><strong>Thunder Twig</strong>A chain zap to the next racers ahead.</span>
+      </button>
+      <button class="exh" type="button" data-exhibit="log">
+        <img src="assets/museum/log.jpg?v=gd13" alt="" />
+        <span><strong>Log Roller</strong>A log rolling down the racing line.</span>
+      </button>
+      <button class="exh" type="button" data-exhibit="mist">
+        <img src="assets/museum/mist.jpg?v=gd13" alt="" />
+        <span><strong>Mirror Mist</strong>A short ghost left behind you.</span>
+      </button>
+      <button class="exh" type="button" data-exhibit="bomb">
+        <img src="assets/museum/bomb.jpg?v=gd13" alt="" />
+        <span><strong>Crest Bomb</strong>A lobbed blast and a crater flash.</span>
+      </button>
       <button class="back" id="btn-museum-back" type="button">BACK</button>
     </section>
 
@@ -158,6 +176,6 @@
       <button class="ghost" id="btn-splash" type="button">SPLASH</button>
     </section>
   </div>
-  <script type="module" src="js/main.js?v=gd12"></script>
+  <script type="module" src="js/main.js?v=gd13"></script>
 </body>
 </html>
