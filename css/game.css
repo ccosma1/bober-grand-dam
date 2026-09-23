@@ -20,6 +20,10 @@ html, body {
   background: var(--deep);
   color: var(--cream);
   font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+  touch-action: manipulation;
+}
+#app.live, #app.live #stage, #app.live canvas {
+  touch-action: none;
 }
 #app {
   height: 100dvh;

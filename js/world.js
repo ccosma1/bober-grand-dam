@@ -1,5 +1,5 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd14";
-import { buildKart } from "./racers.js?v=gd14";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd15";
+import { buildKart } from "./racers.js?v=gd15";
 
 function canvasTex(THREE, draw, w, h, repeat) {
   const c = document.createElement("canvas");
@@ -819,6 +819,19 @@ export function createWorld(THREE, track) {
 
   function mountKart(def) {
     const view = buildKart(THREE, def, woodMap);
+    const pipes = def.id === "muscle" ? [-0.34, 0.34] : [0];
+    const fy = def.id === "muscle" ? 1.72 : 0.82;
+    const fz = def.id === "muscle" ? -1.05 : -1.15;
+    view.flames = pipes.map((x) => {
+      const flame = new THREE.Mesh(
+        new THREE.ConeGeometry(0.18, 0.7, 8),
+        new THREE.MeshBasicMaterial({ color: 0xff5a12 })
+      );
+      flame.position.set(x, fy, fz);
+      flame.rotation.x = -Math.PI / 2;
+      view.group.add(flame);
+      return flame;
+    });
     scene.add(view.group);
     scene.add(view.blob);
     views.push(view);
@@ -842,6 +855,13 @@ export function createWorld(THREE, track) {
       sparkCol[i * 3] = 0.75;
       sparkCol[i * 3 + 1] = 0.9;
       sparkCol[i * 3 + 2] = 0.88;
+      return;
+    }
+    if (ice === "flame") {
+      sparkLife[i] = hot ? 0.9 : 0.62;
+      sparkCol[i * 3] = 1;
+      sparkCol[i * 3 + 1] = hot ? 0.78 : 0.26 + Math.random() * 0.28;
+      sparkCol[i * 3 + 2] = hot ? 0.28 : 0.04;
       return;
     }
     const heat = hot ? 1 : 0.55 + Math.random() * 0.4;
@@ -955,6 +975,12 @@ export function createWorld(THREE, track) {
       if ((k.splash || 0) > 0.4) {
         for (let n = 0; n < 3; n++) emitSpark(k.x + (n - 1) * 0.4, k.y + 0.15, k.z, false, "foam");
       }
+      const power = k.boost > 0 ? 1.7 : 0.45 + Math.min(1, (k.speed || 0) / 29) * 0.85;
+      for (const flame of view.flames || []) {
+        const flick = 0.7 + Math.random() * 0.55;
+        flame.scale.set(flick, Math.max(0.35, power) * flick, flick);
+        flame.material.color.set(k.boost > 0 ? 0xffe08a : 0xff4d10);
+      }
     }
     for (let i = 0; i < sparkN; i++) {
       if (sparkLife[i] <= 0) {
@@ -976,8 +1002,8 @@ export function createWorld(THREE, track) {
     const air = !you.grounded;
     const frYou = liveTrack.frames[you.hint] || frameAt(liveTrack, you.t);
     const onLoop = you.grounded && frYou.loop && frYou.up;
-    const back = (portrait ? 5.7 : 7.2) + (onLoop ? 3.2 : 0);
-    const up = (portrait ? 2.15 : 2.35) + (air ? 0.45 : 0);
+    const back = (portrait ? 6.55 : 8.28) + (onLoop ? 3.2 : 0);
+    const up = (portrait ? 2.47 : 2.7) + (air ? 0.45 : 0);
     const ahead = air ? 3.3 : portrait ? 5.5 : 6.0;
     const sideAmt = portrait ? 0 : 0.9;
     tmpF.set(Math.sin(you.yaw), 0, Math.cos(you.yaw));
@@ -1028,8 +1054,8 @@ export function createWorld(THREE, track) {
   const stickGeo = new THREE.CylinderGeometry(0.09, 0.09, 1.35, 6);
   const iceGeo = new THREE.BoxGeometry(0.85, 1.7, 0.55);
   const blastGeo = new THREE.SphereGeometry(1.2, 12, 10);
-  const boltGeo = new THREE.BoxGeometry(0.16, 0.16, 1);
-  const logGeo = new THREE.CylinderGeometry(0.42, 0.42, 3.4, 12);
+  const boltGeo = new THREE.BoxGeometry(0.28, 0.28, 1);
+  const logGeo = new THREE.CylinderGeometry(0.78, 0.78, 5.6, 14);
   const starArm = new THREE.BoxGeometry(0.72, 0.16, 0.16);
   const coneGeo = new THREE.ConeGeometry(0.28, 0.7, 8);
   const diskGeo = new THREE.CircleGeometry(0.9, 14);
@@ -1091,15 +1117,15 @@ export function createWorld(THREE, track) {
     let pz = a.z;
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
-      const jag = i === steps ? 0 : (i % 2 === 0 ? 0.85 : -0.85);
+      const jag = i === steps ? 0 : (i % 2 === 0 ? 0.42 : -0.42);
       const x = a.x + dx * t + jag;
       const y = a.y + dy * t + 0.65 + (i % 3) * 0.35;
       const z = a.z + dz * t - jag * 0.35;
       const segLen = Math.hypot(x - px, y - py, z - pz) || 0.2;
       const seg = new THREE.Mesh(boltGeo, boltMat);
-      seg.scale.set(1.15, 1.15, segLen);
       seg.position.set((px + x) / 2, (py + y) / 2, (pz + z) / 2);
       seg.lookAt(x, y, z);
+      seg.scale.set(1, 1, segLen);
       seg.castShadow = true;
       fx.add(seg);
       px = x;
@@ -1189,29 +1215,29 @@ export function createWorld(THREE, track) {
     for (const bolt of race.bolts || []) {
       const links = bolt.links || [];
       for (let i = 0; i < links.length - 1; i++) boltBetween(links[i], links[i + 1]);
-      for (const p of links) starShape(p.x, p.y + 0.5, p.z, 0.42);
+      for (let s = 1; s < links.length; s++) starShape(links[s].x, links[s].y + 0.4, links[s].z, 0.4);
     }
     for (const log of race.logs || []) {
       const g = new THREE.Group();
-      g.position.set(log.x || 0, (log.y || 0) + 0.62, log.z || 0);
+      g.position.set(log.x || 0, (log.y || 0) + 1.15, log.z || 0);
       g.rotation.y = log.yaw || 0;
       const roller = new THREE.Group();
       roller.rotation.x = log.spin || 0;
       const body = new THREE.Mesh(logGeo, logMat);
       body.rotation.z = Math.PI / 2;
       body.castShadow = true;
-      const capA = new THREE.Mesh(new THREE.CircleGeometry(0.48, 10), logEnd);
-      capA.position.x = 1.7;
+      const capA = new THREE.Mesh(new THREE.CircleGeometry(0.82, 12), logEnd);
+      capA.position.x = 2.8;
       capA.rotation.y = Math.PI / 2;
       const capB = capA.clone();
-      capB.position.x = -1.7;
+      capB.position.x = -2.8;
       capB.rotation.y = -Math.PI / 2;
       roller.add(body, capA, capB);
       g.add(roller);
       fx.add(g);
-      groundBlob(log.x || 0, log.y || 0, log.z || 0, 1.8);
-      for (let i = 0; i < 3; i++) {
-        addMesh(sapGeo, mistMat, (log.x || 0) - Math.cos(log.yaw || 0) * i * 0.7, (log.y || 0) + 0.3, (log.z || 0) - Math.sin(log.yaw || 0) * i * 0.7, 0.45);
+      groundBlob(log.x || 0, log.y || 0, log.z || 0, 2.6);
+      for (let i = 0; i < 5; i++) {
+        addMesh(sapGeo, logMat, (log.x || 0) - Math.cos(log.yaw || 0) * i * 0.85, (log.y || 0) + 0.45, (log.z || 0) - Math.sin(log.yaw || 0) * i * 0.85, 0.7);
       }
     }
     for (const d of race.decoys || []) {
@@ -1231,7 +1257,7 @@ export function createWorld(THREE, track) {
     for (const bomb of race.bombs || []) {
       const g = new THREE.Group();
       g.position.set(bomb.x, bomb.y, bomb.z);
-      const shell = new THREE.Mesh(new THREE.SphereGeometry(0.48, 12, 10), bombMat);
+      const shell = new THREE.Mesh(new THREE.SphereGeometry(0.82, 14, 12), bombMat);
       shell.castShadow = true;
       const band = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.08, 6, 14), craterMat);
       band.rotation.x = Math.PI / 2;
@@ -1244,7 +1270,7 @@ export function createWorld(THREE, track) {
     }
     for (const c of race.craters || []) {
       const k = 1 - c.life / c.max;
-      const ring = addMesh(ringGeo, craterMat, c.x, c.y + 0.12, c.z, 3.2 + k * 5.5);
+      const ring = addMesh(ringGeo, craterMat, c.x, c.y + 0.16, c.z, 4.8 + k * 8);
       ring.rotation.x = -Math.PI / 2;
       const disk = addMesh(diskGeo, craterMat, c.x, c.y + 0.08, c.z, 1.8 + k * 2.4);
       disk.rotation.x = -Math.PI / 2;
@@ -1362,21 +1388,31 @@ export function createWorld(THREE, track) {
     const theme = next.theme;
     extraDress.visible = theme === "clover" || theme === "oasis" || theme === "sky";
     if (!extraDress.visible) return;
-    const rail = theme === "clover" ? cloverGold : theme === "oasis" ? duneMat : skyRail;
-    for (let i = 0; i < next.frames.length; i += 4) {
+    const railMatGuide = skyRail;
+    for (let i = 0; i < next.frames.length; i += 3) {
       const fr = next.frames[i];
       if (!fr.rail || fr.gap) continue;
       const up = fr.up || { x: 0, y: 1, z: 0 };
+      const upV = new THREE.Vector3(up.x, up.y, up.z);
+      if (upV.lengthSq() < 1e-6) upV.set(0, 1, 0);
+      upV.normalize();
+      const fwd = new THREE.Vector3(fr.tangent.x, fr.tangent.y, fr.tangent.z);
+      if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, 1);
+      fwd.addScaledVector(upV, -fwd.dot(upV));
+      if (fwd.lengthSq() < 1e-6) fwd.set(1, 0, 0);
+      fwd.normalize();
+      const across = new THREE.Vector3().crossVectors(upV, fwd).normalize();
+      const basis = new THREE.Matrix4().makeBasis(across, upV, fwd);
       for (const side of [-1, 1]) {
-        const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.05, 0.16), rail);
-        post.position.set(
-          fr.p.x + fr.right.x * (fr.width * 0.5 + 0.15) * side + up.x * 0.45,
-          fr.p.y + up.y * 0.45,
-          fr.p.z + fr.right.z * (fr.width * 0.5 + 0.15) * side + up.z * 0.45
+        const berm = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.9, 2.4), railMatGuide);
+        berm.position.set(
+          fr.p.x + fr.right.x * (fr.width * 0.5 + 0.2) * side + upV.x * 0.48,
+          fr.p.y + upV.y * 0.48,
+          fr.p.z + fr.right.z * (fr.width * 0.5 + 0.2) * side + upV.z * 0.48
         );
-        const aim = new THREE.Vector3(up.x, up.y, up.z);
-        if (aim.lengthSq() > 1e-6) post.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), aim.normalize());
-        extraDress.add(post);
+        berm.quaternion.setFromRotationMatrix(basis);
+        berm.castShadow = true;
+        extraDress.add(berm);
       }
     }
     if (theme === "clover") {
@@ -1417,7 +1453,7 @@ export function createWorld(THREE, track) {
     }
     const gate = next.frames.find((f) => !f.loop && !f.gap && !f.ceiling) || next.frames[0];
     for (const side of [-1, 1]) {
-      const pole = new THREE.Mesh(new THREE.BoxGeometry(0.28, 2.6, 0.28), rail);
+      const pole = new THREE.Mesh(new THREE.BoxGeometry(0.28, 2.6, 0.28), railMatGuide);
       pole.position.set(
         gate.p.x + gate.right.x * gate.width * 0.46 * side,
         gate.p.y + 1.3,

@@ -16,9 +16,9 @@ import {
   setDriver as chooseDriver,
   swapTrack,
   writeSave,
-} from "./sim.js?v=gd14";
-import { createWorld } from "./world.js?v=gd14";
-import { createSfx } from "./audio.js?v=gd14";
+} from "./sim.js?v=gd15";
+import { createWorld } from "./world.js?v=gd15";
+import { createSfx } from "./audio.js?v=gd15";
 
 const app = document.getElementById("app");
 const stage = document.getElementById("stage");
@@ -36,6 +36,16 @@ const race = createRace(track);
 const world = createWorld(THREE, track);
 const sfx = createSfx();
 stage.insertBefore(world.renderer.domElement, stage.firstChild);
+
+function blockZoom(e) {
+  if (e.touches && e.touches.length > 1) e.preventDefault();
+  if (e.ctrlKey) e.preventDefault();
+}
+document.addEventListener("touchmove", blockZoom, { passive: false });
+document.addEventListener("gesturestart", (e) => e.preventDefault(), { passive: false });
+document.addEventListener("gesturechange", (e) => e.preventDefault(), { passive: false });
+window.addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+stage.addEventListener("dblclick", (e) => e.preventDefault());
 
 let save = loadSave();
 let scripted = null;
@@ -396,17 +406,17 @@ const EXHIBITS = {
     cap: "Ice, drifts, and two narrow bridges. Same three laps. Same four racers.",
   },
   "crown-clover": {
-    src: "assets/museum/crown-clover.jpg?v=gd14",
+    src: "assets/museum/crown-clover.jpg?v=gd15",
     title: "Crown Clover",
     cap: "A figure-eight. One pass is a bridge over the cross. Tight apexes, three laps.",
   },
   "oasis-leap": {
-    src: "assets/museum/oasis-leap.jpg?v=gd14",
+    src: "assets/museum/oasis-leap.jpg?v=gd15",
     title: "Oasis Leap",
     cap: "Two ramps. You leave the lip, arc, and land on the deck. The pools under the holes are real.",
   },
   "sky-loop": {
-    src: "assets/museum/sky-loop.jpg?v=gd14",
+    src: "assets/museum/sky-loop.jpg?v=gd15",
     title: "Sky Loop 360",
     cap: "A full loop overhead. Carry speed or you fall. The camera stays upright.",
   },

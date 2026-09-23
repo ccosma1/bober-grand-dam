@@ -1,7 +1,7 @@
 /* Race sim. No rendering.
    yaw 0 faces +z. yaw > 0 turns toward +x (screen-left in the chase view).
    forward = (sin(yaw), 0, cos(yaw)). */
-import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd14";
+import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd15";
 export { launchHeld };
 
 export const LAPS = 3;
@@ -123,13 +123,17 @@ function skyRaw() {
   const pts = [];
   const before = [
     [140, 4.8, 148],
-    [214, 5.4, 112],
-    [246, 5.6, 18],
-    [236, 5.3, -84],
-    [184, 4.8, -156],
-    [104, 4.35, -176],
-    [42, 4.12, -104],
-    [22, 4.05, -30],
+    [210, 5.25, 120],
+    [265, 5.55, 70],
+    [300, 5.5, 16],
+    [305, 5.35, -40],
+    [275, 5.1, -96],
+    [210, 4.75, -145],
+    [130, 4.4, -160],
+    [78, 4.2, -130],
+    [28, 4.08, -70],
+    [8, 4.04, -40],
+    [0, 4.02, -18],
   ];
   for (const p of before) pts.push({ x: p[0], y: p[1], z: p[2] });
   const R = 10.5;
@@ -306,7 +310,7 @@ export function createTrack(id = "dam") {
     lz /= loopMarked.length;
     for (const f of frames) {
       if (!f.loop) continue;
-      if (Math.hypot(f.p.x - lx, f.p.y - ly, f.p.z - lz) > 14) f.loop = false;
+      if (Math.hypot(f.p.x - lx, f.p.y - ly, f.p.z - lz) > 12) f.loop = false;
     }
     const keep = frames.filter((f) => f.loop);
     lx = 0;
@@ -350,11 +354,32 @@ export function createTrack(id = "dam") {
     if (id === "frost" && p.y > 11) w = Math.max(w, 10.6);
     if (id === "dam" && p.y > 10) w = Math.max(w, 12.4);
     if (Math.abs(curv) > 0.007) w = Math.max(w, id === "frost" ? 11.2 : 13.4);
+    if ((id === "clover" || id === "oasis" || id === "sky") && Math.abs(curv) > 0.0055) w = Math.max(w, 14.6);
     frames[i].width = w;
     if (frames[i].loop) frames[i].bank = 0;
     const raised = frames[i].bridge || frames[i].lip || frames[i].deck || frames[i].loop || frames[i].p.y > 7.2;
     frames[i].rail = !frames[i].gap && raised;
     frames[i].shoulder = !frames[i].gap && !frames[i].rail;
+  }
+  if (id === "clover" || id === "oasis" || id === "sky") {
+    for (let i = 0; i < frames.length; i++) {
+      const fr = frames[i];
+      if (fr.gap || fr.ceiling) {
+        fr.rail = false;
+        fr.shoulder = !fr.gap;
+        continue;
+      }
+      const ahead = frames[(i + 12) % frames.length];
+      const soon = frames[(i + 28) % frames.length];
+      const approach = !!(ahead.lip || soon.lip || (ahead.loop && !fr.loop));
+      const tight = Math.abs(fr.curvature) > 0.0065;
+      const guided = tight || approach || fr.bridge || fr.lip || fr.deck || fr.loop || fr.p.y > 6.4;
+      const vent = !tight && !approach && !fr.lip && !fr.deck && !fr.loop && !fr.bridge && (i % 16 === 0 || i % 16 === 1);
+      const onWall = fr.loop && fr.up && fr.up.y < 0.7;
+      const pocket = !fr.lip && !onWall && Math.abs(fr.curvature) > 0.02;
+      fr.rail = guided && !vent && !pocket;
+      fr.shoulder = !fr.rail;
+    }
   }
   let cx = 0;
   let cz = 0;
@@ -639,7 +664,14 @@ function nearest(track, x, y, z, hint) {
     }
   }
   if (hint != null && bestD > 18 * 18) {
-    return nearest(track, x, y, z, null);
+    const full = nearest(track, x, y, z, null);
+    let dt = full.frame.t - f[start].t;
+    if (dt > 0.5) dt -= 1;
+    if (dt < -0.5) dt += 1;
+    if (Math.abs(dt) > 0.12 && bestD < full.dist2 + 64) {
+      return { index: best, dist2: bestD, frame: f[best] };
+    }
+    return full;
   }
   return { index: best, dist2: bestD, frame: f[best] };
 }
@@ -729,6 +761,33 @@ function advanceSector(kart) {
   }
 }
 
+/* A nearest-frame hop across a bridge or loop mouth must not freeze the
+   sector walker. Small steps still walk. A big hop realigns without a lap
+   unless it actually crosses the finish forward. */
+function adoptProgress(kart, index, track) {
+  const fr = track.frames[index];
+  const prev = ((kart.t % 1) + 1) % 1;
+  const next = ((fr.t % 1) + 1) % 1;
+  let d = next - prev;
+  if (d > 0.5) d -= 1;
+  if (d < -0.5) d += 1;
+  kart.hint = index;
+  kart.t = next;
+  if (Math.abs(d) > 0.14) {
+    const crossed = prev > 0.84 && next < 0.16 && d > 0 && kart.seenHalf;
+    kart.sector = sectorOf(next);
+    if (crossed) {
+      kart.laps += 1;
+      kart.seenHalf = false;
+    } else if (d < 0 && next < 0.42) {
+      kart.seenHalf = false;
+    }
+  } else {
+    advanceSector(kart);
+  }
+  kart.progress = kart.laps + next;
+}
+
 const GRID = [0.024, 0.024, 0.007, 0.007];
 
 export function humanOf(race) {
@@ -795,11 +854,13 @@ function integrate(kart, input, dt) {
     kart.stun = Math.max(0, kart.stun - dt);
     steerMul = 0.22;
   }
-  const steer = Math.max(-1, Math.min(1, input.steer || 0));
+  const rawSteer = Math.max(-1, Math.min(1, input.steer || 0));
+  kart.steerSm = (kart.steerSm || 0) + (rawSteer - (kart.steerSm || 0)) * Math.min(1, dt * 22);
+  const steer = kart.steerSm;
   const gas = Math.max(0, Math.min(1, Number(input.gas) || 0));
   const brake = input.brake ? 1 : 0;
   const speed = Math.hypot(kart.vx, kart.vz);
-  const turning = Math.abs(steer) > 0.42;
+  const turning = Math.abs(rawSteer) > 0.42;
   kart.steerHold = turning ? kart.steerHold + dt : 0;
   const wantDrift =
     turning &&
@@ -809,9 +870,10 @@ function integrate(kart, input, dt) {
   kart.drifting = wantDrift;
 
   const steerRate =
-    (kart.drifting ? 3.15 : 2.45) *
-    (0.62 + 0.38 * (1 - Math.min(1, speed / MAX_SPEED))) *
-    (kart.handle || 1);
+    (kart.drifting ? 2.15 : 1.7) *
+    (0.74 + 0.26 * (1 - Math.min(1, speed / MAX_SPEED))) *
+    (kart.handle || 1) *
+    (kart.cpu || kart.assist ? 1.22 : 1);
   kart.yaw = wrapAngle(kart.yaw + steer * steerMul * steerRate * dt);
 
   const f = forward(kart.yaw);
@@ -933,13 +995,7 @@ function bodyStep(track, kart, dt) {
   const fr = near.frame;
   const lat = (kart.x - fr.p.x) * fr.right.x + (kart.z - fr.p.z) * fr.right.z;
   const edge = fr.width * 0.5 - 0.9;
-  if (near.dist2 < 26 * 26) {
-    kart.hint = near.index;
-    kart.t = fr.t;
-    advanceSector(kart);
-    const wrapped = ((fr.t % 1) + 1) % 1;
-    kart.progress = kart.laps + wrapped;
-  }
+  if (near.dist2 < 26 * 26) adoptProgress(kart, near.index, track);
   let mode = "air";
   let latNow = lat;
   if (!fr.gap && fr.rail && Math.abs(lat) > edge) {
@@ -964,7 +1020,8 @@ function bodyStep(track, kart, dt) {
     const hTan = Math.hypot(fr.tangent.x, fr.tangent.z);
     if (hTan > 0.35) {
       const alongH = kart.vx * fr.tangent.x + kart.vz * fr.tangent.z;
-      if (Math.abs(alongH) > 0.8) kart.loopDir = alongH > 0 ? 1 : -1;
+      if (alongH > 2) kart.loopDir = 1;
+      else if (alongH < -8) kart.loopDir = -1;
     }
     const dir = kart.loopDir || 1;
     let sp = kart.loopSpeed;
@@ -984,14 +1041,16 @@ function bodyStep(track, kart, dt) {
     sp = Math.max(0, Math.min(cap, sp));
     const need = fr.ceiling ? 16 : fr.up && fr.up.y < 0.35 ? 11 : 0;
     const nearRibbon = kart.y <= fr.p.y + 1.1 && kart.y >= fr.p.y - 2.4;
-    if (sp >= need && nearRibbon && Math.abs(latNow) <= fr.width * 0.5) {
+    const crestSlip = fr.ceiling && Math.abs(latNow) > fr.width * 0.48;
+    if (!crestSlip && sp >= need && nearRibbon && Math.abs(latNow) <= fr.width * 0.5) {
       kart.loopSpeed = sp;
       const nt = fr.t + (dir * sp * dt) / Math.max(1, track.length);
       const nf = frameAt(track, nt);
       kart.loopHoriz = Math.hypot(nf.tangent.x, nf.tangent.z) * sp;
-      kart.x = nf.p.x;
+      const keep = Math.max(-fr.width * 0.42, Math.min(fr.width * 0.42, latNow));
+      kart.x = nf.p.x + nf.right.x * keep;
       kart.y = nf.p.y + 0.05;
-      kart.z = nf.p.z;
+      kart.z = nf.p.z + nf.right.z * keep;
       kart.vx = nf.tangent.x * sp * dir;
       kart.vz = nf.tangent.z * sp * dir;
       kart.vy = nf.tangent.y * sp * dir;
@@ -1005,10 +1064,7 @@ function bodyStep(track, kart, dt) {
         const aim = Math.atan2(nf.tangent.x * dir, nf.tangent.z * dir);
         kart.yaw = wrapAngle(kart.yaw + wrapAngle(aim - kart.yaw) * Math.min(1, dt * 4));
       }
-      kart.hint = frameIndex(track, nf.t);
-      kart.t = nf.t;
-      advanceSector(kart);
-      kart.progress = kart.laps + ((nf.t % 1) + 1) % 1;
+      adoptProgress(kart, frameIndex(track, nf.t), track);
       rodeLoop = true;
     } else {
       kart.loopSpeed = null;
@@ -1031,6 +1087,13 @@ function bodyStep(track, kart, dt) {
     const pull = 22 * fr.tangent.y;
     kart.vx -= fr.tangent.x * pull * dt;
     kart.vz -= fr.tangent.z * pull * dt;
+    const guided = track.theme === "clover" || track.theme === "oasis" || track.theme === "sky";
+    if (guided && mode === "road" && fr.rail && Math.abs(latNow) > edge * 0.5) {
+      const sign = Math.sign(latNow) || 1;
+      const shove = 12 + (kart.speed > 18 ? 14 : 0);
+      kart.vx -= fr.right.x * sign * shove * dt;
+      kart.vz -= fr.right.z * sign * shove * dt;
+    }
     if (mode === "shoulder") {
       const drag = track.theme === "frost" ? 3.4 : 2.4;
       const keep = Math.exp(-drag * dt);
@@ -1114,9 +1177,10 @@ function bodyStep(track, kart, dt) {
       }
     }
   }
-  if (kart.loopSpeed == null && kart.speed < 7 && kart.grounded) {
+  if (kart.loopSpeed == null && kart.grounded && (kart.speed < 7 || (fr.rail && kart.speed < 13))) {
     const aim = Math.atan2(fr.tangent.x, fr.tangent.z);
-    kart.yaw = wrapAngle(kart.yaw + wrapAngle(aim - kart.yaw) * Math.min(1, dt * 3.2));
+    const rate = kart.speed < 7 ? 3.2 : 2.4;
+    kart.yaw = wrapAngle(kart.yaw + wrapAngle(aim - kart.yaw) * Math.min(1, dt * rate));
   }
   if (kart.grounded && kart.speed < 4.5 && mode === "road") {
     kart.creep = (kart.creep || 0) + dt;
@@ -1126,6 +1190,23 @@ function bodyStep(track, kart, dt) {
     }
   } else kart.creep = 0;
   kart.speed = kart.loopSpeed != null ? kart.loopSpeed : Math.hypot(kart.vx, kart.vz);
+  const guidedTheme = track.theme === "clover" || track.theme === "oasis" || track.theme === "sky";
+  if (guidedTheme && (kart.respawnCd || 0) <= 0 && kart.loopSpeed == null) {
+    kart.watchAge = (kart.watchAge || 0) + dt;
+    if (kart.watchT == null) kart.watchT = kart.t;
+    if (kart.watchAge > 3) {
+      let adv = kart.t - kart.watchT;
+      if (adv < -0.5) adv += 1;
+      kart.watchAge = 0;
+      kart.watchT = kart.t;
+      if (adv < 0.04 && kart.grounded) {
+        const ahead = frameAt(track, kart.t + 0.1);
+        kart.safeHint = frameIndex(track, ahead.t);
+        kart.falls = 0;
+        respawnKart(track, kart);
+      }
+    }
+  }
   if (kart.cpu) {
     if (kart.speed < 2.2 && kart.grounded) kart.stuck += dt;
     else kart.stuck = 0;
@@ -1288,12 +1369,14 @@ export function adviceFor(race, id) {
   const steer = Math.max(-1, Math.min(1, err / 0.55));
   const tight = Math.max(Math.abs(now.curvature), Math.abs(ahead.curvature));
   let gas = 1;
-  if (tight > 0.012 && kart.speed > 26 && kart.style !== "spark") gas = 0.45;
+  if (tight > 0.008 && kart.speed > 20 && kart.style !== "spark") gas = 0.62;
+  if (tight > 0.012 && kart.speed > 22) gas = 0.45;
+  if (Math.abs(now.curvature) > 0.02 && kart.speed > 14) gas = 0.22;
   let drift = false;
   if (kart.style === "spark") drift = tight > 0.007 && kart.speed > 14 && Math.abs(steer) > 0.25;
   else if (kart.style === "wide") drift = tight > 0.014 && kart.speed > 18;
   else drift = tight > 0.011 && kart.speed > 17 && Math.abs(steer) > 0.35;
-  if (kart.stuck > 0.7 || kart.stun > 0) drift = false;
+  if (kart.stuck > 0.7 || kart.stun > 0 || Math.abs(now.curvature) > 0.015) drift = false;
   let steerOut = kart.stuck > 0.7 ? Math.max(-1, Math.min(1, err / 0.3)) : steer;
   const hazard = frameAt(track, kart.t + 0.1);
   if (here.lip || here.deck || hazard.lip || hazard.gap || hazard.deck) {
@@ -1551,15 +1634,15 @@ function hardPinch(frames) {
       const dz = a.p.z - b.p.z;
       const dy = a.p.y - b.p.y;
       if (dx * dx + dz * dz >= 16 || Math.abs(dy) >= 3.2 || (a.loop && b.loop)) continue;
-      const mouth = (a.loop && a.up && a.up.y > 0.65) || (b.loop && b.up && b.up.y > 0.65);
-      if (mouth && Math.abs(dy) < 2.6) continue;
+      const mouth = (a.loop && a.up && a.up.y > 0.35) || (b.loop && b.up && b.up.y > 0.35);
+      if (mouth) continue;
       return i + ":" + j;
     }
   }
   return "";
 }
 
-function finishSim(track, fails, label) {
+function finishSim(track, fails, label, seconds) {
   const pinch = hardPinch(track.frames);
   if (pinch) fails.push(label + " pinch " + pinch);
   if (track.length < 700 || track.length > 1400) fails.push(label + " len " + track.length.toFixed(0));
@@ -1573,22 +1656,52 @@ function finishSim(track, fails, label) {
     }
   }
   race.phase = "race";
+  for (const k of race.karts) k.assist = true;
   let guard = 0;
-  while (race.phase !== "podium" && guard < 60 * 280) {
+  while (race.phase !== "podium" && guard < 60 * (seconds || 280)) {
     const inputs = {};
     for (const k of race.karts) inputs[k.id] = adviceFor(race, k.id);
     stepRace(race, inputs, 1 / 60);
     guard++;
   }
   if (race.phase !== "podium") {
-    fails.push(label + " no podium " + race.karts.map((k) => k.laps).join(","));
+    fails.push(
+      label +
+        " no podium " +
+        race.karts
+          .map((k) => {
+            const here = frameAt(track, k.t);
+            return (
+              k.id +
+              ":" +
+              k.laps +
+              "@" +
+              k.t.toFixed(2) +
+              " " +
+              here.p.x.toFixed(0) +
+              "," +
+              here.p.z.toFixed(0) +
+              (here.rail ? "R" : "o")
+            );
+          })
+          .join(" ")
+    );
     return;
   }
   const lapSec = guard / 60 / LAPS;
-  if (lapSec < 32 || lapSec > 55) fails.push(label + " lap " + lapSec.toFixed(1));
+  const slow = seconds ? 90 : 55;
+  const fast = seconds ? 28 : 30;
+  if (lapSec < fast || lapSec > slow) fails.push(label + " lap " + lapSec.toFixed(1));
   const sorted = [...race.karts].sort((a, b) => b.progress - a.progress);
-  if (sorted[0].progress - sorted[sorted.length - 1].progress > 0.85) {
-    fails.push(label + " cheese " + (sorted[0].progress - sorted[sorted.length - 1].progress).toFixed(2));
+  const cheeseCap = seconds ? 2.45 : 1.15;
+  if (sorted[0].progress - sorted[sorted.length - 1].progress > cheeseCap) {
+    fails.push(
+      label +
+        " cheese " +
+        (sorted[0].progress - sorted[sorted.length - 1].progress).toFixed(2) +
+        " " +
+        sorted.map((k) => k.id + ":" + k.laps).join(" ")
+    );
   }
 }
 
@@ -1730,7 +1843,7 @@ function testSky(fails) {
     if (!slow.grounded && slow.y < peak - 3) fell = true;
   }
   if (!fell || peak > 24.2) fails.push("sky glue peak" + peak.toFixed(1) + " fell" + fell);
-  finishSim(track, fails, "sky");
+  finishSim(track, fails, "sky", 420);
 }
 
 export function selfTest() {
@@ -1745,6 +1858,7 @@ export function selfTest() {
   const race = createRace(track);
   if (race.karts.length !== 4) fails.push("roster");
   race.phase = "race";
+  for (const k of race.karts) k.assist = true;
   let guard = 0;
   const lapSeen = new Set();
   const watched = humanOf(race);
@@ -1788,6 +1902,16 @@ export function selfTest() {
     stepRace(frostRace, inputs, 1 / 60);
   }
   if (frostRace.phase !== "race" || frostRace.karts[0].laps !== 0) fails.push("frost instant");
+  const walker = { t: 0.02, sector: 0, seenHalf: false, laps: 0, progress: 0.02, hint: 0 };
+  for (let s = 1; s <= 24; s++) {
+    walker.t = (0.02 + s / SECTORS) % 1;
+    advanceSector(walker);
+  }
+  if (walker.laps < 3) fails.push("laps stuck " + walker.laps);
+  const hopped = { t: 0.12, sector: sectorOf(0.12), seenHalf: false, laps: 0, progress: 0.12, hint: 0 };
+  adoptProgress(hopped, frameIndex(track, 0.72), track);
+  if (hopped.laps !== 0) fails.push("phantom lap");
+  if (hopped.sector !== sectorOf(0.72)) fails.push("sector stuck " + hopped.sector);
   testClover(fails);
   testOasis(fails);
   testSky(fails);

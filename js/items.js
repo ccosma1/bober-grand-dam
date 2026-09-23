@@ -1,6 +1,6 @@
 /* Item boxes and place-weighted throws. Blue Lodge Orb only in 1st or 2nd.
    Thunder Twig, Log Roller, Mirror Mist, and Crest Bomb share that table. */
-import { frameAt, forward, livePlace } from "./sim.js?v=gd14";
+import { frameAt, forward, livePlace } from "./sim.js?v=gd15";
 
 export const ITEM_IDS = ["sap", "trap", "wall", "rocket", "star", "orb", "twig", "log", "mist", "bomb"];
 
@@ -11,9 +11,9 @@ const LEAD = [
   ["rocket", 1],
   ["star", 1],
   ["orb", 3],
-  ["twig", 1],
-  ["log", 1],
-  ["bomb", 1],
+  ["twig", 2],
+  ["log", 2],
+  ["bomb", 4],
   ["mist", 3],
 ];
 const BACK = [
@@ -24,7 +24,7 @@ const BACK = [
   ["star", 2],
   ["twig", 3],
   ["log", 3],
-  ["bomb", 3],
+  ["bomb", 5],
   ["mist", 1],
 ];
 
@@ -209,7 +209,7 @@ export function launchHeld(race, kart) {
     burst(race, "shock", kart.x, kart.y + 0.6, kart.z, 0.7);
     juice(race, "orb", 0.4);
   } else if (id === "twig") {
-    const links = [{ x: kart.x, y: kart.y + 1.25, z: kart.z }];
+    const links = [{ x: kart.x + f.x * 6.5, y: kart.y + 1.7, z: kart.z + f.z * 6.5 }];
     let fromId = kart.id;
     let fromT = kart.t;
     for (let hop = 0; hop < 3; hop++) {
@@ -228,8 +228,14 @@ export function launchHeld(race, kart) {
       fromId = tgt.ref.id;
       fromT = tgt.ref.t;
     }
-    race.bolts.push({ links, life: 0.48, max: 0.48 });
-    juice(race, "twig", 0.34);
+    if (links.length < 2) {
+      for (const step of [0.045, 0.07, 0.1]) {
+        const far = frameAt(race.track, kart.t + step);
+        links.push({ x: far.p.x, y: far.p.y + 2.2, z: far.p.z });
+      }
+    }
+    race.bolts.push({ links, life: 0.78, max: 0.78 });
+    juice(race, "twig", 0.55);
   } else if (id === "log") {
     race.logs.push({
       owner: kart.id,
@@ -266,7 +272,7 @@ export function launchHeld(race, kart) {
       age: 0,
       life: 1.4,
     });
-    juice(race, "bomb", 0.16);
+    juice(race, "bomb", 0.42);
   }
   burst(race, id === "bomb" || id === "twig" ? "spark" : id, kart.x, fr.p.y + 0.9, kart.z, 0.28);
   race.lastFx = id;
@@ -293,9 +299,10 @@ function explodeBomb(race, bomb) {
   bomb.life = 0;
   const fr = frameAt(race.track, bomb.t);
   const y = fr.p.y + 0.4;
-  burst(race, "bomb", bomb.x, y + 0.4, bomb.z, 0.9);
-  race.craters.push({ x: bomb.x, y, z: bomb.z, life: 0.75, max: 0.75 });
-  juice(race, "bomb", 0.62);
+  burst(race, "bomb", bomb.x, y + 0.8, bomb.z, 1.15);
+  burst(race, "blast", bomb.x, y + 1.4, bomb.z, 0.9);
+  race.craters.push({ x: bomb.x, y, z: bomb.z, life: 1.35, max: 1.35 });
+  juice(race, "bomb", 0.85);
   for (const k of race.karts) {
     if (k.finished || k.invuln > 0) continue;
     if (bomb.age < 0.28 && k.id === bomb.owner) continue;
@@ -329,7 +336,11 @@ export function stepItems(race, dt) {
       let gap = Math.abs(k.t - box.t);
       if (gap > 0.5) gap = 1 - gap;
       if (gap < 0.03 && Math.hypot(k.x - bx, k.z - bz) < 3.15) {
-        k.held = rollItem(livePlace(race, k.id));
+        let picked = rollItem(livePlace(race, k.id));
+        k.bombDry = (k.bombDry || 0) + 1;
+        if (picked !== "bomb" && k.bombDry >= 4) picked = "bomb";
+        if (picked === "bomb") k.bombDry = 0;
+        k.held = picked;
         k.holdAge = 0;
         box.alive = false;
         box.respawn = 5.5 + Math.random() * 3.5;

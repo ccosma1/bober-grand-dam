@@ -303,10 +303,10 @@ function buildBober(THREE, woodMap) {
     g.add(band);
   }
   const wheels = [
-    wheel(THREE, g, -0.72, 0.28, 0.62, 0.28, 0.18, m, m.brass),
-    wheel(THREE, g, 0.72, 0.28, 0.62, 0.28, 0.18, m, m.brass),
-    wheel(THREE, g, -0.74, 0.3, -0.62, 0.32, 0.2, m, m.brass),
-    wheel(THREE, g, 0.74, 0.3, -0.62, 0.32, 0.2, m, m.brass),
+    wheel(THREE, g, -0.78, 0.4, 0.62, 0.4, 0.26, m, m.brass),
+    wheel(THREE, g, 0.78, 0.4, 0.62, 0.4, 0.26, m, m.brass),
+    wheel(THREE, g, -0.8, 0.46, -0.66, 0.46, 0.3, m, m.brass),
+    wheel(THREE, g, 0.8, 0.46, -0.66, 0.46, 0.3, m, m.brass),
   ];
   addBeaver(THREE, g, {
     fur: furMat(THREE, "#8d5a32", "#5c3a22", "#c48a55"),
@@ -349,16 +349,19 @@ function buildMuscle(THREE, woodMap) {
   const bolt = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), m.brass);
   bolt.position.set(0, 0.62, 1.16);
   g.add(bolt);
-  for (const x of [-0.28, 0.28]) {
-    const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.42, 8), m.ironDark);
-    stack.position.set(x, 1.15, -0.45);
+  for (const x of [-0.34, 0.34]) {
+    const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.15, 0.7, 8), m.ironDark);
+    stack.position.set(x, 1.32, -0.72);
     g.add(stack);
+    const glow = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.12, 8), m.brass);
+    glow.position.set(x, 1.68, -0.72);
+    g.add(glow);
   }
   const wheels = [
-    wheel(THREE, g, -0.88, 0.26, 0.55, 0.22, 0.18, m, m.iron),
-    wheel(THREE, g, 0.88, 0.26, 0.55, 0.22, 0.18, m, m.iron),
-    wheel(THREE, g, -0.92, 0.38, -0.55, 0.4, 0.26, m, m.iron),
-    wheel(THREE, g, 0.92, 0.38, -0.55, 0.4, 0.26, m, m.iron),
+    wheel(THREE, g, -0.96, 0.36, 0.58, 0.36, 0.26, m, m.iron),
+    wheel(THREE, g, 0.96, 0.36, 0.58, 0.36, 0.26, m, m.iron),
+    wheel(THREE, g, -1.02, 0.56, -0.62, 0.58, 0.36, m, m.iron),
+    wheel(THREE, g, 1.02, 0.56, -0.62, 0.58, 0.36, m, m.iron),
   ];
   addBeaver(THREE, g, {
     fur: furMat(THREE, "#6b4228", "#3d2818", "#a56b42"),
@@ -400,10 +403,10 @@ function buildTall(THREE, woodMap) {
   fin.position.set(0, 0.78, -0.62);
   g.add(fin);
   const wheels = [
-    wheel(THREE, g, -0.46, 0.2, 0.72, 0.18, 0.12, m, m.brass),
-    wheel(THREE, g, 0.46, 0.2, 0.72, 0.18, 0.12, m, m.brass),
-    wheel(THREE, g, -0.46, 0.2, -0.55, 0.18, 0.12, m, m.brass),
-    wheel(THREE, g, 0.46, 0.2, -0.55, 0.18, 0.12, m, m.brass),
+    wheel(THREE, g, -0.5, 0.28, 0.74, 0.28, 0.18, m, m.brass),
+    wheel(THREE, g, 0.5, 0.28, 0.74, 0.28, 0.18, m, m.brass),
+    wheel(THREE, g, -0.5, 0.3, -0.58, 0.3, 0.18, m, m.brass),
+    wheel(THREE, g, 0.5, 0.3, -0.58, 0.3, 0.18, m, m.brass),
   ];
   addBeaver(THREE, g, {
     fur: furMat(THREE, "#a56b42", "#6d452c", "#e0b088"),
@@ -452,9 +455,9 @@ function buildNib(THREE, woodMap) {
   rope.rotation.z = 0.8;
   g.add(rope);
   const wheels = [
-    wheel(THREE, g, -0.34, 0.16, 0.38, 0.16, 0.1, m, m.brass),
-    wheel(THREE, g, 0.36, 0.18, 0.22, 0.14, 0.12, m, m.iron),
-    wheel(THREE, g, 0.02, 0.28, -0.48, 0.3, 0.16, m, m.ironDark),
+    wheel(THREE, g, -0.38, 0.24, 0.4, 0.24, 0.16, m, m.brass),
+    wheel(THREE, g, 0.4, 0.26, 0.24, 0.22, 0.16, m, m.iron),
+    wheel(THREE, g, 0.02, 0.4, -0.52, 0.42, 0.22, m, m.ironDark),
   ];
   addBeaver(THREE, g, {
     fur: furMat(THREE, "#9a6238", "#6a4024", "#e2b07a"),
