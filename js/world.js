@@ -1,5 +1,5 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd31";
-import { buildKart } from "./racers.js?v=gd27";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd32";
+import { buildKart } from "./racers.js?v=gd32";
 
 function canvasTex(THREE, draw, w, h, repeat) {
   const c = document.createElement("canvas");
@@ -1052,6 +1052,10 @@ export function createWorld(THREE, track) {
       view.blob.material.opacity = k.grounded ? 0.28 : 0.1;
       const spin = k.speed * dt * 1.6;
       for (const w of view.wheels) w.rotation.x += spin;
+      if (view.driver) {
+        const lean = Math.max(-1, Math.min(1, k.steerSm || 0));
+        view.driver.rotation.y = lean * ((20 * Math.PI) / 180);
+      }
       const icy = liveTrack.theme === "frost";
       const hot = k.spark > 0.72 || k.boost > 0;
       const spraying = (k.drifting && k.spark > 0.05) || k.boost > 0 || k.speed > 16;

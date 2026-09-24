@@ -1,5 +1,5 @@
-/* Eight lodge throws. One held item. Boxes return in 6s. */
-import { frameAt, forward, livePlace } from "./sim.js?v=gd31";
+/* Eight lodge throws. One held item. Boxes return in 4.5s. */
+import { frameAt, forward, livePlace } from "./sim.js?v=gd32";
 
 export const ITEM_IDS = ["boost", "trap", "pine", "surge", "magnet", "buckler", "meteor", "slick"];
 export const ITEM_NAME = {
@@ -15,16 +15,16 @@ export const ITEM_NAME = {
 
 const U = 18 / 280;
 const BASE = [
-  ["boost", 20],
-  ["trap", 14],
+  ["boost", 18],
+  ["trap", 13],
   ["pine", 14],
-  ["surge", 12],
+  ["surge", 13],
   ["magnet", 12],
   ["buckler", 10],
-  ["meteor", 10],
+  ["meteor", 12],
   ["slick", 8],
 ];
-const LEAD_BIAS = { boost: 1.3, slick: 1.3, trap: 1.3, buckler: 1.3 };
+const LEAD_BIAS = { boost: 1.25, slick: 1.25, trap: 1.25, buckler: 1.25 };
 const BACK_BIAS = { meteor: 1.35, magnet: 1.35, pine: 1.35 };
 
 const TRAP_BACK = 40 * U;
@@ -202,7 +202,7 @@ export function launchHeld(race, kart) {
   const id = kart.held;
   kart.held = null;
   kart.holdAge = 0;
-  kart.fireCd = 1;
+  kart.fireCd = 0.85;
   const f = forward(kart.yaw);
   const length = Math.max(80, race.track.length || 1000);
   if (id === "boost") {
@@ -351,7 +351,7 @@ function stepItems(race, dt) {
         k.holdAge = 0;
         k.got = 0.45;
         box.alive = false;
-        box.respawn = 6;
+        box.respawn = 4.5;
         race.flash = "box";
         race.pickup = k.held;
         burst(race, "box", bx, k.y + 0.9, bz, 0.45);
@@ -585,7 +585,7 @@ export function testItems(race, fails) {
   you.speed = 18;
   if (arm("boost") !== "boost") fails.push("boost launch");
   if (!(you.boost >= 1.55)) fails.push("boost time");
-  if (you.fireCd < 0.9) fails.push("cd");
+  if (you.fireCd < 0.8 || you.fireCd > 0.9) fails.push("cd " + you.fireCd);
 
   clear();
   park(race, you, 0.34);
@@ -684,8 +684,10 @@ export function testItems(race, fails) {
   const box = race.boxes && race.boxes[0];
   if (box) {
     box.alive = false;
-    box.respawn = 6;
-    stepItems(race, 7.2);
-    if (!box.alive) fails.push("box 8s");
+    box.respawn = 4.5;
+    stepItems(race, 4);
+    if (box.alive) fails.push("box early");
+    stepItems(race, 1.2);
+    if (!box.alive) fails.push("box 6s");
   }
 }

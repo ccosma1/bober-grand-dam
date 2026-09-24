@@ -53,15 +53,44 @@ function furMaps(THREE, base, strand, light) {
   return { map, bump };
 }
 
+function toonGradient(THREE) {
+  const c = document.createElement("canvas");
+  c.width = 4;
+  c.height = 1;
+  const g = c.getContext("2d");
+  g.fillStyle = "#6a5344";
+  g.fillRect(0, 0, 1, 1);
+  g.fillStyle = "#c49a72";
+  g.fillRect(1, 0, 1, 1);
+  g.fillStyle = "#f3ddc4";
+  g.fillRect(2, 0, 2, 1);
+  const tex = new THREE.CanvasTexture(c);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  return tex;
+}
+
 function furMat(THREE, base, strand, light) {
   const maps = furMaps(THREE, base, strand, light);
-  return new THREE.MeshStandardMaterial({
+  const Mat = THREE.MeshToonMaterial || THREE.MeshStandardMaterial;
+  return new Mat({
     map: maps.map,
+    gradientMap: toonGradient(THREE),
     bumpMap: maps.bump,
-    bumpScale: 0.22,
-    roughness: 0.88,
-    metalness: 0.02,
+    bumpScale: 0.18,
+    color: light,
   });
+}
+
+function rim(THREE, mesh) {
+  const shell = new THREE.Mesh(
+    mesh.geometry,
+    new THREE.MeshBasicMaterial({ color: 0x1a120e, side: THREE.BackSide })
+  );
+  shell.scale.set(1.08, 1.08, 1.08);
+  shell.castShadow = false;
+  shell.receiveShadow = false;
+  mesh.add(shell);
 }
 
 function plateMap(THREE) {
@@ -106,9 +135,7 @@ function lathePart(THREE, pts, segs, material) {
   );
   const top = pts[pts.length - 1][1];
   geo.translate(0, -top * 0.5, 0);
-  const mesh = new THREE.Mesh(geo, material);
-  mesh.rotation.x = Math.PI / 2;
-  return mesh;
+  return new THREE.Mesh(geo, material);
 }
 
 const BODY_PTS = [
@@ -191,20 +218,24 @@ function wheel(THREE, g, x, y, z, radius, width, mats, capMat) {
 
 function addBeaver(THREE, g, spec) {
   const fur = spec.fur;
+  const driver = new THREE.Group();
+  driver.name = "driver";
   const body = lathePart(THREE, BODY_PTS, 16, fur);
-  body.scale.set(spec.bodyW, spec.bodyL, spec.bodyH);
+  body.scale.set(spec.bodyW, spec.bodyH, spec.bodyL);
   body.position.set(0, spec.bodyY, spec.bodyZ);
-  g.add(body);
+  rim(THREE, body);
+  driver.add(body);
 
   const belly = lathePart(THREE, BODY_PTS, 12, spec.belly);
-  belly.scale.set(spec.bodyW * 0.55, spec.bodyL * 0.62, spec.bodyH * 0.42);
+  belly.scale.set(spec.bodyW * 0.55, spec.bodyH * 0.5, spec.bodyL * 0.55);
   belly.position.set(0, spec.bodyY - spec.bodyH * 0.28, spec.bodyZ + 0.02);
-  g.add(belly);
+  driver.add(belly);
 
   const head = lathePart(THREE, HEAD_PTS, 16, fur);
-  head.scale.set(spec.headW, spec.headL, spec.headH);
+  head.scale.set(spec.headW, spec.headH, spec.headL);
   head.position.set(0, spec.headY, spec.headZ);
-  g.add(head);
+  rim(THREE, head);
+  driver.add(head);
 
   const snout = lathePart(THREE, [
     [0.02, 0],
@@ -213,13 +244,13 @@ function addBeaver(THREE, g, spec) {
     [0.34, 0.32],
     [0.12, 0.4],
   ], 12, fur);
-  snout.scale.set(spec.headW * 0.95, spec.headL * 0.55, spec.headH * 0.62);
+  snout.scale.set(spec.headW * 0.8, spec.headH * 0.42, spec.headL * 0.75);
   snout.position.set(0, spec.headY - spec.headH * 0.08, spec.headZ + spec.headL * 0.42);
-  g.add(snout);
+  driver.add(snout);
 
   const nose = new THREE.Mesh(new THREE.BoxGeometry(spec.headW * 0.28, spec.headH * 0.16, 0.06), spec.nose);
   nose.position.set(0, spec.headY - spec.headH * 0.02, spec.headZ + spec.headL * 0.72);
-  g.add(nose);
+  driver.add(nose);
 
   for (const side of [-1, 1]) {
     const tooth = new THREE.Mesh(
@@ -232,14 +263,14 @@ function addBeaver(THREE, g, spec) {
       spec.headZ + spec.headL * 0.7
     );
     tooth.rotation.x = -0.15;
-    g.add(tooth);
+    driver.add(tooth);
     const eyeW = new THREE.Mesh(new THREE.SphereGeometry(spec.eye * 1.35, 10, 8), spec.eyeWhite);
     eyeW.scale.set(1.15, 0.82, 0.7);
     eyeW.position.set(side * spec.headW * 0.38, spec.headY + spec.headH * 0.08, spec.headZ + spec.headL * 0.28);
     const pupil = new THREE.Mesh(new THREE.SphereGeometry(spec.eye * 0.55, 8, 6), spec.eye);
     pupil.position.set(0, 0, spec.eye * 0.7);
     eyeW.add(pupil);
-    g.add(eyeW);
+    driver.add(eyeW);
   }
 
   const scarf = new THREE.Mesh(
@@ -247,27 +278,27 @@ function addBeaver(THREE, g, spec) {
     spec.scarf
   );
   scarf.position.set(0, spec.bodyY + spec.bodyH * 0.28, spec.bodyZ + spec.bodyL * 0.12);
-  g.add(scarf);
+  driver.add(scarf);
   const hang = new THREE.Mesh(new THREE.BoxGeometry(spec.bodyW * 0.28, spec.bodyH * 0.55, 0.06), spec.scarf);
   hang.position.set(spec.bodyW * 0.42, spec.bodyY - spec.bodyH * 0.05, spec.bodyZ + spec.bodyL * 0.22);
   hang.rotation.z = 0.35;
-  g.add(hang);
+  driver.add(hang);
 
   const tail = paddle(THREE, spec.tailL, spec.tailW, spec.tailT, tailMaterial(THREE));
   tail.position.set(spec.tailX || 0, spec.tailY + 0.22, spec.bodyZ - spec.bodyL * 1.15);
   tail.rotation.x = -0.45;
   const nape = new THREE.Mesh(new THREE.SphereGeometry(Math.max(0.08, spec.headW * 0.22), 8, 6), spec.scarf);
   nape.position.set(0, spec.headY + spec.headH * 0.02, spec.headZ - spec.headL * 0.35);
-  g.add(nape);
+  driver.add(nape);
   tail.rotation.z = spec.tailRoll || 0;
   tail.rotation.y = spec.tailYaw || 0;
-  g.add(tail);
+  driver.add(tail);
   for (const side of [-1, 1]) {
     const ear = new THREE.Mesh(new THREE.SphereGeometry(0.5, 10, 8), fur);
     ear.scale.set(spec.earThick, spec.earH, spec.earW);
     ear.position.set(side * spec.earSpan, spec.headY + spec.headH * 0.35 + spec.earH * 0.35, spec.headZ - spec.headL * 0.1);
     ear.rotation.z = side * (spec.earLean || 0.15);
-    g.add(ear);
+    driver.add(ear);
   }
 
   if (spec.arms) {
@@ -276,12 +307,14 @@ function addBeaver(THREE, g, spec) {
       arm.position.set(side * (spec.bodyW * 0.62), spec.bodyY + 0.02, spec.bodyZ + spec.bodyL * 0.15);
       arm.rotation.z = side * 0.7;
       arm.rotation.x = 0.4;
-      g.add(arm);
+      driver.add(arm);
       const paw = new THREE.Mesh(new THREE.BoxGeometry(spec.armR * 1.8, spec.armR * 0.9, spec.armR * 1.6), fur);
       paw.position.set(side * (spec.bodyW * 0.95), spec.bodyY - spec.armL * 0.35, spec.bodyZ + spec.bodyL * 0.42);
-      g.add(paw);
+      driver.add(paw);
     }
   }
+  g.add(driver);
+  g.userData.driver = driver;
 }
 
 function finish(THREE, g, wheels, scale, kind, sig) {
@@ -305,7 +338,7 @@ function finish(THREE, g, wheels, scale, kind, sig) {
   g.userData.kind = kind;
   g.userData.sig = sig;
   g.scale.setScalar(scale);
-  return { group: g, wheels, blob, rear };
+  return { group: g, wheels, blob, rear, driver: g.userData.driver || null };
 }
 
 function buildBober(THREE, woodMap) {
@@ -356,8 +389,8 @@ function buildBober(THREE, woodMap) {
     eye: m.eye,
     eyeWhite: m.eyeWhite,
     tailMark: new THREE.MeshStandardMaterial({ color: 0x4a3424, roughness: 0.7 }),
-    bodyW: 0.5, bodyL: 0.58, bodyH: 0.34, bodyY: 0.9, bodyZ: 0.02,
-    headW: 0.36, headL: 0.34, headH: 0.22, headY: 1.22, headZ: 0.32,
+    bodyW: 0.58, bodyL: 0.62, bodyH: 0.78, bodyY: 1.15, bodyZ: 0.08,
+    headW: 0.42, headL: 0.36, headH: 0.46, headY: 1.78, headZ: 0.36,
     toothW: 0.08, toothH: 0.22, toothD: 0.07,
     eye: 0.05,
     earThick: 0.08, earH: 0.28, earW: 0.12, earSpan: 0.22, earLean: 0.2,
@@ -411,8 +444,8 @@ function buildMuscle(THREE, woodMap) {
     eye: m.eye,
     eyeWhite: m.eyeWhite,
     tailMark: new THREE.MeshStandardMaterial({ color: 0x3a2a22, roughness: 0.75 }),
-    bodyW: 0.72, bodyL: 0.5, bodyH: 0.46, bodyY: 1.12, bodyZ: 0.02,
-    headW: 0.28, headL: 0.26, headH: 0.18, headY: 1.52, headZ: 0.26,
+    bodyW: 0.86, bodyL: 0.58, bodyH: 0.88, bodyY: 1.28, bodyZ: 0.1,
+    headW: 0.36, headL: 0.32, headH: 0.4, headY: 1.95, headZ: 0.32,
     toothW: 0.05, toothH: 0.12, toothD: 0.05,
     eye: 0.04,
     earThick: 0.07, earH: 0.16, earW: 0.1, earSpan: 0.2, earLean: 0.5,
@@ -456,8 +489,8 @@ function buildTall(THREE, woodMap) {
     eye: m.eye,
     eyeWhite: m.eyeWhite,
     tailMark: new THREE.MeshStandardMaterial({ color: 0x5c4030, roughness: 0.6 }),
-    bodyW: 0.24, bodyL: 0.7, bodyH: 0.55, bodyY: 0.95, bodyZ: 0.02,
-    headW: 0.22, headL: 0.26, headH: 0.2, headY: 1.48, headZ: 0.28,
+    bodyW: 0.3, bodyL: 0.7, bodyH: 0.95, bodyY: 1.2, bodyZ: 0.08,
+    headW: 0.26, headL: 0.3, headH: 0.42, headY: 1.95, headZ: 0.34,
     toothW: 0.045, toothH: 0.16, toothD: 0.05,
     eye: 0.035,
     earThick: 0.14, earH: 0.46, earW: 0.18, earSpan: 0.14, earLean: 0.12,
@@ -507,8 +540,8 @@ function buildNib(THREE, woodMap) {
     eye: m.eye,
     eyeWhite: m.eyeWhite,
     tailMark: new THREE.MeshStandardMaterial({ color: 0x6a4a30, roughness: 0.8 }),
-    bodyW: 0.28, bodyL: 0.34, bodyH: 0.24, bodyY: 0.66, bodyZ: 0.02,
-    headW: 0.4, headL: 0.36, headH: 0.26, headY: 1.02, headZ: 0.18,
+    bodyW: 0.34, bodyL: 0.4, bodyH: 0.55, bodyY: 0.92, bodyZ: 0.06,
+    headW: 0.44, headL: 0.36, headH: 0.4, headY: 1.42, headZ: 0.24,
     toothW: 0.1, toothH: 0.28, toothD: 0.08,
     eye: 0.055,
     earThick: 0.07, earH: 0.22, earW: 0.14, earSpan: 0.24, earLean: 0.55,
