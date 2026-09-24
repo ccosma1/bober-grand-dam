@@ -7,7 +7,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "assets" / "ref"
 OUT.mkdir(parents=True, exist_ok=True)
-URL = "http://127.0.0.1:8771/?v=gd28"
+URL = "http://127.0.0.1:8771/?v=gd29"
 
 
 def shot(page, name):
@@ -142,8 +142,6 @@ def key_race(page, timeout_s=400):
                 want.add("KeyA")
             elif advice.get("steer", 0) < -0.18:
                 want.add("KeyD")
-            if advice.get("drift"):
-                want.add("ShiftLeft")
             if advice.get("fire"):
                 want.add("KeyF")
             set_keys(want)
@@ -170,7 +168,8 @@ def assert_race_chrome(page, w, h):
     assert stage["height"] >= h * 0.58, (stage, h)
     for sel in ("#stick", "#btn-fire"):
         assert_inside(box(page, sel), w, h, sel, 52)
-    assert_inside(box(page, "#spark"), w, h, "#spark", 16)
+    if page.locator("#desk-pad").is_visible():
+        raise AssertionError("desk pad on phone")
     stick = box(page, "#stick")
     fire = box(page, "#btn-fire")
     assert stick["width"] >= 90 and stick["height"] >= 64, stick
@@ -283,6 +282,11 @@ def main():
         begin_race(page)
         page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=8000)
         assert_race_chrome(page, 390, 844)
+        page.wait_for_timeout(80)
+        if page.locator("#held-name").inner_text().strip() != "—":
+            fails.append("hud not empty " + page.locator("#held-name").inner_text())
+        if page.locator("#btn-fire").inner_text().strip() != "—":
+            fails.append("fire not empty")
         nudge_stick(page, -0.3, -0.2, 3000)
         selected = page.evaluate("() => window.getSelection().toString()")
         selectable = page.evaluate("() => getComputedStyle(document.getElementById('stick')).userSelect")
@@ -312,11 +316,19 @@ def main():
             fails.append("right not right " + str(right_d))
         if left_d <= 0.05:
             fails.append("left not left " + str(left_d))
-        for item in ("sap", "trap", "wall", "rocket", "star", "orb", "twig", "log", "mist", "bomb"):
+        for item in ("sap", "trap", "wall", "rocket", "star", "orb", "twig", "bomb", "boost"):
             got = page.evaluate("(id) => { window.__grand.grant(id); return window.__grand.fireNow(); }", item)
             print("fx", item, got)
             if got != item:
                 fails.append("fx " + item + " " + str(got))
+        page.evaluate("() => window.__grand.grant('boost')")
+        page.wait_for_timeout(80)
+        if page.locator("#held-name").inner_text().strip() != "BOOST":
+            fails.append("hud boost " + page.locator("#held-name").inner_text())
+        if page.locator("#held-mark").inner_text().strip() != "BOOST":
+            fails.append("hud mark " + page.locator("#held-mark").inner_text())
+        if page.locator("#btn-fire").inner_text().strip() != "BOOST":
+            fails.append("fire label " + page.locator("#btn-fire").inner_text())
         page.evaluate("() => window.__grand.grant('sap')")
         page.click("#btn-fire")
         page.wait_for_timeout(120)
@@ -415,6 +427,33 @@ def main():
         page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=8000)
         if page.locator("#stick").is_visible() or page.locator("#btn-fire").is_visible():
             fails.append("desktop phone chrome")
+        if not page.locator("#desk-fire").is_visible():
+            fails.append("desk fire hidden")
+        for sel in ("#desk-left", "#desk-right", "#desk-go", "#desk-brake", "#desk-fire"):
+            b = box(page, sel)
+            if not b or b["height"] < 48 or b["width"] < 48:
+                fails.append("desk small " + sel + " " + str(b))
+        hold(page, "#desk-go", 700)
+        desk_speed = page.evaluate("() => window.__grand.snapshot().speed")
+        print("desk go", round(desk_speed, 2))
+        if desk_speed < 2:
+            fails.append("desk go " + str(desk_speed))
+        desk_left = steer_delta(page, "#desk-left", 500)
+        print("desk left", round(desk_left, 3))
+        if desk_left <= 0.05:
+            fails.append("desk left " + str(desk_left))
+        page.evaluate("() => window.__grand.grant('boost')")
+        page.wait_for_timeout(80)
+        if page.locator("#desk-fire").inner_text().strip() != "BOOST":
+            fails.append("desk fire label " + page.locator("#desk-fire").inner_text())
+        if page.locator("#held-name").inner_text().strip() != "BOOST":
+            fails.append("desk hud " + page.locator("#held-name").inner_text())
+        page.click("#desk-fire")
+        page.wait_for_timeout(120)
+        if page.evaluate("() => window.__grand.snapshot().held"):
+            fails.append("desk fire held")
+        if page.evaluate("() => window.__grand.snapshot().boost") <= 0:
+            fails.append("desk boost")
         stage = box(page, "#stage")
         if stage["height"] < 800 * 0.58:
             fails.append("desk stage " + str(stage))

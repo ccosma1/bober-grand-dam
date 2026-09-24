@@ -70,6 +70,33 @@ html, body {
   pointer-events: none;
 }
 #hud.hidden { display: none; }
+#held {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  min-height: 54px;
+}
+#held-mark {
+  width: 54px;
+  height: 54px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 18px;
+  background: #16343c;
+  color: var(--cream);
+  border: 3px solid var(--amber);
+}
+#held.ready #held-mark { animation: heldPulse 0.7s ease-in-out infinite; }
+#held.got #held-mark { background: var(--amber); color: var(--ink); }
+#held-name { font-weight: 900; font-size: 16px; color: var(--cream); }
+@keyframes heldPulse {
+  50% { transform: scale(1.06); box-shadow: 0 0 0 4px rgba(240, 160, 36, 0.45); }
+}
+#desk-pad { display: none; }
 .hud-row {
   display: flex;
   align-items: center;
@@ -169,32 +196,6 @@ html, body {
   -webkit-touch-callout: none;
 }
 #controls.hidden { display: none; }
-#spark {
-  position: relative;
-  height: 26px;
-  border-radius: 999px;
-  background: #0c1e24;
-  border: 2px solid var(--amber);
-  overflow: hidden;
-}
-#spark-fill {
-  height: 100%;
-  width: 0;
-  background: #c98416;
-}
-#spark-fill.hot { background: #f0a024; }
-#spark-fill.full { background: #fff1c9; }
-#spark-label {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.12em;
-  color: var(--ink);
-}
 .drive {
   display: grid;
   grid-template-columns: minmax(140px, 1.4fr) minmax(96px, 1fr);
@@ -297,11 +298,6 @@ button:focus-visible {
   font-weight: 800;
   letter-spacing: 0.02em;
   color: var(--foam);
-}
-#btn-drift {
-  background: var(--cedar);
-  color: var(--cream);
-  box-shadow: 0 4px 0 #3d2414;
 }
 #btn-gas {
   background: var(--amber);
@@ -526,7 +522,6 @@ button.back { min-height: 48px; background: var(--concrete); color: var(--ink); 
 @media (orientation: landscape) and (max-height: 520px) {
   #hud-place { font-size: 16px; }
   #hud-lap, #hud-time { font-size: 13px; }
-  #spark { height: 18px; }
   .drive { grid-template-columns: minmax(96px, 1.5fr) minmax(84px, 1fr); }
   #stick { min-height: 96px; min-width: 96px; }
   #stick-knob { width: 48px; height: 48px; }
@@ -580,5 +575,30 @@ button.back { min-height: 48px; background: var(--concrete); color: var(--ink); 
     z-index: 6;
   }
   .drive { display: none !important; }
-  #spark { height: 22px; }
+  #app.live #desk-pad {
+    display: flex;
+    position: absolute;
+    left: 50%;
+    bottom: 18px;
+    transform: translateX(-50%);
+    z-index: 8;
+    gap: 10px;
+    pointer-events: auto;
+  }
+  #desk-pad button {
+    min-width: 64px;
+    min-height: 52px;
+    padding: 0 14px;
+    border-radius: 14px;
+    border: 3px solid var(--ink);
+    background: var(--concrete);
+    color: var(--ink);
+    font-family: inherit;
+    font-weight: 900;
+    font-size: 16px;
+    box-shadow: 0 4px 0 #5c4632;
+  }
+  #desk-go { background: var(--amber); }
+  #desk-fire { background: #1499a0; color: #f4e6c8; min-width: 112px; }
+  #desk-fire.armed { background: var(--amber); color: var(--ink); }
 }

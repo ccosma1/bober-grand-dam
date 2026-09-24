@@ -6,6 +6,7 @@ import {
   createTrack,
   lapOf,
   livePlace,
+  raceProgress,
   loadSave,
   noteFinish,
   resetRace,
@@ -16,8 +17,8 @@ import {
   setDriver as chooseDriver,
   swapTrack,
   writeSave,
-} from "./sim.js?v=gd27";
-import { createWorld } from "./world.js?v=gd28";
+} from "./sim.js?v=gd29";
+import { createWorld } from "./world.js?v=gd29";
 import { createSfx } from "./audio.js?v=gd21";
 
 const app = document.getElementById("app");
@@ -87,7 +88,7 @@ function youInput() {
       steer: joy.steer,
       gas: joy.gas && !joy.brake,
       brake: joy.brake,
-      drift: !!held.drift,
+      drift: false,
       fire: takeFire(),
     };
   }
@@ -95,7 +96,7 @@ function youInput() {
     // +steer yaws toward screen-left in the chase view. Left is +1.
     steer: keySteer,
     gas: !!held.gas && !held.brake,
-    drift: !!held.drift,
+    drift: false,
     brake: !!held.brake,
     fire: takeFire(),
   };
@@ -122,8 +123,18 @@ function bindHold(id, key) {
   el.addEventListener("pointerup", up);
   el.addEventListener("pointercancel", up);
 }
-const driftBtn = document.getElementById("btn-drift");
-if (driftBtn) bindHold("btn-drift", "drift");
+bindHold("desk-left", "left");
+bindHold("desk-right", "right");
+bindHold("desk-go", "gas");
+bindHold("desk-brake", "brake");
+document.getElementById("desk-fire").addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  firePulse = true;
+  document.getElementById("desk-fire").classList.add("on");
+});
+document.getElementById("desk-fire").addEventListener("pointerup", () => {
+  document.getElementById("desk-fire").classList.remove("on");
+});
 const stick = document.getElementById("stick");
 const knob = document.getElementById("stick-knob");
 function stickAt(e) {
@@ -296,9 +307,6 @@ window.addEventListener("keydown", (e) => {
     KeyW: "gas",
     ArrowDown: "brake",
     KeyS: "brake",
-    Space: "drift",
-    ShiftLeft: "drift",
-    ShiftRight: "drift",
   };
   if (e.code === "KeyF" || e.code === "KeyE" || e.code === "Enter" || e.code === "NumpadEnter") {
     e.preventDefault();
@@ -319,9 +327,6 @@ window.addEventListener("keyup", (e) => {
     KeyW: "gas",
     ArrowDown: "brake",
     KeyS: "brake",
-    Space: "drift",
-    ShiftLeft: "drift",
-    ShiftRight: "drift",
   };
   if (!map[e.code]) return;
   held[map[e.code]] = false;
@@ -365,7 +370,7 @@ function startRace() {
   document.getElementById("how").classList.add("hidden");
   exhibitEl.classList.add("hidden");
   hintEl.classList.remove("hidden");
-  hintEl.textContent = "Hold a turn. Let go when it sparks.";
+  hintEl.textContent = "Drive through a box. FIRE uses what you hold.";
   layout();
 }
 
@@ -452,7 +457,7 @@ const EXHIBITS = {
   "sling-kart": {
     src: "assets/history/crest-drift.jpg?v=gd12",
     title: "Sling Kart",
-    cap: "Cedar bowl. Twin sling bands on the rear posts. Hold a turn until the bands spark, then let go.",
+    cap: "Cedar bowl. Twin sling bands on the rear posts.",
   },
   sap: {
     src: "assets/museum/sap.jpg?v=gd21",
@@ -487,17 +492,7 @@ const EXHIBITS = {
   twig: {
     src: "assets/museum/twig.jpg?v=gd21",
     title: "Thunder Twig",
-    cap: "A bright chain. It zaps the nearest rival ahead, then the next, and stops.",
-  },
-  log: {
-    src: "assets/museum/log.jpg?v=gd21",
-    title: "Log Roller",
-    cap: "A heavy log rolls down the racing line. Slip wide and it passes.",
-  },
-  mist: {
-    src: "assets/museum/mist.jpg?v=gd21",
-    title: "Mirror Mist",
-    cap: "A pale ghost sits behind you for a moment and takes the next hit.",
+    cap: "A bright zap to the nearest rivals ahead. If nobody is close, it stays in the kart.",
   },
   bomb: {
     src: "assets/museum/bomb.jpg?v=gd21",
@@ -655,20 +650,21 @@ function hudTick() {
   document.getElementById("hud-place").textContent = livePlace(race, you.id) + "/" + race.karts.length;
   document.getElementById("hud-lap").textContent = "LAP " + lapOf(you) + "/" + LAPS;
   document.getElementById("hud-time").textContent = fmt(race.time);
-  const fill = document.getElementById("spark-fill");
-  const label = document.getElementById("spark-label");
-  const pct = Math.round(you.spark * 100);
-  fill.style.width = pct + "%";
-  fill.classList.toggle("hot", you.spark >= 0.42);
-  fill.classList.toggle("full", you.spark >= 0.75);
-  if (you.boost > 0) label.textContent = "BOOST";
-  else if (you.spark >= 0.75) label.textContent = "LET GO";
-  else if (you.spark >= 0.42) label.textContent = "HOT";
-  else label.textContent = "SPARK";
-  const driftBtn = document.getElementById("btn-drift");
-  if (driftBtn) driftBtn.textContent = you.spark >= 0.42 ? "LET GO" : "DRIFT";
   const fireBtn = document.getElementById("btn-fire");
-  const labels = { sap: "SAP", trap: "TRAP", wall: "WALL", rocket: "ROCKET", star: "THAW", orb: "ORB", twig: "TWIG", log: "LOG", mist: "MIST", bomb: "BOMB" };
+  const deskFire = document.getElementById("desk-fire");
+  const labels = { sap: "SAP", trap: "TRAP", wall: "WALL", rocket: "ROCKET", star: "STAR", orb: "ORB", twig: "TWIG", bomb: "BOMB", boost: "BOOST" };
+  const full = { sap: "Sap Shell", trap: "Stick Trap", wall: "Snow Wall", rocket: "Yeet Rocket", star: "Star Thaw", orb: "Lodge Orb", twig: "Thunder Twig", bomb: "Crest Bomb", boost: "BOOST" };
+  const mark = document.getElementById("held-mark");
+  const name = document.getElementById("held-name");
+  const heldBox = document.getElementById("held");
+  const tag = you.held ? labels[you.held] || "—" : "—";
+  if (mark) mark.textContent = tag;
+  if (name) name.textContent = you.held ? full[you.held] || tag : "—";
+  if (heldBox) {
+    heldBox.classList.toggle("empty", !you.held);
+    heldBox.classList.toggle("ready", !!you.held && you.fireCd <= 0);
+    heldBox.classList.toggle("got", (you.got || 0) > 0);
+  }
   const juice = document.getElementById("juice");
   if (juice && race.flash) {
     const kind = race.flash;
@@ -677,9 +673,14 @@ function hudTick() {
     void juice.offsetWidth;
     juice.className = "pop " + kind;
   }
-  fireBtn.textContent = you.held ? labels[you.held] || "FIRE" : you.fireCd > 0 ? "WAIT" : "FIRE";
+  const fireLabel = you.held ? labels[you.held] || "—" : "—";
+  fireBtn.textContent = fireLabel;
   fireBtn.classList.toggle("armed", !!you.held && you.fireCd <= 0);
-  const order = [...race.karts].sort((a, b) => b.progress - a.progress);
+  if (deskFire) {
+    deskFire.textContent = fireLabel;
+    deskFire.classList.toggle("armed", !!you.held && you.fireCd <= 0);
+  }
+  const order = [...race.karts].sort((a, b) => raceProgress(b) - raceProgress(a));
   document.getElementById("hud-order").textContent = order.map((k) => k.name).join("  ");
   paintMinimap();
   if (race.phase === "countdown") {

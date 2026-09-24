@@ -1,31 +1,53 @@
 /* Item boxes and place-weighted throws. Blue Lodge Orb only in 1st or 2nd.
-   Thunder Twig, Log Roller, Mirror Mist, and Crest Bomb share that table. */
-import { frameAt, forward, livePlace } from "./sim.js?v=gd27";
+   BOOST, Thunder Twig, and Crest Bomb share that table. */
+import { frameAt, forward, livePlace } from "./sim.js?v=gd29";
 
-export const ITEM_IDS = ["sap", "trap", "wall", "rocket", "star", "orb", "twig", "log", "mist", "bomb"];
+export const ITEM_IDS = ["sap", "trap", "wall", "rocket", "star", "orb", "twig", "bomb", "boost"];
+export const ITEM_NAME = {
+  sap: "Sap Shell",
+  trap: "Stick Trap",
+  wall: "Snow Wall",
+  rocket: "Yeet Rocket",
+  star: "Star Thaw",
+  orb: "Lodge Orb",
+  twig: "Thunder Twig",
+  bomb: "Crest Bomb",
+  boost: "BOOST",
+};
+
+const U = 18 / 280;
+const SAP_RANGE = 220 * U;
+const SAP_R = 28 * U;
+const TRAP_R = 36 * U;
+const WALL_AHEAD = 60 * U;
+const WALL_HALF = (70 * U) * 0.5;
+const ROCKET_SPEED = 46;
+const ROCKET_R = 32 * U;
+const TWIG_RANGE = 280 * U;
+const BOMB_AHEAD = 180 * U;
+const BOMB_R = 55 * U;
+const ORB_R = 34 * U;
 
 const LEAD = [
-  ["sap", 1],
+  ["sap", 3],
   ["trap", 2],
   ["wall", 1],
   ["rocket", 1],
-  ["star", 1],
-  ["orb", 3],
-  ["twig", 8],
-  ["log", 8],
-  ["bomb", 4],
-  ["mist", 3],
+  ["star", 2],
+  ["orb", 2],
+  ["twig", 2],
+  ["bomb", 2],
+  ["boost", 3],
 ];
 const BACK = [
-  ["sap", 2],
-  ["trap", 2],
-  ["wall", 2],
-  ["rocket", 3],
+  ["sap", 3],
+  ["trap", 3],
+  ["wall", 3],
+  ["rocket", 4],
   ["star", 2],
-  ["twig", 8],
-  ["log", 8],
-  ["bomb", 5],
-  ["mist", 1],
+  ["twig", 4],
+  ["bomb", 4],
+  ["boost", 5],
 ];
 
 function hash(n) {
@@ -112,7 +134,7 @@ function juice(race, kind, amount) {
 
 function hurt(race, kart, stun, ix, iz) {
   if (!kart || kart.finished || kart.invuln > 0) return false;
-  kart.stun = Math.min(1.2, Math.max(kart.stun || 0, stun));
+  kart.stun = Math.min(1.3, Math.max(kart.stun || 0, stun));
   if (ix || iz) {
     kart.vx += ix || 0;
     kart.vz += iz || 0;
@@ -126,7 +148,9 @@ function nearestAhead(race, fromId, t) {
   const consider = (kind, ref, id, tt, x, y, z) => {
     if (id === fromId) return;
     const dt = wrapDt(t, tt);
-    if (dt > 0.012 && dt < 0.42 && (!best || dt < best.dt)) best = { kind, ref, id, dt, x, y, z };
+    // Floor is a couple of units, not a fat slice of a long lap, so a racer
+    // inside the shell or twig range still counts as ahead.
+    if (dt > 0.002 && dt < 0.42 && (!best || dt < best.dt)) best = { kind, ref, id, dt, x, y, z };
   };
   for (const k of race.karts) {
     if (k.finished) continue;
@@ -156,131 +180,148 @@ export function launchHeld(race, kart) {
   const id = kart.held;
   kart.held = null;
   kart.holdAge = 0;
-  kart.fireCd = 1.5;
+  kart.fireCd = 1.2;
   const f = forward(kart.yaw);
   const fr = frameAt(race.track, kart.t);
-  if (id === "sap" || id === "rocket") {
+  const length = Math.max(80, race.track.length || 1000);
+  if (id === "boost") {
+    kart.boost = 1.4;
+    kart.boostPow = 28;
+    juice(race, "boost", 0.25);
+  } else if (id === "sap" || id === "rocket" || id === "orb") {
+    let vx = f.x;
+    let vz = f.z;
+    if (id === "rocket" || id === "orb") {
+      const tgt = id === "orb" ? farthestOther(race, kart) : nearestAhead(race, kart.id, kart.t);
+      if (tgt) {
+        const dx = tgt.x - kart.x;
+        const dz = tgt.z - kart.z;
+        const dist = Math.hypot(dx, dz) || 1;
+        const aim = Math.atan2(dx, dz);
+        const yaw = Math.atan2(f.x, f.z);
+        let diff = aim - yaw;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        if (id === "orb" || (dist < SAP_RANGE * 1.4 && Math.abs(diff) < (35 * Math.PI) / 180)) {
+          vx = dx / dist;
+          vz = dz / dist;
+        }
+      }
+    }
     race.shots.push({
       kind: id,
       owner: kart.id,
-      x: kart.x + f.x * 1.6,
-      y: kart.y + 0.85,
-      z: kart.z + f.z * 1.6,
-      vx: f.x,
-      vz: f.z,
+      x: kart.x + vx * 1.8,
+      y: kart.y + 0.9,
+      z: kart.z + vz * 1.8,
+      vx,
+      vz,
       t: kart.t,
-      life: id === "sap" ? 2.5 : 1.45,
+      life: id === "sap" ? 2.4 : 1.6,
+      age: 0,
       trail: [],
     });
-    juice(race, id, id === "rocket" ? 0.28 : 0.12);
+    juice(race, id, id === "sap" ? 0.12 : 0.3);
   } else if (id === "trap") {
     race.traps.push({
       owner: kart.id,
-      x: kart.x - f.x * 2.1,
-      z: kart.z - f.z * 2.1,
+      x: kart.x - f.x * 2.4,
+      z: kart.z - f.z * 2.4,
       y: kart.y,
       life: 8,
-      armed: 0.28,
+      armed: 0.2,
     });
   } else if (id === "wall") {
-    const ahead = frameAt(race.track, kart.t + 0.028);
+    const ahead = frameAt(race.track, kart.t + WALL_AHEAD / length);
     race.walls.push({
       owner: kart.id,
       t: ahead.t,
       x: ahead.p.x,
       y: ahead.p.y,
       z: ahead.p.z,
-      life: 4.2,
-      half: Math.min(2.05, ahead.width * 0.26),
+      life: 2.5,
+      hits: 2,
+      half: Math.min(WALL_HALF, ahead.width * 0.42),
       yaw: Math.atan2(ahead.tangent.x, ahead.tangent.z),
     });
   } else if (id === "star") {
-    kart.invuln = Math.max(kart.invuln || 0, 3.2);
+    kart.invuln = Math.max(kart.invuln || 0, 2);
     juice(race, "star", 0.16);
-  } else if (id === "orb") {
-    kart.orb = Math.max(kart.orb || 0, 2.2);
-    for (const other of race.karts) {
-      if (other.id === kart.id) continue;
-      const dx = other.x - kart.x;
-      const dz = other.z - kart.z;
-      const d = Math.hypot(dx, dz);
-      if (d < 7.5 && d > 0.2) hurt(race, other, 0.45, (dx / d) * 10, (dz / d) * 10);
-    }
-    burst(race, "shock", kart.x, kart.y + 0.6, kart.z, 0.7);
-    juice(race, "orb", 0.4);
   } else if (id === "twig") {
-    const nose = frameAt(race.track, kart.t + 0.02);
-    const links = [{ x: nose.p.x, y: nose.p.y + 2.1, z: nose.p.z }];
+    const links = [{ x: kart.x, y: kart.y + 1.35, z: kart.z }];
     let fromId = kart.id;
     let fromT = kart.t;
-    let chained = false;
-    for (let hop = 0; hop < 3; hop++) {
+    let fromX = kart.x;
+    let fromZ = kart.z;
+    for (let hop = 0; hop < 2; hop++) {
       const tgt = nearestAhead(race, fromId, fromT);
-      if (!tgt || tgt.dt > 0.3) break;
-      chained = true;
-      links.push({ x: tgt.x, y: (tgt.y || 0) + 1.6, z: tgt.z });
-      if (tgt.kind === "decoy") {
-        tgt.ref.life = 0;
-        burst(race, "twig", tgt.x, tgt.y + 1, tgt.z, 0.45);
-        break;
-      }
-      const prev = links[links.length - 2];
-      const dx = tgt.x - prev.x;
-      const dz = tgt.z - prev.z;
-      const d = Math.hypot(dx, dz) || 1;
-      hurt(race, tgt.ref, hop === 0 ? 0.7 : 0.5, (dx / d) * 5, (dz / d) * 5);
-      fromId = tgt.ref.id;
-      fromT = tgt.ref.t;
+      if (!tgt) break;
+      const dist = Math.hypot(tgt.x - fromX, tgt.z - fromZ);
+      if (dist > TWIG_RANGE || tgt.dt > 0.08) break;
+      links.push({ x: tgt.x, y: (tgt.y || 0) + 1.4, z: tgt.z });
+      if (tgt.kind === "kart") hurt(race, tgt.ref, 0.6, 0, 0);
+      fromId = tgt.id;
+      fromT = tgt.ref.t || fromT;
+      fromX = tgt.x;
+      fromZ = tgt.z;
     }
-    if (!chained) {
-      for (const step of [0.03, 0.07, 0.12, 0.18]) {
-        const far = frameAt(race.track, kart.t + step);
-        links.push({ x: far.p.x, y: far.p.y + 2.8, z: far.p.z });
-      }
+    if (links.length > 1) {
+      race.bolts.push({ links, life: 0.7, max: 0.7 });
+      juice(race, "twig", 0.4);
+    } else {
+      burst(race, "twig", kart.x, kart.y + 1.2, kart.z, 0.25);
     }
-    race.bolts.push({ links, life: 1.6, max: 1.6 });
-    juice(race, "twig", 0.55);
-  } else if (id === "log") {
-    race.logs.push({
-      owner: kart.id,
-      t: (kart.t + 0.012) % 1,
-      life: 5.2,
-      spin: 0,
-      hit: {},
-    });
-    juice(race, "log", 0.35);
-  } else if (id === "mist") {
-    const back = frameAt(race.track, kart.t);
-    const side = kart.lane > 0 ? -1 : 1;
-    race.decoys.push({
-      owner: kart.id,
-      t: back.t,
-      x: back.p.x + back.right.x * 2.6 * side,
-      y: back.p.y,
-      z: back.p.z + back.right.z * 2.6 * side,
-      yaw: Math.atan2(back.tangent.x, back.tangent.z),
-      side,
-      life: 2.7,
-    });
-    juice(race, "mist", 0.12);
   } else if (id === "bomb") {
+    const dest = frameAt(race.track, kart.t + BOMB_AHEAD / length);
     race.bombs.push({
       owner: kart.id,
-      x: kart.x + f.x * 1.2,
+      x: kart.x,
       y: kart.y + 1.1,
-      z: kart.z + f.z * 1.2,
-      vx: f.x,
-      vz: f.z,
-      vy: 11,
-      t: kart.t,
+      z: kart.z,
+      sx: kart.x,
+      sy: kart.y + 1.1,
+      sz: kart.z,
+      tx: dest.p.x,
+      ty: dest.p.y + 0.6,
+      tz: dest.p.z,
+      t: dest.t,
       age: 0,
-      life: 1.4,
+      life: 0.85,
     });
-    juice(race, "bomb", 0.42);
+    juice(race, "bomb", 0.35);
   }
-  burst(race, id === "bomb" || id === "twig" ? "spark" : id, kart.x, fr.p.y + 0.9, kart.z, 0.28);
+  if (id !== "twig") burst(race, id === "boost" ? "boost" : id, kart.x, fr.p.y + 0.9, kart.z, 0.28);
   race.lastFx = id;
+  race.pickup = id;
   return id;
+}
+
+function farthestShot(race, shot) {
+  let best = null;
+  let bestD = 0;
+  for (const k of race.karts) {
+    if (k.id === shot.owner || k.finished) continue;
+    const d = Math.hypot(k.x - shot.x, k.z - shot.z);
+    if (d > bestD) {
+      bestD = d;
+      best = k;
+    }
+  }
+  return best;
+}
+
+function farthestOther(race, kart) {
+  let best = null;
+  let bestD = 0;
+  for (const k of race.karts) {
+    if (k.id === kart.id || k.finished) continue;
+    const d = Math.hypot(k.x - kart.x, k.z - kart.z);
+    if (d > bestD) {
+      bestD = d;
+      best = { x: k.x, y: k.y, z: k.z, ref: k, dt: wrapDt(kart.t, k.t) };
+    }
+  }
+  return best;
 }
 
 function hitRadius(race, shot, rad, stun) {
@@ -313,9 +354,11 @@ function explodeBomb(race, bomb) {
     const dx = k.x - bomb.x;
     const dz = k.z - bomb.z;
     const d = Math.hypot(dx, dz);
-    if (d < 4.4 && d > 0.05) {
-      const scale = 1 - d / 4.4;
-      hurt(race, k, 0.55 + scale * 0.4, (dx / d) * 12 * scale, (dz / d) * 12 * scale);
+    if (d < BOMB_R) {
+      const scale = d < 0.05 ? 1 : 1 - d / BOMB_R;
+      const nx = d > 0.05 ? dx / d : 0;
+      const nz = d > 0.05 ? dz / d : 1;
+      hurt(race, k, 0.7 + scale * 0.4, nx * 12 * scale, nz * 12 * scale);
     }
   }
 }
@@ -324,6 +367,7 @@ export function stepItems(race, dt) {
   if (race.shake > 0) race.shake = Math.max(0, race.shake - dt * 1.6);
   for (const k of race.karts) {
     if (k.held) k.holdAge = (k.holdAge || 0) + dt;
+    if (k.got > 0) k.got -= dt;
   }
   for (const box of race.boxes || []) {
     if (!box.alive) {
@@ -341,18 +385,13 @@ export function stepItems(race, dt) {
       if (gap > 0.5) gap = 1 - gap;
       if (gap < 0.03 && Math.hypot(k.x - bx, k.z - bz) < 3.15) {
         let picked = rollItem(livePlace(race, k.id));
-        k.bombDry = (k.bombDry || 0) + 1;
-        if (picked !== "bomb" && k.bombDry >= 4) picked = "bomb";
-        if (picked === "bomb") k.bombDry = 0;
-        k.toolDry = (k.toolDry || 0) + 1;
-        if (picked !== "bomb" && picked !== "twig" && picked !== "log" && k.toolDry >= 2) {
-          picked = k.toolDry % 2 === 0 ? "twig" : "log";
-        }
-        if (picked === "twig" || picked === "log") k.toolDry = 0;
         k.held = picked;
         k.holdAge = 0;
+        k.got = 0.45;
         box.alive = false;
         box.respawn = 5.5 + Math.random() * 3.5;
+        race.flash = "box";
+        race.pickup = picked;
         burst(race, "box", bx, k.y + 0.9, bz, 0.45);
         break;
       }
@@ -360,20 +399,26 @@ export function stepItems(race, dt) {
   }
   for (const shot of race.shots || []) {
     shot.life -= dt;
+    shot.age = (shot.age || 0) + dt;
     shot.trail.push({ x: shot.x, y: shot.y, z: shot.z });
     if (shot.trail.length > 16) shot.trail.shift();
-    const tgt = nearestAhead(race, shot.owner, shot.t);
-    if (shot.kind === "sap" && tgt) {
+    const tgt = shot.kind === "orb"
+      ? farthestShot(race, shot)
+      : nearestAhead(race, shot.owner, shot.t);
+    if (tgt && (shot.kind === "sap" || shot.kind === "orb")) {
       const dx = tgt.x - shot.x;
       const dz = tgt.z - shot.z;
       const d = Math.hypot(dx, dz) || 1;
-      shot.vx += (dx / d - shot.vx) * Math.min(1, dt * 4.5);
-      shot.vz += (dz / d - shot.vz) * Math.min(1, dt * 4.5);
-      const m = Math.hypot(shot.vx, shot.vz) || 1;
-      shot.vx /= m;
-      shot.vz /= m;
+      if (shot.kind === "orb" || d < SAP_RANGE) {
+        const turn = shot.kind === "sap" ? 14 : 6;
+        shot.vx += (dx / d - shot.vx) * Math.min(1, dt * turn);
+        shot.vz += (dz / d - shot.vz) * Math.min(1, dt * turn);
+        const m = Math.hypot(shot.vx, shot.vz) || 1;
+        shot.vx /= m;
+        shot.vz /= m;
+      }
     }
-    const speed = shot.kind === "sap" ? 36 : 62;
+    const speed = shot.kind === "sap" ? 34 : shot.kind === "orb" ? 32 : ROCKET_SPEED;
     shot.x += shot.vx * speed * dt;
     shot.z += shot.vz * speed * dt;
     let best = shot.t;
@@ -389,22 +434,21 @@ export function stepItems(race, dt) {
       }
     }
     shot.t = best;
-    const rad = shot.kind === "rocket" ? 1.7 : 1.35;
-    const stun = shot.kind === "rocket" ? 0.7 : 0.85;
-    if (hitRadius(race, shot, rad, stun) || shot.life <= 0) {
-      if (shot.kind === "rocket") {
+    const rad = shot.kind === "rocket" ? ROCKET_R : shot.kind === "orb" ? ORB_R : SAP_R;
+    const stun = shot.kind === "rocket" ? 1 : shot.kind === "orb" ? 1.3 : 0.9;
+    const armed = shot.kind !== "sap" || shot.age >= 0.15;
+    if (armed && (hitRadius(race, shot, rad, stun) || shot.life <= 0)) {
+      if (shot.kind === "rocket" || shot.kind === "orb") {
         for (const k of race.karts) {
           if (k.id === shot.owner || k.invuln > 0) continue;
           const d = Math.hypot(k.x - shot.x, k.z - shot.z);
-          if (d < 3.6 && d > 0.2) {
-            hurt(race, k, 0.55, ((k.x - shot.x) / d) * 11, ((k.z - shot.z) / d) * 11);
+          if (d < rad + 0.4 && d > 0.05) {
+            hurt(race, k, stun, ((k.x - shot.x) / d) * 10, ((k.z - shot.z) / d) * 10);
           }
         }
-        burst(race, "blast", shot.x, shot.y, shot.z, 0.8);
-        juice(race, "rocket", 0.45);
-      } else if (shot.life <= 0 || true) {
-        burst(race, "sap", shot.x, shot.y, shot.z, 0.5);
-      }
+        burst(race, "blast", shot.x, shot.y, shot.z, 0.85);
+        juice(race, shot.kind, 0.45);
+      } else burst(race, "sap", shot.x, shot.y, shot.z, 0.5);
       shot.life = 0;
     }
   }
@@ -419,8 +463,8 @@ export function stepItems(race, dt) {
     }
     for (const k of race.karts) {
       if (k.id === trap.owner || k.finished || k.invuln > 0) continue;
-      if (Math.hypot(k.x - trap.x, k.z - trap.z) < 1.55) {
-        hurt(race, k, 0.9, 0, 0);
+      if (Math.hypot(k.x - trap.x, k.z - trap.z) < TRAP_R) {
+        hurt(race, k, 0.7, 0, 0);
         k.yaw += 1.05;
         trap.life = 0;
         burst(race, "trap", trap.x, trap.y + 0.4, trap.z, 0.5);
@@ -441,77 +485,28 @@ export function stepItems(race, dt) {
       const lat = (k.x - fr.p.x) * fr.right.x + (k.z - fr.p.z) * fr.right.z;
       if (gap < 0.012 && Math.abs(lat) < wall.half) {
         if ((k.wallHit || 0) > race.time) continue;
-        k.wallHit = race.time + 0.85;
+        k.wallHit = race.time + 0.7;
         const back = forward(k.yaw);
-        k.vx -= back.x * 8;
-        k.vz -= back.z * 8;
-        hurt(race, k, 0.55, -back.x * 6, -back.z * 6);
+        k.vx -= back.x * 10;
+        k.vz -= back.z * 10;
+        hurt(race, k, 0.45, -back.x * 8, -back.z * 8);
+        wall.hits = (wall.hits || 1) - 1;
+        if (wall.hits <= 0) wall.life = 0;
       }
     }
   }
   race.walls = (race.walls || []).filter((w) => w.life > 0);
 
-  const length = Math.max(80, race.track.length || 1000);
-  for (const log of race.logs || []) {
-    log.life -= dt;
-    log.spin = (log.spin || 0) + dt * 11;
-    log.t = (log.t + (16 / length) * dt) % 1;
-    const fr = frameAt(race.track, log.t);
-    log.x = fr.p.x;
-    log.y = fr.p.y;
-    log.z = fr.p.z;
-    log.yaw = Math.atan2(fr.tangent.x, fr.tangent.z);
-    if (popDecoyAt(race, log.x, log.z, 1.8)) continue;
-    for (const k of race.karts) {
-      if (k.id === log.owner || k.finished || k.invuln > 0) continue;
-      if (log.hit[k.id]) continue;
-      const along = Math.abs(wrapDt(log.t, k.t));
-      const lat = Math.abs((k.x - fr.p.x) * fr.right.x + (k.z - fr.p.z) * fr.right.z);
-      if (along < 0.012 && lat < 1.7) {
-        log.hit[k.id] = true;
-        const sign = Math.sign((k.x - fr.p.x) * fr.right.x + (k.z - fr.p.z) * fr.right.z) || (k.id.length % 2 ? 1 : -1);
-        hurt(race, k, 0.8, fr.right.x * sign * 9, fr.right.z * sign * 9);
-        burst(race, "log", k.x, k.y + 0.5, k.z, 0.4);
-      }
-    }
-  }
-  race.logs = (race.logs || []).filter((l) => l.life > 0);
-
-  for (const d of race.decoys || []) {
-    d.life -= dt;
-    d.t = (d.t + (7 / length) * dt + 1) % 1;
-    const fr = frameAt(race.track, d.t);
-    const side = d.side || 1;
-    d.x = fr.p.x + fr.right.x * 2.6 * side;
-    d.y = fr.p.y;
-    d.z = fr.p.z + fr.right.z * 2.6 * side;
-    d.yaw = Math.atan2(fr.tangent.x, fr.tangent.z);
-  }
-  race.decoys = (race.decoys || []).filter((d) => d.life > 0);
-
   for (const bomb of race.bombs || []) {
     if (bomb.life <= 0) continue;
     bomb.age += dt;
     bomb.life -= dt;
-    bomb.vy -= 30 * dt;
-    bomb.y += bomb.vy * dt;
-    bomb.x += bomb.vx * 18 * dt;
-    bomb.z += bomb.vz * 18 * dt;
-    let best = bomb.t;
-    let bestD = 1e9;
-    let roadY = 0;
-    for (let s = -2; s <= 5; s++) {
-      const tt = bomb.t + s * 0.01;
-      const fr = frameAt(race.track, tt);
-      const d = (fr.p.x - bomb.x) ** 2 + (fr.p.z - bomb.z) ** 2;
-      if (d < bestD) {
-        bestD = d;
-        best = fr.t;
-        roadY = fr.p.y;
-      }
-    }
-    bomb.t = best;
-    if ((bomb.age > 0.32 && bomb.y <= roadY + 0.45) || bomb.life <= 0) explodeBomb(race, bomb);
+    const k = Math.min(1, bomb.age / 0.55);
+    const arc = Math.sin(k * Math.PI) * 3.2;
+    bomb.x = bomb.sx + (bomb.tx - bomb.sx) * k;
+    bomb.z = bomb.sz + (bomb.tz - bomb.sz) * k;
+    bomb.y = bomb.sy + (bomb.ty - bomb.sy) * k + arc;
+    if (k >= 1 || bomb.life <= 0) explodeBomb(race, bomb);
   }
   race.bombs = (race.bombs || []).filter((b) => b.life > 0);
 
@@ -535,7 +530,7 @@ export function testItems(race, fails) {
   let sawNew = false;
   for (let i = 0; i < 40; i++) {
     const id = rollItem(4, Math.random);
-    if (id === "twig" || id === "log" || id === "mist" || id === "bomb") sawNew = true;
+    if (id === "twig" || id === "bomb" || id === "boost") sawNew = true;
   }
   if (!sawNew) fails.push("new weapons missing");
   if (!race.boxes || race.boxes.length < 10) fails.push("boxes " + (race.boxes ? race.boxes.length : 0));
@@ -549,7 +544,7 @@ export function testItems(race, fails) {
     you.stun = 0;
     const launched = launchHeld(race, you);
     if (launched !== id) fails.push("launch " + id);
-    if (you.fireCd < 1.4) fails.push("cd " + id);
+    if (you.fireCd < 1.05) fails.push("cd " + id);
     you.held = id;
     const blocked = launchHeld(race, you);
     if (blocked) fails.push("recast " + id);
@@ -560,7 +555,7 @@ export function testItems(race, fails) {
   if (you.stun > 0) fails.push("star hurt");
   you.invuln = 0;
   hurt(race, you, 5, 0, 0);
-  if (you.stun > 1.2) fails.push("stun cap " + you.stun);
+  if (you.stun > 1.3) fails.push("stun cap " + you.stun);
   stepItems(race, 0.05);
   const alive =
     (race.shots && race.shots.length) ||
@@ -575,7 +570,7 @@ export function testItems(race, fails) {
   if (!alive) fails.push("no fx");
   const foe = race.karts[1];
   if (foe) {
-    foe.t = (you.t + 0.05) % 1;
+    foe.t = (you.t + 14 / Math.max(80, race.track.length)) % 1;
     const fr = frameAt(race.track, foe.t);
     foe.x = fr.p.x;
     foe.z = fr.p.z;
@@ -587,6 +582,100 @@ export function testItems(race, fails) {
     you.stun = 0;
     launchHeld(race, you);
     if (foe.stun <= 0) fails.push("twig miss");
-    if (foe.stun > 1.2) fails.push("twig stun " + foe.stun);
+    if (foe.stun > 0.7) fails.push("twig stun " + foe.stun);
+    const length = Math.max(80, race.track.length || 1000);
+    const park = (kart, t) => {
+      const fr = frameAt(race.track, ((t % 1) + 1) % 1);
+      kart.t = fr.t;
+      kart.x = fr.p.x;
+      kart.y = fr.p.y;
+      kart.z = fr.p.z;
+      kart.finished = false;
+      kart.invuln = 0;
+      kart.stun = 0;
+      kart.vx = 0;
+      kart.vz = 0;
+    };
+    const clearFx = () => {
+      race.shots = [];
+      race.traps = [];
+      race.walls = [];
+      race.bombs = [];
+      race.bolts = [];
+    };
+    const isolate = (tYou) => {
+      park(you, tYou);
+      for (const k of race.karts) {
+        if (k.id !== you.id && k.id !== foe.id) park(k, tYou - 0.18);
+      }
+    };
+    const watch = (id, frames, label) => {
+      you.held = id;
+      you.fireCd = 0;
+      you.stun = 0;
+      launchHeld(race, you);
+      for (let i = 0; i < frames; i++) {
+        stepItems(race, 1 / 60);
+        if (foe.stun > 0.2) return;
+      }
+      fails.push(label);
+    };
+    clearFx();
+    isolate(0.22);
+    park(foe, you.t + 10 / length);
+    you.yaw = Math.atan2(foe.x - you.x, foe.z - you.z);
+    watch("sap", 100, "sap miss");
+    clearFx();
+    foe.stun = 0;
+    isolate(0.4);
+    park(foe, you.t + 12 / length);
+    you.yaw = Math.atan2(foe.x - you.x, foe.z - you.z);
+    watch("rocket", 90, "rocket miss");
+    clearFx();
+    foe.stun = 0;
+    isolate(0.55);
+    const aim = frameAt(race.track, you.t);
+    you.yaw = Math.atan2(aim.tangent.x, aim.tangent.z);
+    you.held = "trap";
+    you.fireCd = 0;
+    launchHeld(race, you);
+    const trap = race.traps[race.traps.length - 1];
+    if (!trap) fails.push("trap drop");
+    else {
+      foe.x = trap.x;
+      foe.z = trap.z;
+      foe.y = trap.y;
+      foe.stun = 0;
+      foe.invuln = 0;
+      for (let i = 0; i < 24; i++) stepItems(race, 1 / 60);
+      if (foe.stun <= 0) fails.push("trap miss");
+    }
+    clearFx();
+    foe.stun = 0;
+    isolate(0.7);
+    you.held = "bomb";
+    you.fireCd = 0;
+    launchHeld(race, you);
+    const bomb = race.bombs[race.bombs.length - 1];
+    if (!bomb) fails.push("bomb drop");
+    else {
+      foe.x = bomb.tx;
+      foe.z = bomb.tz;
+      foe.y = bomb.ty;
+      foe.stun = 0;
+      foe.invuln = 0;
+      for (let i = 0; i < 50; i++) stepItems(race, 1 / 60);
+      if (foe.stun <= 0) fails.push("bomb miss");
+    }
+    clearFx();
+    isolate(0.15);
+    for (const k of race.karts) {
+      if (k.id !== you.id) park(k, you.t + 0.3);
+    }
+    you.held = "twig";
+    you.fireCd = 0;
+    const beforeBolts = race.bolts.length;
+    launchHeld(race, you);
+    if (race.bolts.length > beforeBolts) fails.push("twig void");
   }
 }

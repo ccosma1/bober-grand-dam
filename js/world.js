@@ -1,4 +1,4 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd27";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd29";
 import { buildKart } from "./racers.js?v=gd27";
 
 function canvasTex(THREE, draw, w, h, repeat) {
@@ -945,6 +945,13 @@ export function createWorld(THREE, track) {
       sparkCol[i * 3 + 2] = hot ? 0.28 : 0.04;
       return;
     }
+    if (ice === "boost") {
+      sparkLife[i] = 1.15;
+      sparkCol[i * 3] = 1;
+      sparkCol[i * 3 + 1] = 0.62;
+      sparkCol[i * 3 + 2] = 0.08;
+      return;
+    }
     const heat = hot ? 1 : 0.55 + Math.random() * 0.4;
     sparkCol[i * 3] = 1;
     sparkCol[i * 3 + 1] = 0.55 + heat * 0.4;
@@ -1053,6 +1060,12 @@ export function createWorld(THREE, track) {
           emitSpark(k.x - f.x * 1.05 + rx * side, k.y + 0.22, k.z - f.z * 1.05 + rz * side, hot, kind);
         }
       }
+      if (k.boost > 0.15) {
+        const bf = forward(k.yaw);
+        emitSpark(k.x - bf.x * 1.7, k.y + 0.32, k.z - bf.z * 1.7, true, "boost");
+        emitSpark(k.x - bf.x * 2.5, k.y + 0.24, k.z - bf.z * 2.5, true, "boost");
+        emitSpark(k.x - bf.x * 3.3, k.y + 0.18, k.z - bf.z * 3.3, false, "boost");
+      }
       if ((k.splash || 0) > 0.4) {
         for (let n = 0; n < 3; n++) emitSpark(k.x + (n - 1) * 0.4, k.y + 0.15, k.z, false, "foam");
       }
@@ -1061,7 +1074,7 @@ export function createWorld(THREE, track) {
         const flick = 0.7 + Math.random() * 0.55;
         const tall = Math.max(0.45, Math.min(0.85, power)) * flick;
         flame.scale.set(flick * 0.8, tall, flick * 0.8);
-        flame.material.color.set(k.boost > 0 ? 0xfff1c4 : 0xff3b22);
+        flame.material.color.set(0xff3b22);
       }
     }
     for (let i = 0; i < sparkN; i++) {
@@ -1236,12 +1249,13 @@ export function createWorld(THREE, track) {
     }
     for (const shot of race.shots || []) {
       groundBlob(shot.x, shot.y - 0.7, shot.z, shot.kind === "rocket" ? 1.1 : 1.4);
-      if (shot.kind === "rocket") {
+      if (shot.kind === "rocket" || shot.kind === "orb") {
         const g = new THREE.Group();
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.36, 1.55, 10), rocketMat);
-        const nose = new THREE.Mesh(new THREE.ConeGeometry(0.36, 0.62, 10), rocketMat);
-        nose.position.y = 1.0;
-        const fin = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.28, 0.08), rocketMat);
+        const bodyMat = shot.kind === "orb" ? orbMat : rocketMat;
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 2.1, 10), bodyMat);
+        const nose = new THREE.Mesh(new THREE.ConeGeometry(0.52, 0.8, 10), bodyMat);
+        nose.position.y = 1.35;
+        const fin = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.36, 0.12), bodyMat);
         fin.position.y = -0.45;
         g.add(body, nose, fin);
         g.position.set(shot.x, shot.y, shot.z);
@@ -1249,8 +1263,8 @@ export function createWorld(THREE, track) {
         g.rotateX(Math.PI / 2);
         fx.add(g);
       } else {
-        const blob = addMesh(sapGeo, sapMat, shot.x, shot.y, shot.z, 1.55);
-        blob.scale.set(1.35, 1.7, 1.35);
+        const blob = addMesh(sapGeo, sapMat, shot.x, shot.y, shot.z, 2.15);
+        blob.scale.set(1.8, 2.1, 1.8);
       }
       shot.trail.forEach((p, i) => {
         const geo = shot.kind === "rocket" ? coneGeo : sapGeo;

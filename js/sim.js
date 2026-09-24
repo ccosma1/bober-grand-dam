@@ -1,7 +1,7 @@
 /* Race sim. No rendering.
    yaw 0 faces +z. yaw > 0 turns toward +x (screen-left in the chase view).
    forward = (sin(yaw), 0, cos(yaw)). */
-import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd27";
+import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd29";
 export { launchHeld };
 
 export const LAPS = 3;
@@ -881,21 +881,15 @@ function integrate(kart, input, dt) {
   const gas = Math.max(0, Math.min(1, Number(input.gas) || 0));
   const brake = input.brake ? 1 : 0;
   const speed = Math.hypot(kart.vx, kart.vz);
-  const turning = Math.abs(rawSteer) > 0.42;
-  kart.steerHold = turning ? kart.steerHold + dt : 0;
-  const wantDrift =
-    turning &&
-    speed > 9 &&
-    (input.drift || kart.steerHold > 0.1);
-  const was = kart.drifting;
-  kart.drifting = wantDrift;
+  kart.drifting = false;
+  kart.spark = 0;
 
   const slow = 1 - Math.min(1, speed / MAX_SPEED);
   const steerRate = assisted
-    ? (kart.drifting ? 2.15 : 1.7) * (0.74 + 0.26 * slow) * (kart.handle || 1) * 1.22
-    : (kart.drifting ? 1.42 : 1.05) * (0.64 + 0.36 * slow) * (kart.handle || 1);
+    ? 1.7 * (0.74 + 0.26 * slow) * (kart.handle || 1) * 1.22
+    : 1.05 * (0.64 + 0.36 * slow) * (kart.handle || 1);
   kart.yaw = wrapAngle(kart.yaw + steer * steerMul * steerRate * dt);
-  if (!assisted && !kart.drifting && Math.abs(rawSteer) < 0.28 && Math.abs(kart.slip || 0) > 0.12) {
+  if (!assisted && Math.abs(rawSteer) < 0.28 && Math.abs(kart.slip || 0) > 0.12) {
     kart.yaw = wrapAngle(kart.yaw + (kart.slip || 0) * Math.min(1, dt * 2.1));
   }
 
@@ -917,28 +911,16 @@ function integrate(kart, input, dt) {
   const fwdSp = kart.vx * f.x + kart.vz * f.z;
   let sx = kart.vx - f.x * fwdSp;
   let sz = kart.vz - f.z * fwdSp;
-  const grip = kart.drifting ? 1.25 : 8.2;
-  const keep = Math.exp(-grip * dt);
+  const keep = Math.exp(-8.2 * dt);
   sx *= keep;
   sz *= keep;
   kart.vx = f.x * fwdSp + sx;
   kart.vz = f.z * fwdSp + sz;
 
-  const side = Math.hypot(sx, sz);
-  if (kart.drifting) {
-    kart.spark = Math.min(1, kart.spark + dt * (0.55 + Math.min(0.5, side * 0.06)));
-  } else if (was && kart.spark >= SPARK_MIN) {
-    kart.boost = 0.32 + kart.spark * 0.45;
-    kart.boostPow = 20 + kart.spark * 30;
-    kart.spark = 0;
-  } else {
-    kart.spark = Math.max(0, kart.spark - dt * 0.85);
-  }
-
   let sp = Math.hypot(kart.vx, kart.vz);
   const cap =
     (kart.baseCap || (kart.cpu ? 27 : MAX_SPEED)) *
-    (kart.boost > 0 ? 1.32 : 1) *
+    (kart.boost > 0 ? 1.55 : 1) *
     (kart.orb > 0 ? 1.18 : 1);
   if (sp > cap) {
     kart.vx *= cap / sp;
@@ -1055,7 +1037,7 @@ function bodyStep(track, kart, dt) {
     }
     const cap =
       (kart.baseCap || (kart.cpu ? 27 : MAX_SPEED)) *
-      (kart.boost > 0 ? 1.32 : 1) *
+      (kart.boost > 0 ? 1.55 : 1) *
       (kart.orb > 0 ? 1.18 : 1);
     const floor = fr.ceiling || (fr.up && fr.up.y < 0.35) ? 18 : 13;
     sp = Math.max(floor, Math.min(cap, sp));
@@ -1387,24 +1369,18 @@ export function adviceFor(race, id) {
   if (tight > 0.008 && kart.speed > 20 && kart.style !== "spark") gas = 0.62;
   if (tight > 0.012 && kart.speed > 22) gas = 0.45;
   if (Math.abs(now.curvature) > 0.02 && kart.speed > 14) gas = 0.22;
-  let drift = false;
-  if (kart.style === "spark") drift = tight > 0.007 && kart.speed > 14 && Math.abs(steer) > 0.25;
-  else if (kart.style === "wide") drift = tight > 0.014 && kart.speed > 18;
-  else drift = tight > 0.011 && kart.speed > 17 && Math.abs(steer) > 0.35;
-  if (kart.stuck > 0.7 || kart.stun > 0 || Math.abs(now.curvature) > 0.015) drift = false;
   let steerOut = kart.stuck > 0.7 ? Math.max(-1, Math.min(1, err / 0.3)) : steer;
   const hazard = frameAt(track, kart.t + 0.1);
   if (here.lip || here.deck || hazard.lip || hazard.gap || hazard.deck) {
-    drift = false;
     const lat = (kart.x - here.p.x) * here.right.x + (kart.z - here.p.z) * here.right.z;
     steerOut = Math.max(-1, Math.min(1, steerOut - lat / Math.max(2.5, here.width * 0.45)));
   }
   let fire = false;
   if (kart.cpu && kart.held && kart.fireCd <= 0 && kart.stun <= 0) {
-    const wait = kart.held === "trap" ? 0.7 : 0.35;
-    fire = (kart.holdAge || 0) > wait;
+    if (kart.held === "boost") fire = Math.abs(now.curvature) < 0.006 && kart.speed > 12;
+    else fire = (kart.holdAge || 0) > (kart.held === "trap" ? 0.7 : 0.35);
   }
-  return { steer: steerOut, gas, drift, fire };
+  return { steer: steerOut, gas, drift: false, fire };
 }
 
 export function raceProgress(kart) {
@@ -1476,13 +1452,13 @@ function testSteer(fails) {
 function testBoost(fails) {
   const kart = {
     x: 0, y: 0, z: 0, yaw: 0, vx: 0, vz: 18, speed: 18,
-    spark: 0.8, drifting: true, boost: 0, boostPow: 0, steerHold: 0.4, slip: 0,
+    spark: 0, drifting: false, boost: 1.4, boostPow: 28, steerHold: 0, slip: 0,
   };
-  integrate(kart, { steer: 0, gas: 1, drift: false }, 1 / 60);
-  if (!(kart.boost > 0.2)) fails.push("boost " + kart.boost.toFixed(2));
   const before = kart.speed;
   integrate(kart, { steer: 0, gas: 1, drift: false }, 1 / 60);
-  if (!(kart.speed > before - 1)) fails.push("boost speed");
+  if (!(kart.boost > 1)) fails.push("boost life " + kart.boost.toFixed(2));
+  if (!(kart.speed > before)) fails.push("boost speed");
+  if (kart.drifting) fails.push("drift still on");
 }
 
 function loneKart(track, fr, speed) {
