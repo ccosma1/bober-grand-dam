@@ -1,4 +1,4 @@
-"""Pack splash, history stills, and the Sling Kart museum crop."""
+"""Pack splash, history stills, and the Cedar Sling museum crop."""
 from pathlib import Path
 
 from PIL import Image

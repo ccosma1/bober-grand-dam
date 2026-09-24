@@ -566,7 +566,7 @@ button.back { min-height: 48px; background: var(--concrete); color: var(--ink); 
     width: 100%;
     height: 100%;
     object-fit: cover;
-    object-position: center center;
+    object-position: center 70%;
   }
   #splash {
     align-items: center;
@@ -575,8 +575,9 @@ button.back { min-height: 48px; background: var(--concrete); color: var(--ink); 
   }
   #splash .top,
   #splash .band {
-    width: min(520px, calc(100% - 48px));
-    max-width: 520px;
+    width: clamp(420px, 62vw, 90vw);
+    min-width: min(420px, calc(100% - 32px));
+    max-width: 90vw;
   }
   #splash .top { text-align: center; padding-left: 0; padding-right: 0; }
   #splash .band {

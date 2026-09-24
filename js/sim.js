@@ -1,7 +1,7 @@
 /* Race sim. No rendering.
    yaw 0 faces +z. yaw > 0 turns toward +x (screen-left in the chase view).
    forward = (sin(yaw), 0, cos(yaw)). */
-import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd30";
+import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd31";
 export { launchHeld };
 
 export const LAPS = 3;
@@ -242,15 +242,32 @@ function cr(p0, p1, p2, p3, t) {
   return { x, y, z };
 }
 
-function markDamDrop(frames) {
-  // East straight of Dam Loop, outside the crest and the south bridges.
-  for (const fr of frames) {
+function markWestVent(frames) {
+  let best = -1;
+  for (let i = 0; i < frames.length; i++) {
+    const fr = frames[i];
+    fr.drop = false;
+    fr.vent = false;
     if (fr.gap || fr.lip || fr.deck || fr.bridge || fr.loop) continue;
-    if (fr.p.x < 130 || fr.p.y > 5.5 || fr.p.z < -40 || fr.p.z > 110) continue;
-    fr.drop = true;
-    fr.rail = false;
-    fr.shoulder = true;
+    if (fr.p.y < 6.5) continue;
+    if (best < 0 || fr.p.x < frames[best].p.x) best = i;
   }
+  if (best < 0) return;
+  const chosen = [];
+  let acc = 0;
+  const n = frames.length;
+  for (let d = 0; d < 14 && acc < 6.2; d++) {
+    for (const s of d === 0 ? [0] : [-d, d]) {
+      const i = (best + s + n) % n;
+      const fr = frames[i];
+      if (fr.gap || fr.lip || fr.deck || fr.loop) continue;
+      if (chosen.indexOf(i) >= 0) continue;
+      chosen.push(i);
+      acc += fr.ds || 2;
+      if (acc >= 6.2) break;
+    }
+  }
+  for (const i of chosen) frames[i].vent = true;
 }
 
 export function createTrack(id = "dam") {
@@ -408,7 +425,7 @@ export function createTrack(id = "dam") {
       fr.shoulder = !fr.rail;
     }
   }
-  if (id === "dam") markDamDrop(frames);
+  if (id === "dam") markWestVent(frames);
   let cx = 0;
   let cz = 0;
   for (const f of frames) {
@@ -946,7 +963,8 @@ function integrate(kart, input, dt) {
   let sp = Math.hypot(kart.vx, kart.vz);
   const cap =
     (kart.baseCap || (kart.cpu ? 27 : MAX_SPEED)) *
-    (kart.boost > 0 ? 1.55 : 1) *
+    (kart.boost > 0 ? 1.6 : 1) *
+    (kart.slowT > 0 ? kart.speedMul || 1 : 1) *
     (kart.orb > 0 ? 1.18 : 1);
   if (sp > cap) {
     kart.vx *= cap / sp;
@@ -1016,6 +1034,7 @@ function respawnKart(track, kart) {
   kart.drifting = false;
   kart.spark = 0;
   kart.stuck = 0;
+  kart.fallT = 0;
 }
 
 function bodyStep(track, kart, dt) {
@@ -1025,7 +1044,7 @@ function bodyStep(track, kart, dt) {
   const fr = near.frame;
   const lat = (kart.x - fr.p.x) * fr.right.x + (kart.z - fr.p.z) * fr.right.z;
   const edge = fr.width * 0.5 - 0.9;
-  const offOuter = !!(fr.drop && (Math.sign(lat) || 0) === outerSign(track, fr) && Math.abs(lat) > edge);
+  const offOuter = !!(fr.vent && (Math.sign(lat) || 0) === outerSign(track, fr) && Math.abs(lat) > edge);
   if (near.dist2 < 26 * 26 && Math.abs(ribbonDelta(kart, fr.t)) <= 0.08) adoptProgress(kart, near.index, track);
   let mode = "air";
   let latNow = lat;
@@ -1063,7 +1082,8 @@ function bodyStep(track, kart, dt) {
     }
     const cap =
       (kart.baseCap || (kart.cpu ? 27 : MAX_SPEED)) *
-      (kart.boost > 0 ? 1.55 : 1) *
+      (kart.boost > 0 ? 1.6 : 1) *
+    (kart.slowT > 0 ? kart.speedMul || 1 : 1) *
       (kart.orb > 0 ? 1.18 : 1);
     const floor = fr.ceiling || (fr.up && fr.up.y < 0.35) ? 18 : 13;
     sp = Math.max(floor, Math.min(cap, sp));
@@ -1157,7 +1177,14 @@ function bodyStep(track, kart, dt) {
     kart.grounded = false;
     kart.air += dt;
     const w = waterUnder(track, kart.x, kart.z);
-    if (w && kart.y <= w.y + 0.55) {
+    if (offOuter) {
+      kart.fallT = (kart.fallT || 0) + dt;
+      if (kart.y < -4) {
+        kart.y = -4;
+        kart.vy = 0;
+      }
+      if (kart.fallT >= 1.5) respawnKart(track, kart);
+    } else if (w && kart.y <= w.y + 0.55) {
       kart.y = w.y + 0.12;
       kart.vy = Math.min(kart.vy, -1.2);
       kart.vx *= 0.9;
@@ -1165,7 +1192,7 @@ function bodyStep(track, kart, dt) {
       kart.splash = 0.8;
       kart.wet = (kart.wet || 0) + dt;
       if (kart.wet > 0.26) respawnKart(track, kart);
-    } else if (!offOuter && !w && kart.y <= GROUND_Y && kart.vy <= 0) {
+    } else if (!w && kart.y <= GROUND_Y && kart.vy <= 0) {
       kart.y = GROUND_Y;
       kart.vy = 0;
       kart.off = (kart.off || 0) + dt;
@@ -1173,8 +1200,6 @@ function bodyStep(track, kart, dt) {
       kart.vx *= keep;
       kart.vz *= keep;
       if (kart.off > 1.85) respawnKart(track, kart);
-    } else if (offOuter && kart.y < fr.p.y - 3.2) {
-      respawnKart(track, kart);
     } else if (kart.y < -3.5 || kart.air > 2.5) {
       respawnKart(track, kart);
     }
@@ -1480,11 +1505,11 @@ function testSteer(fails) {
 function testBoost(fails) {
   const kart = {
     x: 0, y: 0, z: 0, yaw: 0, vx: 0, vz: 18, speed: 18,
-    spark: 0, drifting: false, boost: 1.4, boostPow: 28, steerHold: 0, slip: 0,
+    spark: 0, drifting: false, boost: 1.6, boostPow: 36, steerHold: 0, slip: 0,
   };
   const before = kart.speed;
   integrate(kart, { steer: 0, gas: 1, drift: false }, 1 / 60);
-  if (!(kart.boost > 1)) fails.push("boost life " + kart.boost.toFixed(2));
+  if (!(kart.boost > 1.4)) fails.push("boost life " + kart.boost.toFixed(2));
   if (!(kart.speed > before)) fails.push("boost speed");
   if (kart.drifting) fails.push("drift still on");
 }
@@ -2004,8 +2029,8 @@ export function selfTest() {
   bodyStep(track, snapKart, 1 / 60);
   if (snapKart.progress > snapProg + 0.08) fails.push("snap ahead " + snapKart.progress.toFixed(2));
   if (livePlace(pack, snapKart.id) !== 4) fails.push("snap place " + livePlace(pack, snapKart.id));
-  const dropFr = track.frames.find((f) => f.drop);
-  if (!dropFr) fails.push("dam drop");
+  const dropFr = track.frames.find((f) => f.vent);
+  if (!dropFr) fails.push("west vent");
   else {
     const faller = humanOf(pack);
     for (const k of pack.karts) {
@@ -2037,7 +2062,9 @@ export function selfTest() {
     faller.vy = 0;
     faller.grounded = false;
     let dropped = false;
+    let frames = 0;
     for (let i = 0; i < 140; i++) {
+      frames += 1;
       const y0 = faller.y;
       bodyStep(track, faller, 1 / 60);
       if (faller.y < y0 - 0.04) dropped = true;
@@ -2045,6 +2072,7 @@ export function selfTest() {
     }
     if (!dropped) fails.push("no drop");
     if ((faller.falls || 0) < 1) fails.push("no respawn");
+    if (frames < 80 || frames > 100) fails.push("vent time " + frames);
     if (faller.laps !== 0) fails.push("drop laps " + faller.laps);
     if (faller.progress > 0.5 || faller.progress < 0.05) fails.push("drop progress " + faller.progress.toFixed(3));
     if (livePlace(pack, faller.id) !== 4) fails.push("drop place " + livePlace(pack, faller.id) + " p" + faller.progress.toFixed(2));

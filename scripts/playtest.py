@@ -7,7 +7,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "assets" / "ref"
 OUT.mkdir(parents=True, exist_ok=True)
-URL = "http://127.0.0.1:8771/?v=gd30"
+URL = "http://127.0.0.1:8771/?v=gd31"
 
 
 def shot(page, name):
@@ -97,15 +97,15 @@ def museum_round(page, w, h):
     page.wait_for_selector("#exhibit", state="hidden")
     page.click("[data-exhibit=sling-kart]")
     page.wait_for_selector("#exhibit", state="visible")
-    if "Sling" not in page.locator("#exhibit-title").inner_text():
-        raise AssertionError("kart detail")
+    if "Cedar Sling" not in page.locator("#exhibit-title").inner_text():
+        raise AssertionError("sling detail")
     assert_inside(box(page, "#btn-exhibit-close"), w, h, "close", 40)
     page.click("#btn-exhibit-close")
     page.wait_for_selector("#exhibit", state="hidden")
-    page.click("[data-exhibit=sap]")
+    page.click("[data-exhibit=pine]")
     page.wait_for_selector("#exhibit", state="visible")
-    if "Sap" not in page.locator("#exhibit-title").inner_text():
-        raise AssertionError("sap card")
+    if "Pinecone" not in page.locator("#exhibit-title").inner_text():
+        raise AssertionError("pine card")
     page.click("#exhibit-scrim", position={"x": 4, "y": 4})
     page.wait_for_selector("#exhibit", state="hidden")
     page.click("#btn-museum-back")
@@ -219,7 +219,7 @@ def main():
         for banned in ("mario", "nintendo", "rainbow", "kart"):
             if banned in low:
                 fails.append("splash " + banned)
-        for need in ("grand dam", "race the bank", "drift the dam", "first to the crest", "fan game by a holder"):
+        for need in ("grand dam", "race the bank", "boost the dam", "first to the crest", "fan game by a holder"):
             if need not in low:
                 fails.append("copy " + need)
         shot(page, "splash-390.png")
@@ -337,7 +337,7 @@ def main():
             fails.append("right not right " + str(right_d))
         if left_d <= 0.05:
             fails.append("left not left " + str(left_d))
-        for item in ("sap", "trap", "wall", "rocket", "star", "orb", "twig", "bomb", "boost"):
+        for item in ("boost", "trap", "pine", "surge", "magnet", "buckler", "meteor", "slick"):
             got = page.evaluate("(id) => { window.__grand.grant(id); return window.__grand.fireNow(); }", item)
             print("fx", item, got)
             if got != item:
@@ -350,7 +350,7 @@ def main():
             fails.append("hud mark " + page.locator("#held-mark").inner_text())
         if page.locator("#btn-fire").inner_text().strip() != "BOOST":
             fails.append("fire label " + page.locator("#btn-fire").inner_text())
-        page.evaluate("() => window.__grand.grant('sap')")
+        page.evaluate("() => window.__grand.grant('pine')")
         page.click("#btn-fire")
         page.wait_for_timeout(120)
         if page.evaluate("() => window.__grand.snapshot().held"):
@@ -445,6 +445,9 @@ def main():
         print("DESK FILL", desk_hero, desk_stage)
         if desk_hero["width"] < 1280 * 0.98 or desk_hero["height"] < 800 * 0.98:
             fails.append("desk hero " + str(desk_hero))
+        desk_band = box(page, "#splash .band")
+        if not desk_band or desk_band["width"] < 420:
+            fails.append("menu card " + str(desk_band))
         if desk_stage["width"] < 1280 * 0.98 or desk_stage["height"] < 800 * 0.98:
             fails.append("desk stage " + str(desk_stage))
         shot(page, "splash-desk.png")

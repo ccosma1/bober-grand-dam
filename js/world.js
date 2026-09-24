@@ -1,4 +1,4 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd30";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd31";
 import { buildKart } from "./racers.js?v=gd27";
 
 function canvasTex(THREE, draw, w, h, repeat) {
@@ -1105,8 +1105,9 @@ export function createWorld(THREE, track) {
     let back = (portrait ? 9.4 : 11.6) + (onLoop ? 4.2 : 0);
     let up = (portrait ? 3.9 : 4.2) + (air ? 0.5 : 0);
     if (opening) {
-      back += portrait ? 8 : 10;
-      up += portrait ? 16 : 20;
+      back *= 1.2;
+      up *= 1.2;
+      up += 1.15;
     }
     const ahead = air ? 4.6 : portrait ? 7.0 : 7.6;
     const sideAmt = portrait ? 0 : 0.9;
@@ -1118,11 +1119,11 @@ export function createWorld(THREE, track) {
       const wx = wall.position.x - you.x;
       const wz = wall.position.z - you.z;
       const wl = Math.hypot(wx, wz) || 1;
-      camGoal.x -= (wx / wl) * 16;
-      camGoal.z -= (wz / wl) * 16;
-      camGoal.y += 6;
+      camGoal.x -= (wx / wl) * 4.5;
+      camGoal.z -= (wz / wl) * 4.5;
+      camGoal.y += 0.8;
     }
-    lookGoal.set(you.x, you.y + (opening ? 1.3 : 1.15), you.z).addScaledVector(tmpF, (opening ? 5 : ahead) * (onLoop ? 0.4 : 1));
+    lookGoal.set(you.x, you.y + 1.15, you.z).addScaledVector(tmpF, (opening ? 6.5 : ahead) * (onLoop ? 0.4 : 1));
     if (onLoop) {
       const inward = frYou.up.y < 0.2 ? 1.7 : 0.45;
       camGoal.x += frYou.up.x * inward;
@@ -1272,7 +1273,17 @@ export function createWorld(THREE, track) {
     }
     for (const shot of race.shots || []) {
       groundBlob(shot.x, shot.y - 0.7, shot.z, shot.kind === "rocket" ? 1.1 : 1.4);
-      if (shot.kind === "rocket" || shot.kind === "orb") {
+      if (shot.kind === "pine") {
+        const g = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.ConeGeometry(0.55, 1.25, 8), rocketMat);
+        body.rotation.x = Math.PI / 2;
+        const band = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.1, 6, 10), emberMat);
+        band.rotation.x = Math.PI / 2;
+        g.add(body, band);
+        g.position.set(shot.x, shot.y, shot.z);
+        g.lookAt(shot.x + shot.vx, shot.y, shot.z + shot.vz);
+        fx.add(g);
+      } else if (shot.kind === "rocket" || shot.kind === "orb") {
         const g = new THREE.Group();
         const bodyMat = shot.kind === "orb" ? orbMat : rocketMat;
         const body = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 2.1, 10), bodyMat);
@@ -1305,6 +1316,44 @@ export function createWorld(THREE, track) {
         m.rotation.z = i * 0.7;
         m.rotation.x = 0.4;
       }
+    }
+    for (const wall of race.surges || []) {
+      const g = new THREE.Group();
+      g.position.set(wall.x, wall.y + 1.1, wall.z);
+      g.rotation.y = wall.yaw || 0;
+      const slab = new THREE.Mesh(new THREE.BoxGeometry(6.2, 2.4, 0.7), new THREE.MeshStandardMaterial({
+        color: 0x3ec6e0, emissive: 0x1468c8, emissiveIntensity: 0.8, transparent: true, opacity: 0.88,
+      }));
+      const lip = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.28, 0.9), starMat);
+      lip.position.y = 1.2;
+      g.add(slab, lip);
+      fx.add(g);
+    }
+    for (const link of race.tethers || []) {
+      if (link.ax == null) continue;
+      const dx = link.bx - link.ax;
+      const dz = link.bz - link.az;
+      const steps = 7;
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        addMesh(sapGeo, boltMat, link.ax + dx * t, (link.y || 1) + Math.sin(t * Math.PI) * 0.8, link.az + dz * t, i % 2 ? 0.42 : 0.28);
+      }
+    }
+    for (const patch of race.slicks || []) {
+      const puddle = addMesh(diskGeo, new THREE.MeshBasicMaterial({ color: 0xf0a024, transparent: true, opacity: 0.82, side: THREE.DoubleSide }), patch.x, patch.y + 0.08, patch.z, 1);
+      puddle.rotation.x = -Math.PI / 2;
+      puddle.rotation.z = patch.yaw || 0;
+      puddle.scale.set(2.6, 3.4, 1);
+    }
+    for (const chip of race.meteors || []) {
+      const rock = addMesh(new THREE.DodecahedronGeometry(0.7, 0), rocketMat, chip.x, chip.y, chip.z, 1.3);
+      rock.rotation.y = chip.age * 6;
+      addMesh(sapGeo, emberMat, chip.x, chip.y - 0.8, chip.z, 0.45);
+    }
+    for (const k of race.karts || []) {
+      if ((k.buckler || 0) <= 0) continue;
+      const aura = addMesh(ringGeo, starMat, k.x, k.y + 0.9, k.z, 2.4);
+      aura.rotation.x = -Math.PI / 2;
     }
     for (const wall of race.walls || []) {
       const g = new THREE.Group();

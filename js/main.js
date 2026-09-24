@@ -17,8 +17,8 @@ import {
   setDriver as chooseDriver,
   swapTrack,
   writeSave,
-} from "./sim.js?v=gd30";
-import { createWorld } from "./world.js?v=gd30";
+} from "./sim.js?v=gd31";
+import { createWorld } from "./world.js?v=gd31";
 import { createSfx } from "./audio.js?v=gd21";
 
 const app = document.getElementById("app");
@@ -440,7 +440,7 @@ const EXHIBITS = {
   "frost-ridge": {
     src: "assets/history/frost-ridge.jpg?v=gd12",
     title: "Frost Ridge",
-    cap: "Ice, drifts, and two narrow bridges. Same three laps. Same four racers.",
+    cap: "Ice, banks, and two narrow bridges. Same three laps. Same four racers.",
   },
   "crown-clover": {
     src: "assets/museum/crown-clover.jpg?v=gd21",
@@ -459,48 +459,48 @@ const EXHIBITS = {
   },
   "sling-kart": {
     src: "assets/history/crest-drift.jpg?v=gd12",
-    title: "Sling Kart",
+    title: "Cedar Sling",
     cap: "Cedar bowl. Twin sling bands on the rear posts.",
   },
-  sap: {
-    src: "assets/museum/sap.jpg?v=gd21",
-    title: "Sap Shell",
-    cap: "A soft homing blob. It sticks to whoever is ahead and slows them.",
+  boost: {
+    src: "assets/museum/star.jpg?v=gd21",
+    title: "BOOST",
+    cap: "A short amber burst. FIRE spends it for a faster straight.",
   },
   trap: {
     src: "assets/museum/trap.jpg?v=gd21",
     title: "Stick Trap",
-    cap: "Drops behind the bowl. The next racer through it spins.",
+    cap: "Drops behind the bowl. The next racer through it stops short.",
   },
-  wall: {
-    src: "assets/museum/wall.jpg?v=gd21",
-    title: "Snow Wall",
-    cap: "A short ice block ahead. There is still room to slip around it.",
+  pine: {
+    src: "assets/museum/sap.jpg?v=gd21",
+    title: "Pinecone Barrage",
+    cap: "Five cones fan ahead. Each one that lands stuns.",
   },
-  rocket: {
-    src: "assets/museum/rocket.jpg?v=gd21",
-    title: "Yeet Rocket",
-    cap: "A forward rocket with a long trail and a wide blast.",
-  },
-  star: {
-    src: "assets/museum/star.jpg?v=gd21",
-    title: "Star Thaw",
-    cap: "A short sparkle. Hits and traps pass through you.",
-  },
-  orb: {
+  surge: {
     src: "assets/museum/orb.jpg?v=gd21",
-    title: "Blue Lodge Orb",
-    cap: "Rare. Only while you are 1st or 2nd. A blue surge and a short push.",
+    title: "Dam Surge",
+    cap: "A blue water wall runs the road and shoves racers aside.",
   },
-  twig: {
+  magnet: {
     src: "assets/museum/twig.jpg?v=gd21",
-    title: "Thunder Twig",
-    cap: "A bright zap to the nearest rivals ahead. If nobody is close, it stays in the kart.",
+    title: "Lodge Magnet",
+    cap: "Latches the nearest racer ahead and hauls them back.",
   },
-  bomb: {
+  buckler: {
+    src: "assets/museum/wall.jpg?v=gd21",
+    title: "Bark Buckler",
+    cap: "A bark shield. It blocks one hit and shoves anyone too close.",
+  },
+  meteor: {
     src: "assets/museum/bomb.jpg?v=gd21",
-    title: "Crest Bomb",
-    cap: "Lobs ahead, then a wide flash and a crater of light. The road stays whole.",
+    title: "Meteor Chip",
+    cap: "Drops on the line ahead. Wide stun, then a crater of light.",
+  },
+  slick: {
+    src: "assets/museum/rocket.jpg?v=gd21",
+    title: "Resin Slick",
+    cap: "An amber patch behind you. Drive through it and you slow down.",
   },
   bober: {
     src: "assets/museum/bober.jpg?v=gd12",
@@ -655,8 +655,8 @@ function hudTick() {
   document.getElementById("hud-time").textContent = fmt(race.time);
   const fireBtn = document.getElementById("btn-fire");
   const deskFire = document.getElementById("desk-fire");
-  const labels = { sap: "SAP", trap: "TRAP", wall: "WALL", rocket: "ROCKET", star: "STAR", orb: "ORB", twig: "TWIG", bomb: "BOMB", boost: "BOOST" };
-  const full = { sap: "Sap Shell", trap: "Stick Trap", wall: "Snow Wall", rocket: "Yeet Rocket", star: "Star Thaw", orb: "Lodge Orb", twig: "Thunder Twig", bomb: "Crest Bomb", boost: "BOOST" };
+  const labels = { boost: "BOOST", trap: "TRAP", pine: "PINE", surge: "SURGE", magnet: "MAGNET", buckler: "BARK", meteor: "METEOR", slick: "SLICK" };
+  const full = { boost: "BOOST", trap: "Stick Trap", pine: "Pinecone Barrage", surge: "Dam Surge", magnet: "Lodge Magnet", buckler: "Bark Buckler", meteor: "Meteor Chip", slick: "Resin Slick" };
   const mark = document.getElementById("held-mark");
   const name = document.getElementById("held-name");
   const heldBox = document.getElementById("held");
