@@ -1,4 +1,4 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd32";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd33";
 import { buildKart } from "./racers.js?v=gd32";
 
 function canvasTex(THREE, draw, w, h, repeat) {
@@ -950,10 +950,17 @@ export function createWorld(THREE, track) {
       return;
     }
     if (ice === "boost") {
-      sparkLife[i] = 1.15;
+      sparkLife[i] = 1.35;
       sparkCol[i * 3] = 1;
       sparkCol[i * 3 + 1] = 0.62;
       sparkCol[i * 3 + 2] = 0.08;
+      return;
+    }
+    if (ice === "hit") {
+      sparkLife[i] = 0.7;
+      sparkCol[i * 3] = 1;
+      sparkCol[i * 3 + 1] = 0.95;
+      sparkCol[i * 3 + 2] = 0.7;
       return;
     }
     const heat = hot ? 1 : 0.55 + Math.random() * 0.4;
@@ -1070,19 +1077,27 @@ export function createWorld(THREE, track) {
       }
       if (k.boost > 0.15) {
         const bf = forward(k.yaw);
-        emitSpark(k.x - bf.x * 1.7, k.y + 0.32, k.z - bf.z * 1.7, true, "boost");
-        emitSpark(k.x - bf.x * 2.5, k.y + 0.24, k.z - bf.z * 2.5, true, "boost");
-        emitSpark(k.x - bf.x * 3.3, k.y + 0.18, k.z - bf.z * 3.3, false, "boost");
+        const brx = Math.cos(k.yaw);
+        const brz = -Math.sin(k.yaw);
+        emitSpark(k.x - bf.x * 1.6, k.y + 0.36, k.z - bf.z * 1.6, true, "boost");
+        emitSpark(k.x - bf.x * 2.4 + brx * 0.35, k.y + 0.28, k.z - bf.z * 2.4 + brz * 0.35, true, "boost");
+        emitSpark(k.x - bf.x * 2.4 - brx * 0.35, k.y + 0.28, k.z - bf.z * 2.4 - brz * 0.35, true, "boost");
+        emitSpark(k.x - bf.x * 3.4, k.y + 0.2, k.z - bf.z * 3.4, false, "boost");
+        emitSpark(k.x - bf.x * 4.2, k.y + 0.16, k.z - bf.z * 4.2, false, "boost");
+      }
+      if ((k.hitFlash || 0) > 0) {
+        emitSpark(k.x, k.y + 1.35, k.z, true, "hit");
+        emitSpark(k.x, k.y + 0.7, k.z, true, "hit");
       }
       if ((k.splash || 0) > 0.4) {
         for (let n = 0; n < 3; n++) emitSpark(k.x + (n - 1) * 0.4, k.y + 0.15, k.z, false, "foam");
       }
-      const power = k.boost > 0 ? 1.7 : 0.45 + Math.min(1, (k.speed || 0) / 29) * 0.85;
+      const power = k.boost > 0 ? 2.15 : 0.45 + Math.min(1, (k.speed || 0) / 29) * 0.85;
       for (const flame of view.flames || []) {
         const flick = 0.7 + Math.random() * 0.55;
-        const tall = Math.max(0.45, Math.min(0.85, power)) * flick;
-        flame.scale.set(flick * 0.8, tall, flick * 0.8);
-        flame.material.color.set(0xff3b22);
+        const tall = Math.max(0.45, Math.min(k.boost > 0 ? 0.95 : 0.85, power)) * flick;
+        flame.scale.set(flick * (k.boost > 0 ? 1.05 : 0.8), tall, flick * 0.8);
+        flame.material.color.set(k.boost > 0 ? 0xffc14a : 0xff3b22);
       }
     }
     for (let i = 0; i < sparkN; i++) {
@@ -1154,7 +1169,7 @@ export function createWorld(THREE, track) {
       camera.position.z += Math.sin(race.time * 41) * kick * 0.35;
     }
     camera.lookAt(look);
-    const boostFov = you.boost > 0 ? 5 : 0;
+    const boostFov = you.boost > 0 ? 9 : 0;
     const fov = (portrait ? 74 : 52) + boostFov;
     if (Math.abs(camera.fov - fov) > 0.2) {
       camera.fov = fov;

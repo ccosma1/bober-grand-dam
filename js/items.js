@@ -1,5 +1,5 @@
 /* Eight lodge throws. One held item. Boxes return in 4.5s. */
-import { frameAt, forward, livePlace } from "./sim.js?v=gd32";
+import { frameAt, forward, livePlace } from "./sim.js?v=gd33";
 
 export const ITEM_IDS = ["boost", "trap", "pine", "surge", "magnet", "buckler", "meteor", "slick"];
 export const ITEM_NAME = {
@@ -15,36 +15,35 @@ export const ITEM_NAME = {
 
 const U = 18 / 280;
 const BASE = [
-  ["boost", 18],
+  ["boost", 16],
   ["trap", 13],
   ["pine", 14],
   ["surge", 13],
   ["magnet", 12],
   ["buckler", 10],
   ["meteor", 12],
-  ["slick", 8],
+  ["slick", 10],
 ];
 const LEAD_BIAS = { boost: 1.25, slick: 1.25, trap: 1.25, buckler: 1.25 };
 const BACK_BIAS = { meteor: 1.35, magnet: 1.35, pine: 1.35 };
 
-const TRAP_BACK = 40 * U;
-const TRAP_R = 48 * U;
-const PINE_R = 24 * U;
-const PINE_SPEED = 44;
-const SURGE_AHEAD = 50 * U;
-const SURGE_TRAVEL = 220 * U;
-const SURGE_HALF = (90 * U) * 0.5;
-const SURGE_R = 42 * U;
-const SURGE_KNOCK = 80 * U;
-const MAG_RANGE = 280 * U;
-const MAG_PULL = 120 * U;
-const BUCK_R = 50 * U;
-const BUCK_KNOCK = 40 * U;
-const METEOR_AHEAD = 220 * U;
-const METEOR_R = 72 * U;
-const SLICK_W = (70 * U) * 0.5;
-const SLICK_L = (90 * U) * 0.5;
-const BODY = 1.2;
+const TRAP_BACK = 6;
+const TRAP_R = 60 * U;
+const PINE_R = 30 * U;
+const PINE_SPEED = 48;
+const SURGE_AHEAD = 4;
+const SURGE_SPEED = 46;
+const SURGE_HALF = (100 * U) * 0.5;
+const SURGE_R = 52 * U;
+const SURGE_KNOCK = 90 * U;
+const MAG_RANGE = 320 * U;
+const MAG_PULL = 140 * U;
+const BUCK_R = 60 * U;
+const BUCK_KNOCK = 50 * U;
+const METEOR_R = 88 * U;
+const SLICK_W = (88 * U) * 0.5;
+const SLICK_L = (110 * U) * 0.5;
+const BODY = 1.25 * 1.1;
 
 function hash(n) {
   let x = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b);
@@ -151,12 +150,32 @@ export function onHitKart(race, kart, spec) {
   if ((kart.buckler || 0) > 0 && (kart.bucklerHits || 0) > 0 && specStun > 0 && !spec.unblockable) {
     kart.bucklerHits -= 1;
     burst(race, "block", kart.x, kart.y + 1.1, kart.z, 0.45);
+    kart.hitFlash = 0.45;
     kart.hitTick = (kart.hitTick || 0) + 1;
+    if (!kart.bucklerKnocked) {
+      kart.bucklerKnocked = true;
+      for (const other of race.karts || []) {
+        if (other.id === kart.id || other.finished) continue;
+        const dx = other.x - kart.x;
+        const dz = other.z - kart.z;
+        const d = Math.hypot(dx, dz) || 1;
+        if (d > BUCK_R + BODY) continue;
+        onHitKart(race, other, {
+          ix: (dx / d) * 10,
+          iz: (dz / d) * 10,
+          nudge: { x: (dx / d) * BUCK_KNOCK, z: (dz / d) * BUCK_KNOCK },
+          fx: "buckler",
+          shake: 0.35,
+          unblockable: true,
+        });
+      }
+    }
+    noteHit(race, spec.fx || "block", kart);
     return true;
   }
   let felt = false;
   if (specStun > 0) {
-    const cap = spec.cap || 1.2;
+    const cap = spec.cap || 1.25;
     kart.stun = spec.stack
       ? Math.min(cap, (kart.stun || 0) + specStun)
       : Math.min(cap, Math.max(kart.stun || 0, specStun));
@@ -178,10 +197,20 @@ export function onHitKart(race, kart, spec) {
     felt = true;
   }
   if (!felt) return false;
-  burst(race, spec.fx || "hit", kart.x, kart.y + 0.9, kart.z, spec.fxLife || 0.55);
+  kart.hitFlash = Math.max(kart.hitFlash || 0, 0.45);
+  burst(race, spec.fx || "hit", kart.x, kart.y + 1.1, kart.z, spec.fxLife || 0.55);
   juice(race, spec.fx || "hit", spec.shake || 0.35);
   kart.hitTick = (kart.hitTick || 0) + 1;
+  noteHit(race, spec.fx || "hit", kart);
   return true;
+}
+
+function noteHit(race, item, kart) {
+  if (!race.hitLog) race.hitLog = {};
+  const key = item + ":" + kart.id;
+  if (race.hitLog[key]) return;
+  race.hitLog[key] = true;
+  console.info("HIT " + item + " → " + (kart.name || kart.id));
 }
 
 function nearestAhead(race, from, range) {
@@ -206,22 +235,26 @@ export function launchHeld(race, kart) {
   const f = forward(kart.yaw);
   const length = Math.max(80, race.track.length || 1000);
   if (id === "boost") {
-    kart.boost = 1.6;
-    kart.boostPow = 36;
+    kart.boost = 1.8;
+    kart.boostPow = 44;
     juice(race, "boost", 0.4);
     burst(race, "boost", kart.x - f.x * 1.4, kart.y + 0.4, kart.z - f.z * 1.4, 0.45);
   } else if (id === "trap") {
+    const plate = frameAt(race.track, kart.t - TRAP_BACK / length);
     race.traps.push({
       owner: kart.id,
-      x: kart.x - f.x * TRAP_BACK,
-      z: kart.z - f.z * TRAP_BACK,
-      y: kart.y,
-      life: 10,
-      armed: 0.18,
+      x: plate.p.x,
+      z: plate.p.z,
+      y: plate.p.y,
+      life: 12,
+      armed: 0.2,
     });
-    burst(race, "trap", kart.x - f.x * TRAP_BACK, kart.y + 0.4, kart.z - f.z * TRAP_BACK, 0.35);
+    burst(race, "trap", plate.p.x, plate.p.y + 0.5, plate.p.z, 0.45);
   } else if (id === "pine") {
-    const yaw = Math.atan2(f.x, f.z);
+    const prey = nearestAhead(race, kart, 28);
+    const yaw = prey
+      ? Math.atan2(prey.kart.x - kart.x, prey.kart.z - kart.z)
+      : Math.atan2(f.x, f.z);
     for (const deg of [-18, -9, 0, 9, 18]) {
       const a = yaw + (deg * Math.PI) / 180;
       const vx = Math.sin(a);
@@ -250,8 +283,8 @@ export function launchHeld(race, kart) {
       y: ahead.p.y,
       z: ahead.p.z,
       yaw: Math.atan2(ahead.tangent.x, ahead.tangent.z),
-      life: 1.2,
-      max: 1.2,
+      life: 1.4,
+      max: 1.4,
       travel: 0,
       hit: {},
     });
@@ -259,8 +292,8 @@ export function launchHeld(race, kart) {
   } else if (id === "magnet") {
     const tgt = nearestAhead(race, kart, MAG_RANGE);
     if (tgt) {
-      race.tethers.push({ owner: kart.id, id: tgt.kart.id, life: 1.4, pull: MAG_PULL, hit: false });
-      onHitKart(race, tgt.kart, { slow: 1.4, mul: 0.6, fx: "magnet", shake: 0.3 });
+      race.tethers.push({ owner: kart.id, id: tgt.kart.id, life: 1.5, pull: MAG_PULL, hit: false });
+      onHitKart(race, tgt.kart, { slow: 1.5, mul: 0.55, fx: "magnet", shake: 0.35 });
     } else {
       burst(race, "magnet", kart.x, kart.y + 1.2, kart.z, 0.3);
     }
@@ -286,7 +319,11 @@ export function launchHeld(race, kart) {
       });
     }
   } else if (id === "meteor") {
-    const dest = frameAt(race.track, kart.t + METEOR_AHEAD / length);
+    const prey = nearestAhead(race, kart, 40);
+    const leadT = prey
+      ? prey.kart.t + (Math.max(12, prey.kart.speed || 16) * 0.4) / length
+      : kart.t + 14 / length;
+    const dest = frameAt(race.track, leadT);
     race.meteors.push({
       owner: kart.id,
       x: dest.p.x,
@@ -302,16 +339,17 @@ export function launchHeld(race, kart) {
     });
     juice(race, "meteor", 0.4);
   } else if (id === "slick") {
+    const patch = frameAt(race.track, kart.t - 4.5 / length);
     race.slicks.push({
       owner: kart.id,
-      x: kart.x - f.x * 2.2,
-      z: kart.z - f.z * 2.2,
-      y: kart.y,
-      yaw: Math.atan2(f.x, f.z),
+      x: patch.p.x,
+      z: patch.p.z,
+      y: patch.p.y,
+      yaw: Math.atan2(patch.tangent.x, patch.tangent.z),
       life: 9,
       hit: {},
     });
-    burst(race, "slick", kart.x - f.x * 2.2, kart.y + 0.2, kart.z - f.z * 2.2, 0.4);
+    burst(race, "slick", patch.p.x, patch.p.y + 0.25, patch.p.z, 0.5);
   }
   race.lastFx = id;
   race.pickup = id;
@@ -331,6 +369,7 @@ function stepItems(race, dt) {
       }
     }
     if (k.buckler > 0) k.buckler = Math.max(0, k.buckler - dt);
+    if (k.hitFlash > 0) k.hitFlash = Math.max(0, k.hitFlash - dt);
   }
   for (const box of race.boxes || []) {
     if (!box.alive) {
@@ -383,7 +422,7 @@ function stepItems(race, dt) {
       for (const k of race.karts) {
         if (k.id === shot.owner || k.finished) continue;
         if (!overlapsKart(k, shot.x, shot.z, PINE_R)) continue;
-        onHitKart(race, k, { stun: 0.55, stack: true, cap: 1.2, fx: "pine", shake: 0.28 });
+        onHitKart(race, k, { stun: 0.6, stack: true, cap: 1.25, fx: "pine", shake: 0.32 });
         shot.life = 0;
         break;
       }
@@ -398,7 +437,7 @@ function stepItems(race, dt) {
     for (const k of race.karts) {
       if (k.id === trap.owner || k.finished) continue;
       if (!overlapsKart(k, trap.x, trap.z, TRAP_R)) continue;
-      onHitKart(race, k, { stun: 0.85, fx: "trap", shake: 0.4 });
+      onHitKart(race, k, { stun: 0.95, fx: "trap", shake: 0.5 });
       k.yaw += 0.9;
       trap.life = 0;
       break;
@@ -409,7 +448,7 @@ function stepItems(race, dt) {
   const length = Math.max(80, race.track.length || 1000);
   for (const wall of race.surges || []) {
     wall.life -= dt;
-    const step = (SURGE_TRAVEL / 1.2) * dt;
+    const step = SURGE_SPEED * dt;
     const fr = frameAt(race.track, wall.t + step / length);
     wall.t = fr.t;
     wall.x = fr.p.x;
@@ -426,7 +465,7 @@ function stepItems(race, dt) {
       if (Math.abs(across) > SURGE_HALF + BODY || Math.abs(along) > SURGE_R + BODY) continue;
       const sign = Math.sign(across) || 1;
       onHitKart(race, k, {
-        stun: 0.7,
+        stun: 0.75,
         ix: fr.right.x * sign * 12,
         iz: fr.right.z * sign * 12,
         nudge: { x: fr.right.x * sign * SURGE_KNOCK, z: fr.right.z * sign * SURGE_KNOCK },
@@ -436,7 +475,7 @@ function stepItems(race, dt) {
       wall.hit[k.id] = true;
     }
   }
-  race.surges = (race.surges || []).filter((w) => w.life > 0 && w.travel < SURGE_TRAVEL + 0.4);
+  race.surges = (race.surges || []).filter((w) => w.life > 0);
 
   for (const link of race.tethers || []) {
     link.life -= dt;
@@ -447,12 +486,12 @@ function stepItems(race, dt) {
       continue;
     }
     tgt.slowT = Math.max(tgt.slowT || 0, link.life);
-    tgt.speedMul = Math.min(tgt.speedMul && tgt.speedMul > 0 ? tgt.speedMul : 1, 0.6);
+    tgt.speedMul = Math.min(tgt.speedMul && tgt.speedMul > 0 ? tgt.speedMul : 1, 0.55);
     if (link.pull > 0) {
       const dx = owner.x - tgt.x;
       const dz = owner.z - tgt.z;
       const d = Math.hypot(dx, dz) || 1;
-      const step = Math.min(link.pull, (MAG_PULL / 1.4) * dt, d);
+      const step = Math.min(link.pull, (MAG_PULL / 1.5) * dt, d);
       tgt.x += (dx / d) * step;
       tgt.z += (dz / d) * step;
       link.pull -= step;
@@ -487,7 +526,7 @@ function stepItems(race, dt) {
         const dz = kart.z - chip.z;
         const d = Math.hypot(dx, dz) || 1;
         onHitKart(race, kart, {
-          stun: 1.2,
+          stun: 1.25,
           ix: (dx / d) * 8,
           iz: (dz / d) * 8,
           fx: "meteor",
@@ -510,7 +549,7 @@ function stepItems(race, dt) {
       const across = dx * c - dz * s;
       if (Math.abs(along) > SLICK_L + 0.8 || Math.abs(across) > SLICK_W + 0.8) continue;
       patch.hit[k.id] = true;
-      onHitKart(race, k, { slow: 1.5, mul: 0.4, fx: "slick", shake: 0.22 });
+      onHitKart(race, k, { slow: 1.6, mul: 0.35, fx: "slick", shake: 0.28 });
     }
   }
   race.slicks = (race.slicks || []).filter((p) => p.life > 0);
@@ -584,7 +623,7 @@ export function testItems(race, fails) {
   you.vz = 18;
   you.speed = 18;
   if (arm("boost") !== "boost") fails.push("boost launch");
-  if (!(you.boost >= 1.55)) fails.push("boost time");
+  if (!(you.boost >= 1.75)) fails.push("boost time");
   if (you.fireCd < 0.8 || you.fireCd > 0.9) fails.push("cd " + you.fireCd);
 
   clear();
@@ -595,14 +634,22 @@ export function testItems(race, fails) {
   if (!trap) fails.push("trap drop");
   else {
     const before = foe.hitTick || 0;
-    foe.x = trap.x;
-    foe.z = trap.z;
+    const dir = frameAt(race.track, you.t);
+    foe.x = trap.x - dir.tangent.x * 4;
+    foe.z = trap.z - dir.tangent.z * 4;
     foe.y = trap.y;
     foe.finished = false;
     foe.stun = 0;
     foe.buckler = 0;
-    for (let i = 0; i < 20; i++) stepItems(race, 1 / 60);
-    if ((foe.hitTick || 0) <= before || foe.stun < 0.7) fails.push("trap hit");
+    foe.bucklerHits = 0;
+    for (let i = 0; i < 36; i++) {
+      stepItems(race, 1 / 60);
+      if (trap.armed <= 0 && foe.stun <= 0) {
+        foe.x += dir.tangent.x * 0.55;
+        foe.z += dir.tangent.z * 0.55;
+      }
+    }
+    if ((foe.hitTick || 0) <= before || foe.stun < 0.9) fails.push("trap hit");
   }
 
   clear();
@@ -632,7 +679,7 @@ export function testItems(race, fails) {
   arm("magnet");
   for (let i = 0; i < 30; i++) stepItems(race, 1 / 60);
   const near = Math.hypot(foe.x - you.x, foe.z - you.z);
-  if ((foe.hitTick || 0) <= magBefore || foe.speedMul > 0.65 || near > far - 0.2) fails.push("magnet hit");
+  if ((foe.hitTick || 0) <= magBefore || foe.speedMul > 0.58 || near > far - 0.4) fails.push("magnet hit");
 
   clear();
   park(race, you, 0.62);
@@ -678,7 +725,7 @@ export function testItems(race, fails) {
     foe.speedMul = 1;
     const slickBefore = foe.hitTick || 0;
     stepItems(race, 1 / 60);
-    if ((foe.hitTick || 0) <= slickBefore || foe.speedMul > 0.45 || foe.slowT < 1) fails.push("slick hit");
+    if ((foe.hitTick || 0) <= slickBefore || foe.speedMul > 0.38 || foe.slowT < 1.4) fails.push("slick hit");
   }
 
   const box = race.boxes && race.boxes[0];

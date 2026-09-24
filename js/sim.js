@@ -1,7 +1,7 @@
 /* Race sim. No rendering.
    yaw 0 faces +z. yaw > 0 turns toward +x (screen-left in the chase view).
    forward = (sin(yaw), 0, cos(yaw)). */
-import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd32";
+import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd33";
 export { launchHeld };
 
 export const LAPS = 3;
@@ -963,7 +963,7 @@ function integrate(kart, input, dt) {
   let sp = Math.hypot(kart.vx, kart.vz);
   const cap =
     (kart.baseCap || (kart.cpu ? 27 : MAX_SPEED)) *
-    (kart.boost > 0 ? 1.6 : 1) *
+    (kart.boost > 0 ? 1.65 : 1) *
     (kart.slowT > 0 ? kart.speedMul || 1 : 1) *
     (kart.orb > 0 ? 1.18 : 1);
   if (sp > cap) {
@@ -1082,7 +1082,7 @@ function bodyStep(track, kart, dt) {
     }
     const cap =
       (kart.baseCap || (kart.cpu ? 27 : MAX_SPEED)) *
-      (kart.boost > 0 ? 1.6 : 1) *
+      (kart.boost > 0 ? 1.65 : 1) *
     (kart.slowT > 0 ? kart.speedMul || 1 : 1) *
       (kart.orb > 0 ? 1.18 : 1);
     const floor = fr.ceiling || (fr.up && fr.up.y < 0.35) ? 18 : 13;
@@ -1491,13 +1491,13 @@ export function adviceFor(race, id) {
     for (const other of race.karts) {
       if (other.id === kart.id || other.finished) continue;
       const info = relTo(other);
-      if (info.rel > 0.004 && info.dist < 260 * px && info.cone && (!threat || info.dist < threat.dist)) threat = info;
+      if (info.rel > 0.004 && info.dist < 320 * px && info.cone && (!threat || info.dist < threat.dist)) threat = info;
     }
     let h = 0;
     const stamp = kart.id + ":" + Math.floor((race.time || 0) * 2);
     for (let i = 0; i < stamp.length; i++) h = (h * 33 + stamp.charCodeAt(i)) >>> 0;
     const preferPlayer = (h % 1000) / 1000 < 0.6;
-    const playerAhead = p.rel > 0.004 && p.dist < 260 * px && p.cone;
+    const playerAhead = p.rel > 0.004 && p.dist < 320 * px && p.cone;
     const playerBehind = p.rel < -0.004 && p.dist < 120 * px;
     const choke = Math.abs(frameAt(track, kart.t + 0.03).curvature) > 0.008;
     let straight = true;
@@ -1602,11 +1602,11 @@ function testSteer(fails) {
 function testBoost(fails) {
   const kart = {
     x: 0, y: 0, z: 0, yaw: 0, vx: 0, vz: 18, speed: 18,
-    spark: 0, drifting: false, boost: 1.6, boostPow: 36, steerHold: 0, slip: 0,
+    spark: 0, drifting: false, boost: 1.8, boostPow: 44, steerHold: 0, slip: 0,
   };
   const before = kart.speed;
   integrate(kart, { steer: 0, gas: 1, drift: false }, 1 / 60);
-  if (!(kart.boost > 1.4)) fails.push("boost life " + kart.boost.toFixed(2));
+  if (!(kart.boost > 1.7)) fails.push("boost life " + kart.boost.toFixed(2));
   if (!(kart.speed > before)) fails.push("boost speed");
   if (kart.drifting) fails.push("drift still on");
 }
