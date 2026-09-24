@@ -16,9 +16,9 @@ import {
   setDriver as chooseDriver,
   swapTrack,
   writeSave,
-} from "./sim.js?v=gd18";
-import { createWorld } from "./world.js?v=gd20";
-import { createSfx } from "./audio.js?v=gd18";
+} from "./sim.js?v=gd23";
+import { createWorld } from "./world.js?v=gd22";
+import { createSfx } from "./audio.js?v=gd21";
 
 const app = document.getElementById("app");
 const stage = document.getElementById("stage");
@@ -406,17 +406,17 @@ const EXHIBITS = {
     cap: "Ice, drifts, and two narrow bridges. Same three laps. Same four racers.",
   },
   "crown-clover": {
-    src: "assets/museum/crown-clover.jpg?v=gd18",
+    src: "assets/museum/crown-clover.jpg?v=gd21",
     title: "Crown Clover",
     cap: "A figure-eight. One pass is a bridge over the cross. Tight apexes, three laps.",
   },
   "oasis-leap": {
-    src: "assets/museum/oasis-leap.jpg?v=gd18",
+    src: "assets/museum/oasis-leap.jpg?v=gd21",
     title: "Oasis Leap",
     cap: "Two ramps. You leave the lip, arc, and land on the deck. The pools under the holes are real.",
   },
   "sky-loop": {
-    src: "assets/museum/sky-loop.jpg?v=gd18",
+    src: "assets/museum/sky-loop.jpg?v=gd21",
     title: "Sky Loop 360",
     cap: "A full loop overhead. Carry speed or you fall. The camera stays upright.",
   },
@@ -426,52 +426,52 @@ const EXHIBITS = {
     cap: "Cedar bowl. Twin sling bands on the rear posts. Hold a turn until the bands spark, then let go.",
   },
   sap: {
-    src: "assets/museum/sap.jpg?v=gd18",
+    src: "assets/museum/sap.jpg?v=gd21",
     title: "Sap Shell",
     cap: "A soft homing blob. It sticks to whoever is ahead and slows them.",
   },
   trap: {
-    src: "assets/museum/trap.jpg?v=gd18",
+    src: "assets/museum/trap.jpg?v=gd21",
     title: "Stick Trap",
     cap: "Drops behind the bowl. The next racer through it spins.",
   },
   wall: {
-    src: "assets/museum/wall.jpg?v=gd18",
+    src: "assets/museum/wall.jpg?v=gd21",
     title: "Snow Wall",
     cap: "A short ice block ahead. There is still room to slip around it.",
   },
   rocket: {
-    src: "assets/museum/rocket.jpg?v=gd18",
+    src: "assets/museum/rocket.jpg?v=gd21",
     title: "Yeet Rocket",
     cap: "A forward rocket with a long trail and a wide blast.",
   },
   star: {
-    src: "assets/museum/star.jpg?v=gd18",
+    src: "assets/museum/star.jpg?v=gd21",
     title: "Star Thaw",
     cap: "A short sparkle. Hits and traps pass through you.",
   },
   orb: {
-    src: "assets/museum/orb.jpg?v=gd18",
+    src: "assets/museum/orb.jpg?v=gd21",
     title: "Blue Lodge Orb",
     cap: "Rare. Only while you are 1st or 2nd. A blue surge and a short push.",
   },
   twig: {
-    src: "assets/museum/twig.jpg?v=gd18",
+    src: "assets/museum/twig.jpg?v=gd21",
     title: "Thunder Twig",
     cap: "A bright chain. It zaps the nearest rival ahead, then the next, and stops.",
   },
   log: {
-    src: "assets/museum/log.jpg?v=gd18",
+    src: "assets/museum/log.jpg?v=gd21",
     title: "Log Roller",
     cap: "A heavy log rolls down the racing line. Slip wide and it passes.",
   },
   mist: {
-    src: "assets/museum/mist.jpg?v=gd18",
+    src: "assets/museum/mist.jpg?v=gd21",
     title: "Mirror Mist",
     cap: "A pale ghost sits behind you for a moment and takes the next hit.",
   },
   bomb: {
-    src: "assets/museum/bomb.jpg?v=gd18",
+    src: "assets/museum/bomb.jpg?v=gd21",
     title: "Crest Bomb",
     cap: "Lobs ahead, then a wide flash and a crater of light. The road stays whole.",
   },
@@ -481,12 +481,12 @@ const EXHIBITS = {
     cap: "Chunky lodge beaver in the classic cedar cart. Amber scarf.",
   },
   muscle: {
-    src: "assets/museum/muscle.jpg?v=gd18",
+    src: "assets/museum/muscle.jpg?v=gd21",
     title: "Muscle",
     cap: "Bulky beaver in a heavy armored hauler. Big rear wheels.",
   },
   tall: {
-    src: "assets/museum/tall.jpg?v=gd18",
+    src: "assets/museum/tall.jpg?v=gd21",
     title: "Tall Handsome",
     cap: "Tall lean beaver in a long sleek speed cart.",
   },

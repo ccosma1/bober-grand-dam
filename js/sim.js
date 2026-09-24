@@ -1,7 +1,7 @@
 /* Race sim. No rendering.
    yaw 0 faces +z. yaw > 0 turns toward +x (screen-left in the chase view).
    forward = (sin(yaw), 0, cos(yaw)). */
-import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd18";
+import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd23";
 export { launchHeld };
 
 export const LAPS = 3;
@@ -763,18 +763,28 @@ function advanceSector(kart) {
       if (s === back) kart.sector = s;
       return;
     }
-    if (ahead === 4 || kart.sector === 3) kart.seenHalf = true;
-    if (kart.sector === SECTORS - 1 && ahead === 0 && kart.seenHalf) {
-      kart.laps += 1;
-      kart.seenHalf = false;
-    }
     kart.sector = ahead;
   }
 }
 
-/* A nearest-frame hop across a bridge or loop mouth must not freeze the
-   sector walker. Small steps still walk. A big hop realigns without a lap
-   unless it actually crosses the finish forward. */
+/* One finish-line pass, one lap. Passing the halfway mark arms the next
+   cross. A forward wrap of the seam spends that arm. A hop that only
+   realigns a bridge or a loop does not. */
+function noteCrossing(kart, prev, next) {
+  prev = ((prev % 1) + 1) % 1;
+  next = ((next % 1) + 1) % 1;
+  let d = next - prev;
+  if (d > 0.5) d -= 1;
+  if (d < -0.5) d += 1;
+  const forwardSeam = d > 0 && next < prev && prev >= 0.45;
+  if (forwardSeam && kart.seenHalf) {
+    kart.laps = (kart.laps || 0) + 1;
+    kart.seenHalf = false;
+    return;
+  }
+  if (d >= 0 && next >= 0.5 && next <= 0.97) kart.seenHalf = true;
+}
+
 function adoptProgress(kart, index, track) {
   const fr = track.frames[index];
   const prev = ((kart.t % 1) + 1) % 1;
@@ -782,21 +792,12 @@ function adoptProgress(kart, index, track) {
   let d = next - prev;
   if (d > 0.5) d -= 1;
   if (d < -0.5) d += 1;
+  noteCrossing(kart, prev, next);
   kart.hint = index;
   kart.t = next;
-  if (Math.abs(d) > 0.14) {
-    const crossed = prev > 0.84 && next < 0.16 && d > 0 && kart.seenHalf;
-    kart.sector = sectorOf(next);
-    if (crossed) {
-      kart.laps += 1;
-      kart.seenHalf = false;
-    } else if (d < 0 && next < 0.42) {
-      kart.seenHalf = false;
-    }
-  } else {
-    advanceSector(kart);
-  }
-  kart.progress = kart.laps + next;
+  if (Math.abs(d) > 0.14) kart.sector = sectorOf(next);
+  else advanceSector(kart);
+  kart.progress = (kart.laps || 0) + next;
 }
 
 const GRID = [0.024, 0.024, 0.007, 0.007];
@@ -996,6 +997,7 @@ function respawnKart(track, kart) {
   kart.t = fr.t;
   kart.loopSpeed = null;
   kart.sector = sectorOf(fr.t);
+  kart.progress = (kart.laps || 0) + (((fr.t % 1) + 1) % 1);
   kart.stun = Math.min(1.2, Math.max(kart.stun || 0, 0.4));
   kart.respawnCd = 0.75;
   kart.drifting = false;
@@ -1675,12 +1677,15 @@ function finishSim(track, fails, label, seconds) {
   race.phase = "race";
   for (const k of race.karts) k.assist = true;
   let guard = 0;
+  const hud = new Set();
   while (race.phase !== "podium" && guard < 60 * (seconds || 280)) {
     const inputs = {};
     for (const k of race.karts) inputs[k.id] = adviceFor(race, k.id);
     stepRace(race, inputs, 1 / 60);
+    for (const k of race.karts) hud.add(lapOf(k));
     guard++;
   }
+  if (!hud.has(1) || !hud.has(2) || !hud.has(3)) fails.push(label + " hud " + [...hud].join(","));
   if (race.phase !== "podium") {
     fails.push(
       label +
@@ -1883,10 +1888,10 @@ export function selfTest() {
     const inputs = {};
     for (const k of race.karts) inputs[k.id] = adviceFor(race, k.id);
     stepRace(race, inputs, 1 / 60);
-    lapSeen.add(watched.laps);
+    lapSeen.add(lapOf(watched));
     guard++;
   }
-  if (!lapSeen.has(1) || !lapSeen.has(2)) fails.push("lap hud " + [...lapSeen].join(","));
+  if (!lapSeen.has(1) || !lapSeen.has(2) || !lapSeen.has(3)) fails.push("lap hud " + [...lapSeen].join(","));
   if (race.phase !== "podium") {
     fails.push(
       "no podium " +
@@ -1921,10 +1926,29 @@ export function selfTest() {
   if (frostRace.phase !== "race" || frostRace.karts[0].laps !== 0) fails.push("frost instant");
   const walker = { t: 0.02, sector: 0, seenHalf: false, laps: 0, progress: 0.02, hint: 0 };
   for (let s = 1; s <= 24; s++) {
-    walker.t = (0.02 + s / SECTORS) % 1;
-    advanceSector(walker);
+    const next = (0.02 + s / SECTORS) % 1;
+    noteCrossing(walker, walker.t, next);
+    walker.t = next;
+    walker.sector = sectorOf(next);
   }
   if (walker.laps < 3) fails.push("laps stuck " + walker.laps);
+  const seam = { t: 0.12, seenHalf: false, laps: 0 };
+  noteCrossing(seam, seam.t, 0.72);
+  if (seam.laps !== 0 || seam.seenHalf) fails.push("half glitch " + seam.laps);
+  noteCrossing(seam, 0.72, 0.74);
+  if (seam.laps !== 0 || !seam.seenHalf) fails.push("half arm " + seam.laps);
+  seam.t = 0.74;
+  noteCrossing(seam, seam.t, 0.04);
+  if (seam.laps !== 1 || seam.seenHalf) fails.push("finish once " + seam.laps);
+  noteCrossing(seam, 0.04, 0.93);
+  if (seam.laps !== 1) fails.push("phantom back " + seam.laps);
+  noteCrossing(seam, 0.2, 0.04);
+  if (seam.laps !== 1) fails.push("early wrap " + seam.laps);
+  noteCrossing(seam, 0.2, 0.66);
+  noteCrossing(seam, 0.66, 0.08);
+  noteCrossing(seam, 0.2, 0.7);
+  noteCrossing(seam, 0.7, 0.03);
+  if (seam.laps !== 3) fails.push("three passes " + seam.laps);
   const hopped = { t: 0.12, sector: sectorOf(0.12), seenHalf: false, laps: 0, progress: 0.12, hint: 0 };
   adoptProgress(hopped, frameIndex(track, 0.72), track);
   if (hopped.laps !== 0) fails.push("phantom lap");

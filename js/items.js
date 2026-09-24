@@ -1,6 +1,6 @@
 /* Item boxes and place-weighted throws. Blue Lodge Orb only in 1st or 2nd.
    Thunder Twig, Log Roller, Mirror Mist, and Crest Bomb share that table. */
-import { frameAt, forward, livePlace } from "./sim.js?v=gd18";
+import { frameAt, forward, livePlace } from "./sim.js?v=gd23";
 
 export const ITEM_IDS = ["sap", "trap", "wall", "rocket", "star", "orb", "twig", "log", "mist", "bomb"];
 
@@ -11,8 +11,8 @@ const LEAD = [
   ["rocket", 1],
   ["star", 1],
   ["orb", 3],
-  ["twig", 2],
-  ["log", 2],
+  ["twig", 8],
+  ["log", 8],
   ["bomb", 4],
   ["mist", 3],
 ];
@@ -22,8 +22,8 @@ const BACK = [
   ["wall", 2],
   ["rocket", 3],
   ["star", 2],
-  ["twig", 3],
-  ["log", 3],
+  ["twig", 8],
+  ["log", 8],
   ["bomb", 5],
   ["mist", 1],
 ];
@@ -209,42 +209,45 @@ export function launchHeld(race, kart) {
     burst(race, "shock", kart.x, kart.y + 0.6, kart.z, 0.7);
     juice(race, "orb", 0.4);
   } else if (id === "twig") {
-    const links = [{ x: kart.x + f.x * 6.5, y: kart.y + 1.7, z: kart.z + f.z * 6.5 }];
+    const links = [{ x: kart.x + f.x * 2.8, y: kart.y + 1.55, z: kart.z + f.z * 2.8 }];
     let fromId = kart.id;
     let fromT = kart.t;
+    let chained = false;
     for (let hop = 0; hop < 3; hop++) {
       const tgt = nearestAhead(race, fromId, fromT);
       if (!tgt || tgt.dt > 0.3) break;
-      links.push({ x: tgt.x, y: (tgt.y || 0) + 1.15, z: tgt.z });
+      chained = true;
+      links.push({ x: tgt.x, y: (tgt.y || 0) + 1.6, z: tgt.z });
       if (tgt.kind === "decoy") {
         tgt.ref.life = 0;
         burst(race, "twig", tgt.x, tgt.y + 1, tgt.z, 0.45);
         break;
       }
-      const dx = tgt.x - links[links.length - 2].x;
-      const dz = tgt.z - links[links.length - 2].z;
+      const prev = links[links.length - 2];
+      const dx = tgt.x - prev.x;
+      const dz = tgt.z - prev.z;
       const d = Math.hypot(dx, dz) || 1;
       hurt(race, tgt.ref, hop === 0 ? 0.7 : 0.5, (dx / d) * 5, (dz / d) * 5);
       fromId = tgt.ref.id;
       fromT = tgt.ref.t;
     }
-    if (links.length < 2) {
-      for (const step of [0.045, 0.07, 0.1]) {
+    if (!chained) {
+      for (const step of [0.018, 0.04, 0.07, 0.105]) {
         const far = frameAt(race.track, kart.t + step);
-        links.push({ x: far.p.x, y: far.p.y + 2.2, z: far.p.z });
+        links.push({ x: far.p.x, y: far.p.y + 2.6, z: far.p.z });
       }
     }
-    race.bolts.push({ links, life: 0.78, max: 0.78 });
+    race.bolts.push({ links, life: 1.45, max: 1.45 });
     juice(race, "twig", 0.55);
   } else if (id === "log") {
     race.logs.push({
       owner: kart.id,
-      t: (kart.t + 0.012) % 1,
-      life: 3.4,
+      t: (kart.t + 0.005) % 1,
+      life: 5.2,
       spin: 0,
       hit: {},
     });
-    juice(race, "log", 0.18);
+    juice(race, "log", 0.35);
   } else if (id === "mist") {
     const back = frameAt(race.track, kart.t);
     const side = kart.lane > 0 ? -1 : 1;
@@ -340,6 +343,11 @@ export function stepItems(race, dt) {
         k.bombDry = (k.bombDry || 0) + 1;
         if (picked !== "bomb" && k.bombDry >= 4) picked = "bomb";
         if (picked === "bomb") k.bombDry = 0;
+        k.toolDry = (k.toolDry || 0) + 1;
+        if (picked !== "bomb" && picked !== "twig" && picked !== "log" && k.toolDry >= 2) {
+          picked = k.toolDry % 2 === 0 ? "twig" : "log";
+        }
+        if (picked === "twig" || picked === "log") k.toolDry = 0;
         k.held = picked;
         k.holdAge = 0;
         box.alive = false;
@@ -445,8 +453,8 @@ export function stepItems(race, dt) {
   const length = Math.max(80, race.track.length || 1000);
   for (const log of race.logs || []) {
     log.life -= dt;
-    log.spin = (log.spin || 0) + dt * 7;
-    log.t = (log.t + (22 / length) * dt) % 1;
+    log.spin = (log.spin || 0) + dt * 11;
+    log.t = (log.t + (16 / length) * dt) % 1;
     const fr = frameAt(race.track, log.t);
     log.x = fr.p.x;
     log.y = fr.p.y;

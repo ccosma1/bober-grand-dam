@@ -1,5 +1,5 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd18";
-import { buildKart } from "./racers.js?v=gd20";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd23";
+import { buildKart } from "./racers.js?v=gd21";
 
 function canvasTex(THREE, draw, w, h, repeat) {
   const c = document.createElement("canvas");
@@ -1135,8 +1135,9 @@ export function createWorld(THREE, track) {
   const stickGeo = new THREE.CylinderGeometry(0.09, 0.09, 1.35, 6);
   const iceGeo = new THREE.BoxGeometry(0.85, 1.7, 0.55);
   const blastGeo = new THREE.SphereGeometry(1.2, 12, 10);
-  const boltGeo = new THREE.BoxGeometry(0.28, 0.28, 1);
-  const logGeo = new THREE.CylinderGeometry(0.78, 0.78, 5.6, 14);
+  const boltGeo = new THREE.BoxGeometry(0.42, 0.42, 1);
+  const boltCoreGeo = new THREE.BoxGeometry(0.16, 0.16, 1);
+  const logGeo = new THREE.CylinderGeometry(1.45, 1.45, 8.6, 16);
   const starArm = new THREE.BoxGeometry(0.72, 0.16, 0.16);
   const coneGeo = new THREE.ConeGeometry(0.28, 0.7, 8);
   const diskGeo = new THREE.CircleGeometry(0.9, 14);
@@ -1150,7 +1151,8 @@ export function createWorld(THREE, track) {
   const emberMat = new THREE.MeshBasicMaterial({ color: 0xffb703 });
   const starMat = new THREE.MeshStandardMaterial({ color: 0xfff1c2, emissive: 0xffc94a, emissiveIntensity: 1.1 });
   const orbMat = new THREE.MeshStandardMaterial({ color: 0x2f6dff, emissive: 0x1a4dff, emissiveIntensity: 1.4 });
-  const boltMat = new THREE.MeshStandardMaterial({ color: 0xd7f6ff, emissive: 0x8ee7ff, emissiveIntensity: 1.8 });
+  const boltMat = new THREE.MeshBasicMaterial({ color: 0x9af6ff });
+  const boltCoreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
   const logMat = new THREE.MeshStandardMaterial({ map: woodMap, color: 0xc47a3a, roughness: 0.72 });
   const logEnd = new THREE.MeshStandardMaterial({ color: 0xd7b48a, roughness: 0.7 });
   const mistMat = new THREE.MeshStandardMaterial({ color: 0xd5e4ee, emissive: 0x9fb4c4, emissiveIntensity: 0.4, transparent: true, opacity: 0.42 });
@@ -1188,28 +1190,32 @@ export function createWorld(THREE, track) {
     return g;
   }
 
-  function boltBetween(a, b) {
+  function boltBetween(a, b, phase) {
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const dz = b.z - a.z;
     const len = Math.hypot(dx, dy, dz) || 0.2;
-    const steps = Math.max(6, Math.min(18, Math.round(len / 0.55)));
+    const steps = Math.max(8, Math.min(22, Math.round(len / 0.7)));
     let px = a.x;
     let py = a.y;
     let pz = a.z;
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
-      const jag = i === steps ? 0 : (i % 2 === 0 ? 0.42 : -0.42);
+      const jag = i === steps ? 0 : Math.sin(phase * 26 + i * 1.4) * 0.62;
+      const lift = i === steps ? 0 : 0.85 + Math.sin(phase * 18 + i) * 0.45;
       const x = a.x + dx * t + jag;
-      const y = a.y + dy * t + 0.65 + (i % 3) * 0.35;
-      const z = a.z + dz * t - jag * 0.35;
+      const y = a.y + dy * t + lift;
+      const z = a.z + dz * t - jag * 0.45;
       const segLen = Math.hypot(x - px, y - py, z - pz) || 0.2;
       const seg = new THREE.Mesh(boltGeo, boltMat);
       seg.position.set((px + x) / 2, (py + y) / 2, (pz + z) / 2);
       seg.lookAt(x, y, z);
       seg.scale.set(1, 1, segLen);
-      seg.castShadow = true;
-      fx.add(seg);
+      const core = new THREE.Mesh(boltCoreGeo, boltCoreMat);
+      core.position.copy(seg.position);
+      core.quaternion.copy(seg.quaternion);
+      core.scale.set(1, 1, segLen);
+      fx.add(seg, core);
       px = x;
       py = y;
       pz = z;
@@ -1296,30 +1302,39 @@ export function createWorld(THREE, track) {
     }
     for (const bolt of race.bolts || []) {
       const links = bolt.links || [];
-      for (let i = 0; i < links.length - 1; i++) boltBetween(links[i], links[i + 1]);
-      for (let s = 1; s < links.length; s++) starShape(links[s].x, links[s].y + 0.4, links[s].z, 0.4);
+      const phase = race.time * 3 + (bolt.max - bolt.life) * 9;
+      for (let i = 0; i < links.length - 1; i++) boltBetween(links[i], links[i + 1], phase + i);
+      if (links.length) starShape(links[0].x, links[0].y + 0.35, links[0].z, 0.55);
+      for (let s = 1; s < links.length; s++) starShape(links[s].x, links[s].y + 0.45, links[s].z, 0.85);
     }
     for (const log of race.logs || []) {
       const g = new THREE.Group();
-      g.position.set(log.x || 0, (log.y || 0) + 1.15, log.z || 0);
+      g.position.set(log.x || 0, (log.y || 0) + 1.7, log.z || 0);
       g.rotation.y = log.yaw || 0;
       const roller = new THREE.Group();
       roller.rotation.x = log.spin || 0;
       const body = new THREE.Mesh(logGeo, logMat);
       body.rotation.z = Math.PI / 2;
       body.castShadow = true;
-      const capA = new THREE.Mesh(new THREE.CircleGeometry(0.82, 12), logEnd);
-      capA.position.x = 2.8;
+      const capA = new THREE.Mesh(new THREE.CircleGeometry(1.52, 14), logEnd);
+      capA.position.x = 4.3;
       capA.rotation.y = Math.PI / 2;
       const capB = capA.clone();
-      capB.position.x = -2.8;
+      capB.position.x = -4.3;
       capB.rotation.y = -Math.PI / 2;
-      roller.add(body, capA, capB);
+      const band = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.12, 6, 14), logEnd);
+      band.rotation.y = Math.PI / 2;
+      roller.add(body, capA, capB, band);
       g.add(roller);
       fx.add(g);
-      groundBlob(log.x || 0, log.y || 0, log.z || 0, 2.6);
-      for (let i = 0; i < 5; i++) {
-        addMesh(sapGeo, logMat, (log.x || 0) - Math.cos(log.yaw || 0) * i * 0.85, (log.y || 0) + 0.45, (log.z || 0) - Math.sin(log.yaw || 0) * i * 0.85, 0.7);
+      groundBlob(log.x || 0, log.y || 0, log.z || 0, 3.4);
+      const backX = Math.cos(log.yaw || 0);
+      const backZ = Math.sin(log.yaw || 0);
+      for (let i = 0; i < 8; i++) {
+        const chunk = addMesh(logGeo, logMat, (log.x || 0) - backX * (1.4 + i * 1.15), (log.y || 0) + 0.55 + (i % 2) * 0.2, (log.z || 0) - backZ * (1.4 + i * 1.15), 0.16);
+        chunk.rotation.z = (log.spin || 0) + i;
+        chunk.rotation.y = (log.yaw || 0) + 0.4;
+        addMesh(sapGeo, emberMat, (log.x || 0) - backX * (1.1 + i * 1.2), (log.y || 0) + 0.35, (log.z || 0) - backZ * (1.1 + i * 1.2), 0.45 + (i % 3) * 0.08);
       }
     }
     for (const d of race.decoys || []) {
