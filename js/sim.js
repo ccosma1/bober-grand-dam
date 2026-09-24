@@ -1,7 +1,7 @@
 /* Race sim. No rendering.
    yaw 0 faces +z. yaw > 0 turns toward +x (screen-left in the chase view).
    forward = (sin(yaw), 0, cos(yaw)). */
-import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd33";
+import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd34";
 export { launchHeld };
 
 export const LAPS = 3;
@@ -911,18 +911,21 @@ function integrate(kart, input, dt) {
   if (kart.fireCd > 0) kart.fireCd = Math.max(0, kart.fireCd - dt);
   if (kart.invuln > 0) kart.invuln = Math.max(0, kart.invuln - dt);
   if (kart.orb > 0) kart.orb = Math.max(0, kart.orb - dt);
-  let steerMul = 1;
-  if (kart.stun > 0) {
-    kart.stun = Math.max(0, kart.stun - dt);
-    steerMul = 0.22;
-  }
-  const rawSteer = Math.max(-1, Math.min(1, input.steer || 0));
+  if (kart.stunCd > 0) kart.stunCd = Math.max(0, kart.stunCd - dt);
+  if (kart.hitFlash > 0) kart.hitFlash = Math.max(0, kart.hitFlash - dt);
+  if ((kart.slickImmune || 0) > 0) kart.slickImmune = Math.max(0, kart.slickImmune - dt);
+  const stunned = (kart.stun || 0) > 0;
+  if (stunned) kart.stun = Math.max(0, kart.stun - dt);
+  if ((kart.slowT || 0) > 0) kart.slowT = Math.max(0, kart.slowT - dt);
+  else if ((kart.speedMul || 1) < 0.999) kart.speedMul = Math.min(1, (kart.speedMul || 1) + dt / 0.4);
+  const slowMul = Math.min(1, kart.speedMul > 0 ? kart.speedMul : 1);
+  const rawSteer = stunned ? 0 : Math.max(-1, Math.min(1, input.steer || 0));
   const assisted = !!(kart.cpu || kart.assist);
   const damp = assisted ? 22 : 8;
   kart.steerSm = (kart.steerSm || 0) + (rawSteer - (kart.steerSm || 0)) * Math.min(1, dt * damp);
-  const steer = kart.steerSm;
-  const gas = Math.max(0, Math.min(1, Number(input.gas) || 0));
-  const brake = input.brake ? 1 : 0;
+  const steer = stunned ? 0 : kart.steerSm;
+  const gas = stunned ? 0 : Math.max(0, Math.min(1, Number(input.gas) || 0));
+  const brake = stunned ? 0 : input.brake ? 1 : 0;
   const speed = Math.hypot(kart.vx, kart.vz);
   kart.drifting = false;
   kart.spark = 0;
@@ -931,25 +934,38 @@ function integrate(kart, input, dt) {
   const steerRate = assisted
     ? 1.7 * (0.74 + 0.26 * slow) * (kart.handle || 1) * 1.22
     : 1.05 * (0.64 + 0.36 * slow) * (kart.handle || 1);
-  kart.yaw = wrapAngle(kart.yaw + steer * steerMul * steerRate * dt);
-  if (!assisted && Math.abs(rawSteer) < 0.28 && Math.abs(kart.slip || 0) > 0.12) {
-    kart.yaw = wrapAngle(kart.yaw + (kart.slip || 0) * Math.min(1, dt * 2.1));
+  if (stunned) {
+    kart.stunClock = (kart.stunClock || 0) + dt;
+    kart.yaw = wrapAngle(kart.yaw + Math.sin(kart.stunClock * 22) * 2.6 * dt);
+  } else {
+    kart.yaw = wrapAngle(kart.yaw + steer * steerRate * dt);
+    if (!assisted && Math.abs(rawSteer) < 0.28 && Math.abs(kart.slip || 0) > 0.12) {
+      kart.yaw = wrapAngle(kart.yaw + (kart.slip || 0) * Math.min(1, dt * 2.1));
+    }
   }
 
   const f = forward(kart.yaw);
-  const accel = ACCEL * (kart.cpu ? 0.84 : 1) * (kart.stun > 0 ? 0.3 : 1) * (kart.orb > 0 ? 1.12 : 1);
-  if (gas) {
+  const accel = ACCEL * (kart.cpu ? 0.84 : 1) * (kart.orb > 0 ? 1.12 : 1) * (stunned ? 0 : slowMul);
+  if (gas > 0 && !stunned) {
     kart.vx += f.x * accel * dt;
     kart.vz += f.z * accel * dt;
   }
-  if (kart.boost > 0) {
+  if (kart.boost > 0 && !stunned) {
     kart.vx += f.x * kart.boostPow * dt;
     kart.vz += f.z * kart.boostPow * dt;
     kart.boost -= dt;
+  } else if (kart.boost > 0) {
+    kart.boost -= dt;
   }
-  const drag = (brake ? 3.4 : gas ? 0.38 : 1.35) * dt;
-  kart.vx -= kart.vx * drag;
-  kart.vz -= kart.vz * drag;
+  if (stunned) {
+    const dump = Math.pow(0.15, Math.min(1, dt * 60));
+    kart.vx *= dump;
+    kart.vz *= dump;
+  } else {
+    const drag = (brake ? 3.4 : gas ? 0.38 : 1.35) * dt;
+    kart.vx -= kart.vx * drag;
+    kart.vz -= kart.vz * drag;
+  }
 
   const fwdSp = kart.vx * f.x + kart.vz * f.z;
   let sx = kart.vx - f.x * fwdSp;
@@ -963,8 +979,8 @@ function integrate(kart, input, dt) {
   let sp = Math.hypot(kart.vx, kart.vz);
   const cap =
     (kart.baseCap || (kart.cpu ? 27 : MAX_SPEED)) *
-    (kart.boost > 0 ? 1.65 : 1) *
-    (kart.slowT > 0 ? kart.speedMul || 1 : 1) *
+    (kart.boost > 0 && !stunned ? 1.65 : 1) *
+    (stunned ? 0.15 : slowMul) *
     (kart.orb > 0 ? 1.18 : 1);
   if (sp > cap) {
     kart.vx *= cap / sp;
@@ -1080,12 +1096,14 @@ function bodyStep(track, kart, dt) {
       if (added > 0.01) sp += added;
       sp -= 8 * fr.tangent.y * dt;
     }
+    const stunned = (kart.stun || 0) > 0;
+    const slowMul = Math.min(1, kart.speedMul > 0 ? kart.speedMul : 1);
     const cap =
       (kart.baseCap || (kart.cpu ? 27 : MAX_SPEED)) *
-      (kart.boost > 0 ? 1.65 : 1) *
-    (kart.slowT > 0 ? kart.speedMul || 1 : 1) *
+      (kart.boost > 0 && !stunned ? 1.65 : 1) *
+      (stunned ? 0.15 : slowMul) *
       (kart.orb > 0 ? 1.18 : 1);
-    const floor = fr.ceiling || (fr.up && fr.up.y < 0.35) ? 18 : 13;
+    const floor = stunned ? 0 : fr.ceiling || (fr.up && fr.up.y < 0.35) ? 18 : 13;
     sp = Math.max(floor, Math.min(cap, sp));
     kart.loopSpeed = sp;
     kart.loopDir = 1;
@@ -1491,13 +1509,13 @@ export function adviceFor(race, id) {
     for (const other of race.karts) {
       if (other.id === kart.id || other.finished) continue;
       const info = relTo(other);
-      if (info.rel > 0.004 && info.dist < 320 * px && info.cone && (!threat || info.dist < threat.dist)) threat = info;
+      if (info.rel > 0.004 && info.dist < 70 && info.cone && (!threat || info.dist < threat.dist)) threat = info;
     }
     let h = 0;
     const stamp = kart.id + ":" + Math.floor((race.time || 0) * 2);
     for (let i = 0; i < stamp.length; i++) h = (h * 33 + stamp.charCodeAt(i)) >>> 0;
     const preferPlayer = (h % 1000) / 1000 < 0.6;
-    const playerAhead = p.rel > 0.004 && p.dist < 320 * px && p.cone;
+    const playerAhead = p.rel > 0.004 && p.dist < 70 && p.cone;
     const playerBehind = p.rel < -0.004 && p.dist < 120 * px;
     const choke = Math.abs(frameAt(track, kart.t + 0.03).curvature) > 0.008;
     let straight = true;
@@ -1597,6 +1615,47 @@ function testSteer(fails) {
   };
   for (let i = 0; i < 36; i++) integrate(left, { steer: -1, gas: 1, drift: false }, 1 / 60);
   if (!(left.x < -0.4)) fails.push("left steer x " + left.x.toFixed(2));
+}
+
+function testStunDump(fails) {
+  const track = createTrack();
+  const fr = track.frames.find((f) => !f.loop && !f.gap && !f.ceiling && !f.vent && f.rail) || frameAt(track, 0.2);
+  const gas = { steer: 1, gas: 1, brake: false, drift: false };
+  const stunned = loneKart(track, fr, 22);
+  stunned.cpu = true;
+  stunned.baseCap = 29;
+  stunned.stun = 0.7;
+  stunned.hitFlash = 0.45;
+  stunned.speedMul = 1;
+  stunned.slowT = 0;
+  for (let i = 0; i < 18; i++) {
+    integrate(stunned, gas, 1 / 60);
+    bodyStep(track, stunned, 1 / 60);
+  }
+  if (stunned.speed > 4) fails.push("stun crawl " + stunned.speed.toFixed(2));
+  if (Math.abs(stunned.yaw) < 0.08 && (stunned.falls || 0) === 0) fails.push("stun wobble " + stunned.yaw.toFixed(3));
+  if (!(stunned.hitFlash > 0.05)) fails.push("hit flash " + (stunned.hitFlash || 0).toFixed(2));
+
+  const slowed = loneKart(track, fr, 26);
+  slowed.cpu = true;
+  slowed.baseCap = 29;
+  slowed.stun = 0;
+  slowed.speedMul = 0.3;
+  slowed.slowT = 1.2;
+  for (let i = 0; i < 10; i++) {
+    integrate(slowed, gas, 1 / 60);
+    bodyStep(track, slowed, 1 / 60);
+  }
+  if (slowed.speed > 29 * 0.3 + 1) fails.push("slow crawl " + slowed.speed.toFixed(2));
+
+  const back = loneKart(track, fr, 8);
+  back.cpu = true;
+  back.baseCap = 29;
+  back.stun = 0;
+  back.speedMul = 0.35;
+  back.slowT = 0.05;
+  for (let i = 0; i < 45; i++) integrate(back, { steer: 0, gas: 1, drift: false }, 1 / 60);
+  if (back.speedMul < 0.95) fails.push("slow recover " + back.speedMul.toFixed(2));
 }
 
 function testBoost(fails) {
@@ -2014,6 +2073,7 @@ export function selfTest() {
   if (pinch) fails.push("pinch " + pinch);
   testSteer(fails);
   testBoost(fails);
+  testStunDump(fails);
   testPhysics(fails);
   const probe = createRace(track);
   resetRace(probe);

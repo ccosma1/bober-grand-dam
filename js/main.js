@@ -17,9 +17,9 @@ import {
   setDriver as chooseDriver,
   swapTrack,
   writeSave,
-} from "./sim.js?v=gd33";
-import { createWorld } from "./world.js?v=gd33";
-import { createSfx } from "./audio.js?v=gd21";
+} from "./sim.js?v=gd34";
+import { createWorld } from "./world.js?v=gd34";
+import { createSfx } from "./audio.js?v=gd34";
 
 const app = document.getElementById("app");
 const stage = document.getElementById("stage");
@@ -56,6 +56,7 @@ let savedThisRace = false;
 let lastTick = performance.now();
 let ceilSeen = 4;
 let hinted = false;
+let hitSeen = 0;
 const held = { left: false, right: false, gas: false, brake: false, drift: false };
 const joy = { active: false, steer: 0, gas: false, brake: false };
 
@@ -724,6 +725,14 @@ function frame(now) {
   if (youNow.boost > 0 && beforeBoost <= 0) {
     sfx.boost();
     if (navigator.vibrate) navigator.vibrate(12);
+  }
+  let hitNow = 0;
+  for (const k of race.karts) hitNow += k.hitTick || 0;
+  if (hitNow > hitSeen) {
+    hitSeen = hitNow;
+    sfx.hit();
+  } else {
+    hitSeen = hitNow;
   }
   if (race.phase === "podium") showPodium();
   else podiumEl.classList.add("hidden");

@@ -34,6 +34,9 @@ export function createSfx() {
     boost() {
       try { tone(220, 0.18, "sawtooth", 0.04); } catch (e) { /* ignore */ }
     },
+    hit() {
+      try { tone(128, 0.08, "square", 0.07); } catch (e) { /* ignore */ }
+    },
     finish() {
       try {
         tone(523, 0.12, "square", 0.05);

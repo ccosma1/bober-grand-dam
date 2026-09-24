@@ -1,4 +1,4 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd33";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd34";
 import { buildKart } from "./racers.js?v=gd32";
 
 function canvasTex(THREE, draw, w, h, repeat) {
@@ -1085,7 +1085,19 @@ export function createWorld(THREE, track) {
         emitSpark(k.x - bf.x * 3.4, k.y + 0.2, k.z - bf.z * 3.4, false, "boost");
         emitSpark(k.x - bf.x * 4.2, k.y + 0.16, k.z - bf.z * 4.2, false, "boost");
       }
-      if ((k.hitFlash || 0) > 0) {
+      if (!view.hitShell) {
+        view.hitShell = new THREE.Mesh(
+          new THREE.SphereGeometry(1.45, 10, 8),
+          new THREE.MeshBasicMaterial({ color: 0xfff6d0, transparent: true, opacity: 0.62, depthWrite: false })
+        );
+        view.hitShell.position.y = 0.75;
+        view.hitShell.visible = false;
+        view.group.add(view.hitShell);
+      }
+      const flashing = (k.hitFlash || 0) > 0;
+      view.hitShell.visible = flashing;
+      if (flashing) {
+        view.hitShell.material.opacity = Math.min(0.78, k.hitFlash * 1.7);
         emitSpark(k.x, k.y + 1.35, k.z, true, "hit");
         emitSpark(k.x, k.y + 0.7, k.z, true, "hit");
       }
@@ -1294,7 +1306,7 @@ export function createWorld(THREE, track) {
       groundBlob(shot.x, shot.y - 0.7, shot.z, shot.kind === "rocket" ? 1.1 : 1.4);
       if (shot.kind === "pine") {
         const g = new THREE.Group();
-        const body = new THREE.Mesh(new THREE.ConeGeometry(0.55, 1.25, 8), rocketMat);
+        const body = new THREE.Mesh(new THREE.ConeGeometry(0.9, 1.7, 8), rocketMat);
         body.rotation.x = Math.PI / 2;
         const band = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.1, 6, 10), emberMat);
         band.rotation.x = Math.PI / 2;
@@ -1327,11 +1339,11 @@ export function createWorld(THREE, track) {
       });
     }
     for (const trap of race.traps || []) {
-      groundBlob(trap.x, trap.y, trap.z, 1.8);
-      const ring = addMesh(ringGeo, new THREE.MeshStandardMaterial({ color: 0xc4522a, emissive: 0x8a3018, emissiveIntensity: 0.8 }), trap.x, trap.y + 0.08, trap.z, 1.6);
+      groundBlob(trap.x, trap.y, trap.z, 2.4);
+      const ring = addMesh(ringGeo, new THREE.MeshStandardMaterial({ color: 0xc4522a, emissive: 0x8a3018, emissiveIntensity: 0.8 }), trap.x, trap.y + 0.08, trap.z, 2.65);
       ring.rotation.x = -Math.PI / 2;
-      for (let i = 0; i < 6; i++) {
-        const m = addMesh(stickGeo, stickMat, trap.x + Math.cos(i) * 0.85, trap.y + 0.7, trap.z + Math.sin(i) * 0.85, 1.5);
+      for (let i = 0; i < 8; i++) {
+        const m = addMesh(stickGeo, stickMat, trap.x + Math.cos(i) * 1.7, trap.y + 0.7, trap.z + Math.sin(i) * 1.7, 1.7);
         m.rotation.z = i * 0.7;
         m.rotation.x = 0.4;
       }
@@ -1340,10 +1352,10 @@ export function createWorld(THREE, track) {
       const g = new THREE.Group();
       g.position.set(wall.x, wall.y + 1.1, wall.z);
       g.rotation.y = wall.yaw || 0;
-      const slab = new THREE.Mesh(new THREE.BoxGeometry(6.2, 2.4, 0.7), new THREE.MeshStandardMaterial({
-        color: 0x3ec6e0, emissive: 0x1468c8, emissiveIntensity: 0.8, transparent: true, opacity: 0.88,
+      const slab = new THREE.Mesh(new THREE.BoxGeometry(5.5, 2.5, 4), new THREE.MeshStandardMaterial({
+        color: 0x3ec6e0, emissive: 0x1468c8, emissiveIntensity: 0.8, transparent: true, opacity: 0.55,
       }));
-      const lip = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.28, 0.9), starMat);
+      const lip = new THREE.Mesh(new THREE.BoxGeometry(5.7, 0.28, 4.1), starMat);
       lip.position.y = 1.2;
       g.add(slab, lip);
       fx.add(g);
@@ -1362,7 +1374,7 @@ export function createWorld(THREE, track) {
       const puddle = addMesh(diskGeo, new THREE.MeshBasicMaterial({ color: 0xf0a024, transparent: true, opacity: 0.82, side: THREE.DoubleSide }), patch.x, patch.y + 0.08, patch.z, 1);
       puddle.rotation.x = -Math.PI / 2;
       puddle.rotation.z = patch.yaw || 0;
-      puddle.scale.set(2.6, 3.4, 1);
+      puddle.scale.set(2.78, 4.17, 1);
     }
     for (const chip of race.meteors || []) {
       const rock = addMesh(new THREE.DodecahedronGeometry(0.7, 0), rocketMat, chip.x, chip.y, chip.z, 1.3);
@@ -1371,7 +1383,7 @@ export function createWorld(THREE, track) {
     }
     for (const k of race.karts || []) {
       if ((k.buckler || 0) <= 0) continue;
-      const aura = addMesh(ringGeo, starMat, k.x, k.y + 0.9, k.z, 2.4);
+      const aura = addMesh(ringGeo, starMat, k.x, k.y + 0.9, k.z, 5.9);
       aura.rotation.x = -Math.PI / 2;
     }
     for (const wall of race.walls || []) {
@@ -1470,8 +1482,9 @@ export function createWorld(THREE, track) {
       const mat = kind === "orb" || kind === "shock" ? orbMat : kind === "twig" ? boltMat : big || kind === "rocket" ? rocketMat : kind === "mist" ? mistMat : kind === "log" ? logMat : starMat;
       const geo = big ? blastGeo : sapGeo;
       addMesh(geo, mat, b.x, b.y + 0.4, b.z, big ? 0.7 + k * 1.6 : 0.4 + k * 0.55);
-      if (big) {
-        const ring = addMesh(ringGeo, mat, b.x, b.y + 0.1, b.z, 1.1 + k * 1.8);
+      if (big || kind === "meteor") {
+        const span = kind === "blast" || kind === "meteor" ? 5.2 + k * 3.2 : 1.1 + k * 1.8;
+        const ring = addMesh(ringGeo, mat, b.x, b.y + 0.1, b.z, span);
         ring.rotation.x = -Math.PI / 2;
       }
     }
