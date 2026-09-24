@@ -1,5 +1,5 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd25";
-import { buildKart } from "./racers.js?v=gd21";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd27";
+import { buildKart } from "./racers.js?v=gd27";
 
 function canvasTex(THREE, draw, w, h, repeat) {
   const c = document.createElement("canvas");
@@ -18,7 +18,7 @@ function canvasTex(THREE, draw, w, h, repeat) {
 
 function roadTexture(THREE) {
   return canvasTex(THREE, (g, w, h) => {
-    g.fillStyle = "#cbb892";
+    g.fillStyle = "#e6d4a6";
     g.fillRect(0, 0, w, h);
     const img = g.getImageData(0, 0, w, h);
     for (let i = 0; i < img.data.length; i += 4) {
@@ -410,9 +410,9 @@ function skyMaterial(THREE) {
       void main() {
         vec3 dir = normalize(vPos);
         float h = dir.y;
-        vec3 zenith = vec3(0.42, 0.66, 0.78);
-        vec3 hor = vec3(0.98, 0.72, 0.42);
-        vec3 low = vec3(0.55, 0.58, 0.52);
+        vec3 zenith = vec3(0.56, 0.8, 0.94);
+        vec3 hor = vec3(1.0, 0.84, 0.58);
+        vec3 low = vec3(0.74, 0.82, 0.7);
         vec3 col = mix(hor, zenith, smoothstep(0.02, 0.55, h));
         col = mix(low, col, smoothstep(-0.2, 0.08, h));
         vec3 sun = normalize(vec3(0.55, 0.42, 0.45));
@@ -489,15 +489,15 @@ function spillMaterial(THREE) {
 export function createWorld(THREE, track) {
   let liveTrack = track;
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
-  renderer.setClearColor(0x87b4c4, 1);
+  renderer.setClearColor(0xb7d7ee, 1);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.96;
+  renderer.toneMappingExposure = 1.18;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(0xe7c49a, 140, 560);
+  scene.fog = new THREE.Fog(0xf6e6c4, 200, 720);
 
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 900);
   camera.position.set(0, 18, -18);
@@ -505,9 +505,9 @@ export function createWorld(THREE, track) {
   const sky = new THREE.Mesh(new THREE.SphereGeometry(720, 24, 16), skyMaterial(THREE));
   scene.add(sky);
 
-  const hemi = new THREE.HemisphereLight(0xc5e4ef, 0x6d8a58, 0.72);
+  const hemi = new THREE.HemisphereLight(0xe7f6ff, 0x8fbf6a, 1.05);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xffe0b0, 1.55);
+  const sun = new THREE.DirectionalLight(0xfff1cc, 1.9);
   sun.position.set(48, 62, 36);
   sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
@@ -519,7 +519,7 @@ export function createWorld(THREE, track) {
   sun.shadow.camera.bottom = -380;
   sun.shadow.bias = -0.0004;
   scene.add(sun);
-  const rim = new THREE.DirectionalLight(0x9fd4ff, 0.55);
+  const rim = new THREE.DirectionalLight(0xd2efff, 0.72);
   rim.position.set(-60, 28, -40);
   scene.add(rim);
 
@@ -606,7 +606,7 @@ export function createWorld(THREE, track) {
 
   function landTexture(THREE, frost) {
     return canvasTex(THREE, (g, w, h) => {
-      g.fillStyle = frost ? "#d5e6ef" : "#3d6e3a";
+      g.fillStyle = frost ? "#e7f3f8" : "#4f8f46";
       g.fillRect(0, 0, w, h);
       for (let i = 0; i < 160; i++) {
         const x = (i * 67) % w;
@@ -901,13 +901,13 @@ export function createWorld(THREE, track) {
 
   function mountKart(def) {
     const view = buildKart(THREE, def, woodMap);
-    const pipes = def.id === "muscle" ? [-0.34, 0.34] : [0];
-    const fy = def.id === "muscle" ? 1.72 : 0.82;
-    const fz = def.id === "muscle" ? -1.05 : -1.15;
+    const pipes = def.id === "muscle" ? [-0.46, 0.46] : [0];
+    const fy = 0.22;
+    const fz = -1.72;
     view.flames = pipes.map((x) => {
-      const flame = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.95), flameMat);
-      flame.position.set(x, fy + 0.12, fz);
-      const side = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.8), flameMat);
+      const flame = new THREE.Mesh(new THREE.PlaneGeometry(0.28, 0.42), flameMat);
+      flame.position.set(x, fy, fz);
+      const side = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.32), flameMat);
       side.rotation.y = Math.PI / 2;
       flame.add(side);
       view.group.add(flame);
@@ -1059,8 +1059,9 @@ export function createWorld(THREE, track) {
       const power = k.boost > 0 ? 1.7 : 0.45 + Math.min(1, (k.speed || 0) / 29) * 0.85;
       for (const flame of view.flames || []) {
         const flick = 0.7 + Math.random() * 0.55;
-        flame.scale.set(flick, Math.max(0.55, power) * flick, flick);
-        flame.material.color.set(k.boost > 0 ? 0xfff6d0 : 0xffffff);
+        const tall = Math.max(0.45, Math.min(0.85, power)) * flick;
+        flame.scale.set(flick * 0.8, tall, flick * 0.8);
+        flame.material.color.set(k.boost > 0 ? 0xfff1c4 : 0xff3b22);
       }
     }
     for (let i = 0; i < sparkN; i++) {
@@ -1083,14 +1084,14 @@ export function createWorld(THREE, track) {
     const air = !you.grounded;
     const frYou = liveTrack.frames[you.hint] || frameAt(liveTrack, you.t);
     const onLoop = you.grounded && frYou.loop && frYou.up;
-    const back = (portrait ? 8.1 : 10.2) + (onLoop ? 4 : 0);
-    const up = (portrait ? 3.2 : 3.45) + (air ? 0.55 : 0);
-    const ahead = air ? 4.2 : portrait ? 7.1 : 7.6;
+    const back = (portrait ? 9.4 : 11.6) + (onLoop ? 4.2 : 0);
+    const up = (portrait ? 3.9 : 4.2) + (air ? 0.5 : 0);
+    const ahead = air ? 4.6 : portrait ? 7.0 : 7.6;
     const sideAmt = portrait ? 0 : 0.9;
     tmpF.set(Math.sin(you.yaw), 0, Math.cos(you.yaw));
     const side = new THREE.Vector3(Math.cos(you.yaw), 0, -Math.sin(you.yaw));
     camGoal.set(you.x, Math.max(1.4, you.y + up), you.z).addScaledVector(tmpF, -back).addScaledVector(side, sideAmt);
-    lookGoal.set(you.x, you.y + 1.05, you.z).addScaledVector(tmpF, ahead * (onLoop ? 0.35 : 1));
+    lookGoal.set(you.x, you.y + 1.15, you.z).addScaledVector(tmpF, ahead * (onLoop ? 0.4 : 1));
     if (onLoop) {
       const inward = frYou.up.y < 0.2 ? 1.7 : 0.45;
       camGoal.x += frYou.up.x * inward;
@@ -1640,7 +1641,7 @@ export function createWorld(THREE, track) {
       }
     }
     const groundTint = { dam: 0xffffff, frost: 0xffffff, clover: 0xc6e07a, oasis: 0xe7c98a, sky: 0xd7e6f2 };
-    const fogTint = { dam: 0xe7c49a, frost: 0xc5d6e6, clover: 0xb7d48a, oasis: 0xf0d2a0, sky: 0xc9dff0 };
+    const fogTint = { dam: 0xf6e6c4, frost: 0xd7e8f4, clover: 0xcfe7a4, oasis: 0xf8e0b4, sky: 0xd7eefc };
     ground.material.map = frost || theme === "sky" ? snowMap : grassMap;
     ground.material.color.set(groundTint[theme] || 0xffffff);
     ground.material.needsUpdate = true;

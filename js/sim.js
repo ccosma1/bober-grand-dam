@@ -1,7 +1,7 @@
 /* Race sim. No rendering.
    yaw 0 faces +z. yaw > 0 turns toward +x (screen-left in the chase view).
    forward = (sin(yaw), 0, cos(yaw)). */
-import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd26";
+import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd27";
 export { launchHeld };
 
 export const LAPS = 3;
@@ -131,9 +131,11 @@ function skyRaw() {
     [210, 4.75, -145],
     [130, 4.4, -160],
     [78, 4.2, -130],
-    [28, 4.08, -70],
-    [8, 4.04, -40],
-    [0, 4.02, -18],
+    [36, 4.12, -96],
+    [14, 4.06, -68],
+    [0, 4.04, -46],
+    [0, 4.03, -30],
+    [0, 4.02, -16],
   ];
   for (const p of before) pts.push({ x: p[0], y: p[1], z: p[2] });
   const R = 10.5;
@@ -149,8 +151,10 @@ function skyRaw() {
     });
   }
   const after = [
-    [24, 4.15, 18],
-    [70, 4.35, 78],
+    [0, 4.02, 16],
+    [0, 4.05, 32],
+    [10, 4.12, 54],
+    [40, 4.28, 82],
   ];
   for (const p of after) pts.push({ x: p[0], y: p[1], z: p[2] });
   return pts;
@@ -769,28 +773,23 @@ function advanceSector(kart) {
   }
 }
 
-/* Laps follow distance traveled along the ribbon. A short rewind does not
-   add progress. A big backward teleport keeps the laps already earned and
-   parks the meter on the new spot. Crossing a whole lap raises the count. */
+/* Place is laps plus the live sample on the ribbon. A lap counts only when
+   the kart walks forward across the finish after the halfway mark. A hop
+   that skips the line, or a respawn behind the pack, does not keep a lead. */
 function noteCrossing(kart, prev, next) {
   prev = ((prev % 1) + 1) % 1;
   next = ((next % 1) + 1) % 1;
   let d = next - prev;
   if (d > 0.5) d -= 1;
   if (d < -0.5) d += 1;
-  if (kart.along == null) kart.along = prev;
-  if (d < -0.2) {
-    kart.along = (kart.laps || 0) + next;
-    return;
-  }
-  kart.along += Math.max(0, d);
-  const earned = Math.floor(kart.along + 1e-4);
-  if (earned > (kart.laps || 0)) {
-    kart.laps = earned;
+  if (d > 0 && d < 0.28 && next >= 0.5 && next <= 0.97) kart.seenHalf = true;
+  if (d > 0 && d < 0.25 && next < 0.2 && prev > 0.8 && kart.seenHalf) {
+    kart.laps = (kart.laps || 0) + 1;
     kart.seenHalf = false;
-  } else if (d >= 0 && next >= 0.5 && next <= 0.97) {
-    kart.seenHalf = true;
+  } else if (d < -0.12 && next < 0.45) {
+    kart.seenHalf = false;
   }
+  kart.along = (kart.laps || 0) + next;
 }
 
 function adoptProgress(kart, index, track) {
@@ -1408,8 +1407,13 @@ export function adviceFor(race, id) {
   return { steer: steerOut, gas, drift, fire };
 }
 
+export function raceProgress(kart) {
+  const t = ((kart.t % 1) + 1) % 1;
+  return (kart.laps || 0) + t;
+}
+
 export function livePlace(race, id) {
-  const sorted = [...race.karts].sort((a, b) => b.progress - a.progress);
+  const sorted = [...race.karts].sort((a, b) => raceProgress(b) - raceProgress(a) || a.id.localeCompare(b.id));
   return sorted.findIndex((k) => k.id === id) + 1;
 }
 
@@ -1960,6 +1964,32 @@ export function selfTest() {
   adoptProgress(hopped, frameIndex(track, 0.72), track);
   if (hopped.laps !== 0) fails.push("phantom lap");
   if (hopped.sector !== sectorOf(0.72)) fails.push("sector stuck " + hopped.sector);
+  const pack = createRace(track, "bober");
+  resetRace(pack);
+  pack.phase = "race";
+  pack.time = 12;
+  for (const k of pack.karts) {
+    const t = k.id === "bober" ? 0.16 : 0.48;
+    const fr = frameAt(track, t);
+    k.t = t;
+    k.laps = 0;
+    k.seenHalf = false;
+    k.progress = t;
+    k.along = t;
+    k.x = fr.p.x;
+    k.y = fr.p.y;
+    k.z = fr.p.z;
+    k.hint = frameIndex(track, t);
+    k.safeHint = k.hint;
+    k.grounded = true;
+  }
+  if (livePlace(pack, "bober") !== 4) fails.push("behind place " + livePlace(pack, "bober"));
+  const fallen = humanOf(pack);
+  fallen.y = -8;
+  fallen.air = 3;
+  fallen.vy = -4;
+  bodyStep(track, fallen, 1 / 60);
+  if (livePlace(pack, "bober") !== 4) fails.push("respawn place " + livePlace(pack, "bober") + " t" + fallen.t.toFixed(2));
   testClover(fails);
   testOasis(fails);
   testSky(fails);
