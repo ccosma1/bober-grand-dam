@@ -17,8 +17,8 @@ import {
   setDriver as chooseDriver,
   swapTrack,
   writeSave,
-} from "./sim.js?v=gd29";
-import { createWorld } from "./world.js?v=gd29";
+} from "./sim.js?v=gd30";
+import { createWorld } from "./world.js?v=gd30";
 import { createSfx } from "./audio.js?v=gd21";
 
 const app = document.getElementById("app");
@@ -336,10 +336,13 @@ document.getElementById("stage").addEventListener("selectstart", (e) => e.preven
 document.getElementById("controls").addEventListener("contextmenu", (e) => e.preventDefault());
 
 function layout() {
+  const wide = window.innerWidth >= 900;
   const portrait = window.innerHeight >= window.innerWidth;
   app.classList.toggle("portrait", portrait);
   const rect = stage.getBoundingClientRect();
-  world.resize(rect.width, rect.height, rect.width < 700 ? 1.5 : 2);
+  const w = wide ? window.innerWidth : rect.width;
+  const h = wide ? window.innerHeight : rect.height;
+  world.resize(w, h, w < 700 ? 1.5 : 2);
 }
 
 function showRaceChrome(on) {
@@ -806,6 +809,9 @@ window.__grand = {
   setTrack(id) {
     swapTrack(race, id);
     world.setTrack(race.track);
+  },
+  sightClear(x, y, z) {
+    return world.sightClear(x, y, z);
   },
 };
 requestAnimationFrame(frame);

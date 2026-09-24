@@ -1,4 +1,4 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd29";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd30";
 import { buildKart } from "./racers.js?v=gd27";
 
 function canvasTex(THREE, draw, w, h, repeat) {
@@ -501,6 +501,8 @@ export function createWorld(THREE, track) {
 
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 900);
   camera.position.set(0, 18, -18);
+  const raycaster = new THREE.Raycaster();
+  let raceCam = false;
 
   const sky = new THREE.Mesh(new THREE.SphereGeometry(720, 24, 16), skyMaterial(THREE));
   scene.add(sky);
@@ -558,6 +560,7 @@ export function createWorld(THREE, track) {
   wall.rotation.y = crestYaw;
   wall.castShadow = true;
   wall.receiveShadow = true;
+  wall.userData.damWall = true;
   scene.add(wall);
   const damBits = [wall];
   for (const side of [-1, 1]) {
@@ -566,6 +569,7 @@ export function createWorld(THREE, track) {
     butt.position.set(wall.position.x + crest.right.x * off, crest.p.y, wall.position.z + crest.right.z * off);
     butt.rotation.y = crestYaw;
     butt.castShadow = true;
+    butt.userData.damWall = true;
     scene.add(butt);
     damBits.push(butt);
   }
@@ -1097,14 +1101,28 @@ export function createWorld(THREE, track) {
     const air = !you.grounded;
     const frYou = liveTrack.frames[you.hint] || frameAt(liveTrack, you.t);
     const onLoop = you.grounded && frYou.loop && frYou.up;
-    const back = (portrait ? 9.4 : 11.6) + (onLoop ? 4.2 : 0);
-    const up = (portrait ? 3.9 : 4.2) + (air ? 0.5 : 0);
+    const opening = liveTrack.id === "dam" && (race.phase === "countdown" || (race.phase === "race" && race.time < 1));
+    let back = (portrait ? 9.4 : 11.6) + (onLoop ? 4.2 : 0);
+    let up = (portrait ? 3.9 : 4.2) + (air ? 0.5 : 0);
+    if (opening) {
+      back += portrait ? 8 : 10;
+      up += portrait ? 16 : 20;
+    }
     const ahead = air ? 4.6 : portrait ? 7.0 : 7.6;
     const sideAmt = portrait ? 0 : 0.9;
-    tmpF.set(Math.sin(you.yaw), 0, Math.cos(you.yaw));
+    const nose = forward(you.yaw);
+    tmpF.set(nose.x, 0, nose.z);
     const side = new THREE.Vector3(Math.cos(you.yaw), 0, -Math.sin(you.yaw));
     camGoal.set(you.x, Math.max(1.4, you.y + up), you.z).addScaledVector(tmpF, -back).addScaledVector(side, sideAmt);
-    lookGoal.set(you.x, you.y + 1.15, you.z).addScaledVector(tmpF, ahead * (onLoop ? 0.4 : 1));
+    if (opening) {
+      const wx = wall.position.x - you.x;
+      const wz = wall.position.z - you.z;
+      const wl = Math.hypot(wx, wz) || 1;
+      camGoal.x -= (wx / wl) * 16;
+      camGoal.z -= (wz / wl) * 16;
+      camGoal.y += 6;
+    }
+    lookGoal.set(you.x, you.y + (opening ? 1.3 : 1.15), you.z).addScaledVector(tmpF, (opening ? 5 : ahead) * (onLoop ? 0.4 : 1));
     if (onLoop) {
       const inward = frYou.up.y < 0.2 ? 1.7 : 0.45;
       camGoal.x += frYou.up.x * inward;
@@ -1113,8 +1131,13 @@ export function createWorld(THREE, track) {
     }
     const blend = 1 - Math.exp(-Math.max(0.001, dt) * 9);
     if (race.phase === "splash") {
+      raceCam = false;
       camera.position.lerp(new THREE.Vector3(18, 16, -6), 0.02);
       look.lerp(new THREE.Vector3(0, 10, -28), 0.02);
+    } else if (!raceCam) {
+      camera.position.copy(camGoal);
+      look.copy(lookGoal);
+      raceCam = true;
     } else {
       camera.position.lerp(camGoal, Math.min(1, blend));
       look.lerp(lookGoal, Math.min(1, blend));
@@ -1678,5 +1701,18 @@ export function createWorld(THREE, track) {
     return { kind: g.userData.kind || "", sig: g.userData.sig || 0 };
   }
 
-  return { renderer, scene, camera, resize, update, frameCheck, views, setTrack, ready, modelOf };
+  function sightClear(x, y, z) {
+    const dx = x - camera.position.x;
+    const dy = y - camera.position.y;
+    const dz = z - camera.position.z;
+    const dist = Math.hypot(dx, dy, dz);
+    if (dist < 0.8) return true;
+    raycaster.set(camera.position, new THREE.Vector3(dx / dist, dy / dist, dz / dist));
+    raycaster.near = 0.15;
+    raycaster.far = Math.max(0.2, dist - 0.8);
+    const walls = damBits.filter((m) => m.visible && m.userData && m.userData.damWall);
+    return raycaster.intersectObjects(walls, false).length === 0;
+  }
+
+  return { renderer, scene, camera, resize, update, frameCheck, views, setTrack, ready, modelOf, sightClear };
 }

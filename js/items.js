@@ -1,6 +1,6 @@
 /* Item boxes and place-weighted throws. Blue Lodge Orb only in 1st or 2nd.
    BOOST, Thunder Twig, and Crest Bomb share that table. */
-import { frameAt, forward, livePlace } from "./sim.js?v=gd29";
+import { frameAt, forward, livePlace } from "./sim.js?v=gd30";
 
 export const ITEM_IDS = ["sap", "trap", "wall", "rocket", "star", "orb", "twig", "bomb", "boost"];
 export const ITEM_NAME = {

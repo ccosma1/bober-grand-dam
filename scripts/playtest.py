@@ -7,7 +7,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "assets" / "ref"
 OUT.mkdir(parents=True, exist_ok=True)
-URL = "http://127.0.0.1:8771/?v=gd29"
+URL = "http://127.0.0.1:8771/?v=gd30"
 
 
 def shot(page, name):
@@ -223,6 +223,9 @@ def main():
             if need not in low:
                 fails.append("copy " + need)
         shot(page, "splash-390.png")
+        hero = box(page, "#splash img.hero")
+        if hero["height"] > 844 * 0.82 or hero["height"] < 844 * 0.45:
+            fails.append("phone hero " + str(round(hero["height"])))
         if page.locator("#roster-pick").is_visible():
             fails.append("roster on track step")
         if not page.locator("#track-pick").is_visible():
@@ -279,7 +282,25 @@ def main():
                 print(" -", f)
             sys.exit(1)
 
-        begin_race(page)
+        show_beavers(page)
+        page.click("#btn-start")
+        blocked = None
+        for i in range(30):
+            info = page.evaluate(
+                """() => {
+                  const s = window.__grand.snapshot();
+                  return { clear: window.__grand.sightClear(s.x, s.y + 1.2, s.z), phase: s.phase, time: s.time };
+                }"""
+            )
+            print("SIGHT", i, info["phase"], round(info["time"], 2), info["clear"])
+            if not info["clear"]:
+                blocked = i
+                break
+            if info["phase"] == "race" and info["time"] > 1:
+                break
+            page.wait_for_timeout(160)
+        if blocked is not None:
+            fails.append("dam start wall " + str(blocked))
         page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=8000)
         assert_race_chrome(page, 390, 844)
         page.wait_for_timeout(80)
@@ -418,13 +439,49 @@ def main():
         page.set_viewport_size({"width": 1280, "height": 800})
         page.click("#btn-quit")
         page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")
+        page.wait_for_timeout(120)
+        desk_hero = box(page, "#splash img.hero")
+        desk_stage = box(page, "#stage")
+        print("DESK FILL", desk_hero, desk_stage)
+        if desk_hero["width"] < 1280 * 0.98 or desk_hero["height"] < 800 * 0.98:
+            fails.append("desk hero " + str(desk_hero))
+        if desk_stage["width"] < 1280 * 0.98 or desk_stage["height"] < 800 * 0.98:
+            fails.append("desk stage " + str(desk_stage))
+        shot(page, "splash-desk.png")
         try:
             museum_round(page, 1280, 800)
             clean_starts(page, 3)
         except Exception as exc:
             fails.append("desk museum/start " + str(exc))
-        begin_race(page)
+        show_beavers(page)
+        page.click("#btn-start")
+        desk_blocked = None
+        for i in range(30):
+            info = page.evaluate(
+                """() => {
+                  const s = window.__grand.snapshot();
+                  return { clear: window.__grand.sightClear(s.x, s.y + 1.2, s.z), phase: s.phase, time: s.time };
+                }"""
+            )
+            print("DESK SIGHT", i, info["phase"], round(info["time"], 2), info["clear"])
+            if not info["clear"]:
+                desk_blocked = i
+                break
+            if info["phase"] == "race" and info["time"] > 1:
+                break
+            page.wait_for_timeout(160)
+        if desk_blocked is not None:
+            fails.append("desk start wall " + str(desk_blocked))
         page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=8000)
+        canvas = page.evaluate(
+            """() => {
+              const c = document.querySelector('#stage canvas');
+              return { cw: c.clientWidth, ch: c.clientHeight, iw: innerWidth, ih: innerHeight };
+            }"""
+        )
+        print("DESK CANVAS", canvas)
+        if canvas["cw"] < canvas["iw"] * 0.98 or canvas["ch"] < canvas["ih"] * 0.98:
+            fails.append("desk canvas " + str(canvas))
         if page.locator("#stick").is_visible() or page.locator("#btn-fire").is_visible():
             fails.append("desktop phone chrome")
         if not page.locator("#desk-fire").is_visible():
