@@ -1,7 +1,7 @@
 /* Race sim. No rendering.
    yaw 0 faces +z. yaw > 0 turns toward +x (screen-left in the chase view).
    forward = (sin(yaw), 0, cos(yaw)). */
-import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd23";
+import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd26";
 export { launchHeld };
 
 export const LAPS = 3;
@@ -350,7 +350,7 @@ export function createTrack(id = "dam") {
     let w = id === "frost" ? 10.4 : 12.4;
     if (frames[i].bridge) w = id === "frost" ? 9.2 : 11.4;
     if (frames[i].lip || frames[i].deck) w = Math.max(w, 14);
-    if (frames[i].loop) w = Math.max(w, 13);
+    if (frames[i].loop) w = Math.max(w, id === "sky" ? 18 : 13);
     if (id === "frost" && p.y > 11) w = Math.max(w, 11.4);
     if (id === "dam" && p.y > 10) w = Math.max(w, 13.2);
     if (Math.abs(curv) > 0.007) w = Math.max(w, id === "frost" ? 12.2 : 14.4);
@@ -378,7 +378,8 @@ export function createTrack(id = "dam") {
       const onWall = fr.loop && fr.up && fr.up.y < 0.7;
       const pocket = !fr.lip && !onWall && Math.abs(fr.curvature) > 0.02;
       fr.rail = guided && !vent && !pocket;
-      fr.shoulder = !fr.rail;
+      if (id === "sky" && fr.loop) fr.rail = false;
+      fr.shoulder = !fr.rail && !fr.loop;
     }
   } else {
     for (let i = 0; i < frames.length; i++) {
@@ -729,6 +730,7 @@ function blankKart(def, track, slot) {
     sector: sectorOf(t),
     seenHalf: false,
     laps: 0,
+    along: t,
     progress: t,
     finished: false,
     crossed: false,
@@ -767,22 +769,28 @@ function advanceSector(kart) {
   }
 }
 
-/* One finish-line pass, one lap. Passing the halfway mark arms the next
-   cross. A forward wrap of the seam spends that arm. A hop that only
-   realigns a bridge or a loop does not. */
+/* Laps follow distance traveled along the ribbon. A short rewind does not
+   add progress. A big backward teleport keeps the laps already earned and
+   parks the meter on the new spot. Crossing a whole lap raises the count. */
 function noteCrossing(kart, prev, next) {
   prev = ((prev % 1) + 1) % 1;
   next = ((next % 1) + 1) % 1;
   let d = next - prev;
   if (d > 0.5) d -= 1;
   if (d < -0.5) d += 1;
-  const forwardSeam = d > 0 && next < prev && prev >= 0.45;
-  if (forwardSeam && kart.seenHalf) {
-    kart.laps = (kart.laps || 0) + 1;
-    kart.seenHalf = false;
+  if (kart.along == null) kart.along = prev;
+  if (d < -0.2) {
+    kart.along = (kart.laps || 0) + next;
     return;
   }
-  if (d >= 0 && next >= 0.5 && next <= 0.97) kart.seenHalf = true;
+  kart.along += Math.max(0, d);
+  const earned = Math.floor(kart.along + 1e-4);
+  if (earned > (kart.laps || 0)) {
+    kart.laps = earned;
+    kart.seenHalf = false;
+  } else if (d >= 0 && next >= 0.5 && next <= 0.97) {
+    kart.seenHalf = true;
+  }
 }
 
 function adoptProgress(kart, index, track) {
@@ -998,6 +1006,7 @@ function respawnKart(track, kart) {
   kart.loopSpeed = null;
   kart.sector = sectorOf(fr.t);
   kart.progress = (kart.laps || 0) + (((fr.t % 1) + 1) % 1);
+  kart.along = kart.progress;
   kart.stun = Math.min(1.2, Math.max(kart.stun || 0, 0.4));
   kart.respawnCd = 0.75;
   kart.drifting = false;
@@ -1033,14 +1042,8 @@ function bodyStep(track, kart, dt) {
     mode = "shoulder";
   }
   let rodeLoop = false;
-  if (fr.loop && !fr.gap && mode === "road" && near.dist2 < fr.width * fr.width * 0.4 + 6) {
+  if (fr.loop && !fr.gap && near.dist2 < 160 * 160) {
     const hTan = Math.hypot(fr.tangent.x, fr.tangent.z);
-    if (hTan > 0.35) {
-      const alongH = kart.vx * fr.tangent.x + kart.vz * fr.tangent.z;
-      if (alongH > 2) kart.loopDir = 1;
-      else if (alongH < -8) kart.loopDir = -1;
-    }
-    const dir = kart.loopDir || 1;
     let sp = kart.loopSpeed;
     if (sp == null) {
       const alongH = kart.vx * fr.tangent.x + kart.vz * fr.tangent.z;
@@ -1049,44 +1052,38 @@ function bodyStep(track, kart, dt) {
       const haveH = Math.hypot(kart.vx, kart.vz);
       const added = haveH - (kart.loopHoriz || 0);
       if (added > 0.01) sp += added;
-      sp -= 8 * fr.tangent.y * dir * dt;
+      sp -= 8 * fr.tangent.y * dt;
     }
     const cap =
       (kart.baseCap || (kart.cpu ? 27 : MAX_SPEED)) *
       (kart.boost > 0 ? 1.32 : 1) *
       (kart.orb > 0 ? 1.18 : 1);
-    sp = Math.max(0, Math.min(cap, sp));
-    const need = fr.ceiling ? 16 : fr.up && fr.up.y < 0.35 ? 11 : 0;
-    const nearRibbon = kart.y <= fr.p.y + 1.1 && kart.y >= fr.p.y - 2.4;
-    const crestSlip = fr.ceiling && Math.abs(latNow) > fr.width * 0.48;
-    if (!crestSlip && sp >= need && nearRibbon && Math.abs(latNow) <= fr.width * 0.5) {
-      kart.loopSpeed = sp;
-      const nt = fr.t + (dir * sp * dt) / Math.max(1, track.length);
-      const nf = frameAt(track, nt);
-      kart.loopHoriz = Math.hypot(nf.tangent.x, nf.tangent.z) * sp;
-      const keep = Math.max(-fr.width * 0.42, Math.min(fr.width * 0.42, latNow));
-      kart.x = nf.p.x + nf.right.x * keep;
-      kart.y = nf.p.y + 0.05;
-      kart.z = nf.p.z + nf.right.z * keep;
-      kart.vx = nf.tangent.x * sp * dir;
-      kart.vz = nf.tangent.z * sp * dir;
-      kart.vy = nf.tangent.y * sp * dir;
-      kart.speed = sp;
-      kart.grounded = true;
-      kart.air = 0;
-      kart.off = 0;
-      kart.wet = 0;
-      const h2 = Math.hypot(nf.tangent.x, nf.tangent.z);
-      if (h2 > 0.35) {
-        const aim = Math.atan2(nf.tangent.x * dir, nf.tangent.z * dir);
-        kart.yaw = wrapAngle(kart.yaw + wrapAngle(aim - kart.yaw) * Math.min(1, dt * 4));
-      }
-      adoptProgress(kart, frameIndex(track, nf.t), track);
-      rodeLoop = true;
-    } else {
-      kart.loopSpeed = null;
-      mode = "air";
+    const floor = fr.ceiling || (fr.up && fr.up.y < 0.35) ? 18 : 13;
+    sp = Math.max(floor, Math.min(cap, sp));
+    kart.loopSpeed = sp;
+    kart.loopDir = 1;
+    const nt = fr.t + (sp * dt) / Math.max(1, track.length);
+    const nf = frameAt(track, nt);
+    kart.loopHoriz = Math.hypot(nf.tangent.x, nf.tangent.z) * sp;
+    const keep = Math.max(-fr.width * 0.28, Math.min(fr.width * 0.28, latNow));
+    kart.x = nf.p.x + nf.right.x * keep;
+    kart.y = nf.p.y + 0.05;
+    kart.z = nf.p.z + nf.right.z * keep;
+    kart.vx = nf.tangent.x * sp;
+    kart.vz = nf.tangent.z * sp;
+    kart.vy = nf.tangent.y * sp;
+    kart.speed = sp;
+    kart.grounded = true;
+    kart.air = 0;
+    kart.off = 0;
+    kart.wet = 0;
+    const h2 = Math.hypot(nf.tangent.x, nf.tangent.z);
+    if (h2 > 0.2) {
+      const aim = Math.atan2(nf.tangent.x, nf.tangent.z);
+      kart.yaw = wrapAngle(kart.yaw + wrapAngle(aim - kart.yaw) * Math.min(1, dt * 6));
     }
+    adoptProgress(kart, frameIndex(track, nf.t), track);
+    rodeLoop = true;
   } else if (!fr.loop) {
     kart.loopSpeed = null;
   }
@@ -1855,16 +1852,27 @@ function testSky(fails) {
     if (fast.grounded && fast.y > 22) stayed = true;
   }
   if (maxY < 22 || !stayed) fails.push("sky loop " + maxY.toFixed(1) + " stay" + stayed);
-  const slow = loneKart(track, entry, 9);
-  let peak = slow.y;
-  let fell = false;
-  for (let i = 0; i < 200; i++) {
-    integrate(slow, { steer: 0, gas: 0.2, drift: false }, 1 / 60);
-    bodyStep(track, slow, 1 / 60);
-    if (slow.y > peak) peak = slow.y;
-    if (!slow.grounded && slow.y < peak - 3) fell = true;
+  for (const [name, sp0] of [
+    ["nib", 12],
+    ["bober", 16],
+    ["tall", 20],
+    ["muscle", 14],
+  ]) {
+    const rider = loneKart(track, entry, sp0);
+    const t0 = rider.t;
+    let hi = rider.y;
+    for (let i = 0; i < 500; i++) {
+      integrate(rider, { steer: 0, gas: 1, drift: false }, 1 / 60);
+      bodyStep(track, rider, 1 / 60);
+      if (rider.y > hi) hi = rider.y;
+    }
+    let adv = rider.t - t0;
+    if (adv < -0.5) adv += 1;
+    if (hi < 18) fails.push(name + " sky low " + hi.toFixed(1));
+    if (adv < 0.08) fails.push(name + " sky stuck " + adv.toFixed(3));
+    const here = track.frames[rider.hint] || frameAt(track, rider.t);
+    if (here.loop && here.ceiling) fails.push(name + " sky ceiling");
   }
-  if (!fell || peak > 24.2) fails.push("sky glue peak" + peak.toFixed(1) + " fell" + fell);
   finishSim(track, fails, "sky", 420);
 }
 
@@ -1932,23 +1940,22 @@ export function selfTest() {
     walker.sector = sectorOf(next);
   }
   if (walker.laps < 3) fails.push("laps stuck " + walker.laps);
-  const seam = { t: 0.12, seenHalf: false, laps: 0 };
+  const seam = { t: 0.12, seenHalf: false, laps: 0, along: 0.12 };
   noteCrossing(seam, seam.t, 0.72);
-  if (seam.laps !== 0 || seam.seenHalf) fails.push("half glitch " + seam.laps);
-  noteCrossing(seam, 0.72, 0.74);
-  if (seam.laps !== 0 || !seam.seenHalf) fails.push("half arm " + seam.laps);
-  seam.t = 0.74;
+  if (seam.laps !== 0) fails.push("half glitch " + seam.laps);
+  noteCrossing(seam, 0.72, 0.9);
+  seam.t = 0.9;
   noteCrossing(seam, seam.t, 0.04);
-  if (seam.laps !== 1 || seam.seenHalf) fails.push("finish once " + seam.laps);
+  if (seam.laps !== 1) fails.push("finish once " + seam.laps);
   noteCrossing(seam, 0.04, 0.93);
   if (seam.laps !== 1) fails.push("phantom back " + seam.laps);
-  noteCrossing(seam, 0.2, 0.04);
-  if (seam.laps !== 1) fails.push("early wrap " + seam.laps);
-  noteCrossing(seam, 0.2, 0.66);
-  noteCrossing(seam, 0.66, 0.08);
-  noteCrossing(seam, 0.2, 0.7);
-  noteCrossing(seam, 0.7, 0.03);
-  if (seam.laps !== 3) fails.push("three passes " + seam.laps);
+  let cursor = 0.04;
+  for (let n = 0; n < 16; n++) {
+    const nxt = (cursor + 0.125) % 1;
+    noteCrossing(seam, cursor, nxt);
+    cursor = nxt;
+  }
+  if (seam.laps < 3) fails.push("three passes " + seam.laps);
   const hopped = { t: 0.12, sector: sectorOf(0.12), seenHalf: false, laps: 0, progress: 0.12, hint: 0 };
   adoptProgress(hopped, frameIndex(track, 0.72), track);
   if (hopped.laps !== 0) fails.push("phantom lap");

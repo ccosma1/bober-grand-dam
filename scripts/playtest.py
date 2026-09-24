@@ -7,12 +7,23 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "assets" / "ref"
 OUT.mkdir(parents=True, exist_ok=True)
-URL = "http://127.0.0.1:8771/?v=gd23"
+URL = "http://127.0.0.1:8771/?v=gd26"
 
 
 def shot(page, name):
     page.screenshot(path=str(OUT / name), animations="disabled")
     print("shot", name)
+
+
+def show_beavers(page):
+    cont = page.locator("#btn-continue")
+    if cont.count() and cont.is_visible():
+        cont.click()
+
+
+def begin_race(page):
+    show_beavers(page)
+    page.click("#btn-start")
 
 
 def box(page, sel):
@@ -144,7 +155,7 @@ def key_race(page, timeout_s=400):
 
 def clean_starts(page, n=3):
     for i in range(n):
-        page.click("#btn-start")
+        begin_race(page)
         page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=9000)
         page.wait_for_timeout(900)
         s = snap(page)
@@ -213,6 +224,15 @@ def main():
             if need not in low:
                 fails.append("copy " + need)
         shot(page, "splash-390.png")
+        if page.locator("#roster-pick").is_visible():
+            fails.append("roster on track step")
+        if not page.locator("#track-pick").is_visible():
+            fails.append("tracks hidden")
+        page.click("#btn-continue")
+        if page.locator("#track-pick").is_visible():
+            fails.append("tracks on beaver step")
+        if not page.locator("#roster-pick").is_visible():
+            fails.append("beavers hidden")
         report = page.evaluate("() => window.__grand.selfTest()")
         print("SELF", report)
         if not report["ok"]:
@@ -232,8 +252,9 @@ def main():
             fails.append("colors " + str(picked["colors"]))
         sigs = {}
         for driver in ("bober", "muscle", "tall", "nib"):
+            show_beavers(page)
             page.click("[data-driver=%s]" % driver)
-            page.click("#btn-start")
+            begin_race(page)
             page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=8000)
             body = page.evaluate("() => window.__grand.snapshot()")
             print("MODEL", driver, body["model"], body["sig"], body["driver"])
@@ -244,7 +265,9 @@ def main():
             page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")
         if len(set(sigs.values())) != 4:
             fails.append("same mesh " + str(sigs))
+        show_beavers(page)
         page.click("[data-driver=nib]")
+        page.click("#btn-beaver-back")
 
         try:
             museum_round(page, 390, 844)
@@ -257,7 +280,7 @@ def main():
                 print(" -", f)
             sys.exit(1)
 
-        page.click("#btn-start")
+        begin_race(page)
         page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=8000)
         assert_race_chrome(page, 390, 844)
         nudge_stick(page, -0.3, -0.2, 3000)
@@ -334,7 +357,7 @@ def main():
         page.click("#btn-splash")
         page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")
         page.click("[data-track=frost]")
-        page.click("#btn-start")
+        begin_race(page)
         page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=9000)
         page.wait_for_timeout(800)
         fr = snap(page)
@@ -351,7 +374,7 @@ def main():
         page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")
         for tid in ("clover", "oasis", "sky"):
             page.click("[data-track=%s]" % tid)
-            page.click("#btn-start")
+            begin_race(page)
             page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=9000)
             page.wait_for_timeout(700)
             st = snap(page)
@@ -375,7 +398,7 @@ def main():
         page.set_viewport_size({"width": 844, "height": 390})
         page.reload(wait_until="networkidle")
         page.wait_for_function("() => window.__grand && !document.getElementById('btn-start').disabled", timeout=20000)
-        page.click("#btn-start")
+        begin_race(page)
         page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=8000)
         assert_race_chrome(page, 844, 390)
         shot(page, "race-land.png")
@@ -388,7 +411,7 @@ def main():
             clean_starts(page, 3)
         except Exception as exc:
             fails.append("desk museum/start " + str(exc))
-        page.click("#btn-start")
+        begin_race(page)
         page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=8000)
         if page.locator("#stick").is_visible() or page.locator("#btn-fire").is_visible():
             fails.append("desktop phone chrome")

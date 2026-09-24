@@ -1,4 +1,4 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd23";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd25";
 import { buildKart } from "./racers.js?v=gd21";
 
 function canvasTex(THREE, draw, w, h, repeat) {
@@ -1083,9 +1083,9 @@ export function createWorld(THREE, track) {
     const air = !you.grounded;
     const frYou = liveTrack.frames[you.hint] || frameAt(liveTrack, you.t);
     const onLoop = you.grounded && frYou.loop && frYou.up;
-    const back = (portrait ? 6.55 : 8.28) + (onLoop ? 3.2 : 0);
-    const up = (portrait ? 2.47 : 2.7) + (air ? 0.45 : 0);
-    const ahead = air ? 3.3 : portrait ? 5.5 : 6.0;
+    const back = (portrait ? 8.1 : 10.2) + (onLoop ? 4 : 0);
+    const up = (portrait ? 3.2 : 3.45) + (air ? 0.55 : 0);
+    const ahead = air ? 4.2 : portrait ? 7.1 : 7.6;
     const sideAmt = portrait ? 0 : 0.9;
     tmpF.set(Math.sin(you.yaw), 0, Math.cos(you.yaw));
     const side = new THREE.Vector3(Math.cos(you.yaw), 0, -Math.sin(you.yaw));
@@ -1137,7 +1137,7 @@ export function createWorld(THREE, track) {
   const blastGeo = new THREE.SphereGeometry(1.2, 12, 10);
   const boltGeo = new THREE.BoxGeometry(0.42, 0.42, 1);
   const boltCoreGeo = new THREE.BoxGeometry(0.16, 0.16, 1);
-  const logGeo = new THREE.CylinderGeometry(1.45, 1.45, 8.6, 16);
+  const logGeo = new THREE.CylinderGeometry(1.2, 1.2, 7.2, 14);
   const starArm = new THREE.BoxGeometry(0.72, 0.16, 0.16);
   const coneGeo = new THREE.ConeGeometry(0.28, 0.7, 8);
   const diskGeo = new THREE.CircleGeometry(0.9, 14);
@@ -1194,31 +1194,15 @@ export function createWorld(THREE, track) {
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const dz = b.z - a.z;
-    const len = Math.hypot(dx, dy, dz) || 0.2;
-    const steps = Math.max(8, Math.min(22, Math.round(len / 0.7)));
-    let px = a.x;
-    let py = a.y;
-    let pz = a.z;
-    for (let i = 1; i <= steps; i++) {
+    const steps = 9;
+    for (let i = 0; i <= steps; i++) {
       const t = i / steps;
-      const jag = i === steps ? 0 : Math.sin(phase * 26 + i * 1.4) * 0.62;
-      const lift = i === steps ? 0 : 0.85 + Math.sin(phase * 18 + i) * 0.45;
+      const jag = Math.sin(phase * 22 + i * 1.35) * 0.85;
       const x = a.x + dx * t + jag;
-      const y = a.y + dy * t + lift;
-      const z = a.z + dz * t - jag * 0.45;
-      const segLen = Math.hypot(x - px, y - py, z - pz) || 0.2;
-      const seg = new THREE.Mesh(boltGeo, boltMat);
-      seg.position.set((px + x) / 2, (py + y) / 2, (pz + z) / 2);
-      seg.lookAt(x, y, z);
-      seg.scale.set(1, 1, segLen);
-      const core = new THREE.Mesh(boltCoreGeo, boltCoreMat);
-      core.position.copy(seg.position);
-      core.quaternion.copy(seg.quaternion);
-      core.scale.set(1, 1, segLen);
-      fx.add(seg, core);
-      px = x;
-      py = y;
-      pz = z;
+      const y = a.y + dy * t + Math.sin(phase * 17 + i) * 0.4;
+      const z = a.z + dz * t - jag * 0.55;
+      addMesh(sapGeo, boltMat, x, y, z, i % 2 ? 0.46 : 0.34);
+      addMesh(sapGeo, boltCoreMat, x, y, z, 0.2);
     }
   }
 
@@ -1304,32 +1288,28 @@ export function createWorld(THREE, track) {
       const links = bolt.links || [];
       const phase = race.time * 3 + (bolt.max - bolt.life) * 9;
       for (let i = 0; i < links.length - 1; i++) boltBetween(links[i], links[i + 1], phase + i);
-      if (links.length) starShape(links[0].x, links[0].y + 0.35, links[0].z, 0.55);
-      for (let s = 1; s < links.length; s++) starShape(links[s].x, links[s].y + 0.45, links[s].z, 0.85);
     }
     for (const log of race.logs || []) {
       const g = new THREE.Group();
-      g.position.set(log.x || 0, (log.y || 0) + 1.7, log.z || 0);
+      g.position.set(log.x || 0, (log.y || 0) + 1.45, log.z || 0);
       g.rotation.y = log.yaw || 0;
       const roller = new THREE.Group();
-      roller.rotation.x = log.spin || 0;
+      roller.rotation.z = log.spin || 0;
       const body = new THREE.Mesh(logGeo, logMat);
-      body.rotation.z = Math.PI / 2;
+      body.rotation.x = Math.PI / 2;
       body.castShadow = true;
-      const capA = new THREE.Mesh(new THREE.CircleGeometry(1.52, 14), logEnd);
-      capA.position.x = 4.3;
-      capA.rotation.y = Math.PI / 2;
+      const capA = new THREE.Mesh(new THREE.CircleGeometry(1.28, 14), logEnd);
+      capA.position.z = 3.6;
       const capB = capA.clone();
-      capB.position.x = -4.3;
-      capB.rotation.y = -Math.PI / 2;
-      const band = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.12, 6, 14), logEnd);
-      band.rotation.y = Math.PI / 2;
+      capB.position.z = -3.6;
+      const band = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.1, 6, 14), logEnd);
+      band.rotation.x = Math.PI / 2;
       roller.add(body, capA, capB, band);
       g.add(roller);
       fx.add(g);
       groundBlob(log.x || 0, log.y || 0, log.z || 0, 3.4);
-      const backX = Math.cos(log.yaw || 0);
-      const backZ = Math.sin(log.yaw || 0);
+      const backX = -Math.sin(log.yaw || 0);
+      const backZ = -Math.cos(log.yaw || 0);
       for (let i = 0; i < 8; i++) {
         const chunk = addMesh(logGeo, logMat, (log.x || 0) - backX * (1.4 + i * 1.15), (log.y || 0) + 0.55 + (i % 2) * 0.2, (log.z || 0) - backZ * (1.4 + i * 1.15), 0.16);
         chunk.rotation.z = (log.spin || 0) + i;

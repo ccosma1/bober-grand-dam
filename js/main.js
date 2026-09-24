@@ -16,8 +16,8 @@ import {
   setDriver as chooseDriver,
   swapTrack,
   writeSave,
-} from "./sim.js?v=gd23";
-import { createWorld } from "./world.js?v=gd22";
+} from "./sim.js?v=gd26";
+import { createWorld } from "./world.js?v=gd25";
 import { createSfx } from "./audio.js?v=gd21";
 
 const app = document.getElementById("app");
@@ -174,13 +174,32 @@ function inRace() {
   return race.phase === "race" || race.phase === "countdown";
 }
 
+function showTrackStep() {
+  document.getElementById("menu-track").classList.remove("hidden");
+  document.getElementById("menu-beaver").classList.add("hidden");
+  splashFocus = 0;
+}
+
+function showBeaverStep() {
+  document.getElementById("menu-track").classList.add("hidden");
+  document.getElementById("menu-beaver").classList.remove("hidden");
+  splashFocus = 0;
+}
+
 function splashButtons() {
+  const onTrack = !document.getElementById("menu-track").classList.contains("hidden");
+  if (onTrack) {
+    return [
+      ...document.querySelectorAll("#track-pick [data-track]"),
+      document.getElementById("btn-continue"),
+      document.getElementById("btn-how"),
+      document.getElementById("btn-museum"),
+    ];
+  }
   return [
-    ...document.querySelectorAll("#track-pick [data-track]"),
-    ...document.querySelectorAll("[data-driver]"),
+    ...document.querySelectorAll("#roster-pick [data-driver]"),
     document.getElementById("btn-start"),
-    document.getElementById("btn-how"),
-    document.getElementById("btn-museum"),
+    document.getElementById("btn-beaver-back"),
   ];
 }
 
@@ -381,14 +400,24 @@ function showPodium() {
 
 document.getElementById("btn-start").addEventListener("click", () => startRace());
 document.getElementById("btn-rematch").addEventListener("click", () => startRace());
+document.getElementById("btn-continue").addEventListener("click", () => {
+  showBeaverStep();
+  document.querySelector("#roster-pick .who.on")?.focus();
+});
+document.getElementById("btn-beaver-back").addEventListener("click", () => {
+  showTrackStep();
+  document.querySelector("#track-pick .on")?.focus();
+});
 document.getElementById("btn-splash").addEventListener("click", () => {
   race.phase = "splash";
+  showTrackStep();
   showRaceChrome(false);
   paintBest();
   layout();
 });
 document.getElementById("btn-quit").addEventListener("click", () => {
   race.phase = "splash";
+  showTrackStep();
   showRaceChrome(false);
   paintBest();
   sfx.stop();

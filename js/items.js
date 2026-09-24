@@ -1,6 +1,6 @@
 /* Item boxes and place-weighted throws. Blue Lodge Orb only in 1st or 2nd.
    Thunder Twig, Log Roller, Mirror Mist, and Crest Bomb share that table. */
-import { frameAt, forward, livePlace } from "./sim.js?v=gd23";
+import { frameAt, forward, livePlace } from "./sim.js?v=gd26";
 
 export const ITEM_IDS = ["sap", "trap", "wall", "rocket", "star", "orb", "twig", "log", "mist", "bomb"];
 
@@ -209,7 +209,8 @@ export function launchHeld(race, kart) {
     burst(race, "shock", kart.x, kart.y + 0.6, kart.z, 0.7);
     juice(race, "orb", 0.4);
   } else if (id === "twig") {
-    const links = [{ x: kart.x + f.x * 2.8, y: kart.y + 1.55, z: kart.z + f.z * 2.8 }];
+    const nose = frameAt(race.track, kart.t + 0.02);
+    const links = [{ x: nose.p.x, y: nose.p.y + 2.1, z: nose.p.z }];
     let fromId = kart.id;
     let fromT = kart.t;
     let chained = false;
@@ -232,17 +233,17 @@ export function launchHeld(race, kart) {
       fromT = tgt.ref.t;
     }
     if (!chained) {
-      for (const step of [0.018, 0.04, 0.07, 0.105]) {
+      for (const step of [0.03, 0.07, 0.12, 0.18]) {
         const far = frameAt(race.track, kart.t + step);
-        links.push({ x: far.p.x, y: far.p.y + 2.6, z: far.p.z });
+        links.push({ x: far.p.x, y: far.p.y + 2.8, z: far.p.z });
       }
     }
-    race.bolts.push({ links, life: 1.45, max: 1.45 });
+    race.bolts.push({ links, life: 1.6, max: 1.6 });
     juice(race, "twig", 0.55);
   } else if (id === "log") {
     race.logs.push({
       owner: kart.id,
-      t: (kart.t + 0.005) % 1,
+      t: (kart.t + 0.012) % 1,
       life: 5.2,
       spin: 0,
       hit: {},

@@ -52,23 +52,31 @@
         <p class="mission">Race the bank. Drift the dam. First to the crest wins.</p>
         <p class="scope">Local race. Three laps. You and three racers.</p>
         <p class="fan">Fan game by a holder. Unofficial — not the project team.</p>
-        <div class="tracks" id="track-pick">
-          <button class="ghost on" type="button" data-track="dam">DAM LOOP</button>
-          <button class="ghost" type="button" data-track="frost">FROST RIDGE</button>
-          <button class="ghost" type="button" data-track="clover">CROWN CLOVER</button>
-          <button class="ghost" type="button" data-track="oasis">OASIS LEAP</button>
-          <button class="ghost" type="button" data-track="sky">SKY LOOP</button>
+        <div id="menu-track">
+          <p class="mission">Pick a track</p>
+          <div class="tracks" id="track-pick">
+            <button class="ghost on" type="button" data-track="dam">DAM LOOP</button>
+            <button class="ghost" type="button" data-track="frost">FROST RIDGE</button>
+            <button class="ghost" type="button" data-track="clover">CROWN CLOVER</button>
+            <button class="ghost" type="button" data-track="oasis">OASIS LEAP</button>
+            <button class="ghost" type="button" data-track="sky">SKY LOOP</button>
+          </div>
+          <button class="play" id="btn-continue" type="button">CONTINUE</button>
+          <div class="row">
+            <button class="ghost" id="btn-how" type="button">HOW</button>
+            <button class="ghost" id="btn-museum" type="button">MUSEUM</button>
+          </div>
         </div>
-        <div class="roster" id="roster-pick">
-          <button class="who on" type="button" data-driver="bober"><img src="assets/museum/bober.jpg?v=gd12" alt="" /><span>BOBER</span></button>
-          <button class="who" type="button" data-driver="muscle"><img src="assets/museum/muscle.jpg?v=gd21" alt="" /><span>MUSCLE</span></button>
-          <button class="who" type="button" data-driver="tall"><img src="assets/museum/tall.jpg?v=gd21" alt="" /><span>TALL</span></button>
-          <button class="who" type="button" data-driver="nib"><img src="assets/museum/nib.jpg?v=gd12" alt="" /><span>NIB</span></button>
-        </div>
-        <button class="play" id="btn-start" type="button">LOADING</button>
-        <div class="row">
-          <button class="ghost" id="btn-how" type="button">HOW</button>
-          <button class="ghost" id="btn-museum" type="button">MUSEUM</button>
+        <div id="menu-beaver" class="hidden">
+          <p class="mission">Pick a beaver</p>
+          <div class="roster" id="roster-pick">
+            <button class="who on" type="button" data-driver="bober"><img src="assets/museum/bober.jpg?v=gd12" alt="" /><span>BOBER</span></button>
+            <button class="who" type="button" data-driver="muscle"><img src="assets/museum/muscle.jpg?v=gd21" alt="" /><span>MUSCLE</span></button>
+            <button class="who" type="button" data-driver="tall"><img src="assets/museum/tall.jpg?v=gd21" alt="" /><span>TALL</span></button>
+            <button class="who" type="button" data-driver="nib"><img src="assets/museum/nib.jpg?v=gd12" alt="" /><span>NIB</span></button>
+          </div>
+          <button class="play" id="btn-start" type="button">LOADING</button>
+          <button class="ghost" id="btn-beaver-back" type="button">BACK</button>
         </div>
         <p class="keys">Keys: A D steer · W go · S brake · Shift drift · F fire · arrows + Enter</p>
         <p class="best" id="splash-best"></p>
@@ -191,6 +199,6 @@
       <button class="ghost" id="btn-splash" type="button">SPLASH</button>
     </section>
   </div>
-  <script type="module" src="js/main.js?v=gd23"></script>
+  <script type="module" src="js/main.js?v=gd26"></script>
 </body>
 </html>
