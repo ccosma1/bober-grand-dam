@@ -18,9 +18,9 @@ import {
   setDriver as chooseDriver,
   swapTrack,
   writeSave,
-} from "./sim.js?v=gd39";
-import { createWorld } from "./world.js?v=gd39";
-import { createSfx } from "./audio.js?v=gd39";
+} from "./sim.js?v=gd40";
+import { createWorld } from "./world.js?v=gd40";
+import { createSfx } from "./audio.js?v=gd40";
 
 const app = document.getElementById("app");
 const stage = document.getElementById("stage");

@@ -1,5 +1,5 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd39";
-import { buildKart } from "./racers.js?v=gd39";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd40";
+import { buildKart } from "./racers.js?v=gd40";
 
 function canvasTex(THREE, draw, w, h, repeat) {
   const c = document.createElement("canvas");
@@ -915,8 +915,40 @@ export function createWorld(THREE, track) {
     g.fillStyle = "rgba(255,236,170,0.85)";
     g.fillRect(w * 0.38, 0, w * 0.24, h * 0.72);
   }, 64, 256, false);
+  function activateKart(view, src) {
+    const spin = view.wheels && view.wheels[0] ? view.wheels[0].spin : 0;
+    view.wheels = src.wheels;
+    view.chassis = src.chassis;
+    view.driver = src.driver;
+    view.head = src.head;
+    view.arms = src.arms || [];
+    view.scarfTails = src.scarfTails || [];
+    view.flames = src.flames || [];
+    view.lanterns = src.lanterns || [];
+    view.rear = src.rear;
+    view.pose = src.pose;
+    for (const w of view.wheels || []) w.spin = spin;
+  }
+
   function mountKart(def) {
-    const view = buildKart(THREE, def, woodMap);
+    const hi = buildKart(THREE, def, woodMap, { lod: false });
+    const lo = buildKart(THREE, def, woodMap, { lod: true });
+    const root = new THREE.Group();
+    root.name = def.id;
+    root.userData.kind = hi.group.userData.kind;
+    root.userData.sig = hi.group.userData.sig;
+    root.userData.draws = hi.group.userData.draws;
+    root.userData.tris = hi.group.userData.tris;
+    root.userData.lodTris = lo.group.userData.tris;
+    root.scale.copy(hi.group.scale);
+    hi.group.scale.setScalar(1);
+    lo.group.scale.setScalar(1);
+    root.add(hi.group, lo.group);
+    const hero = def.id === "bober";
+    hi.group.visible = hero;
+    lo.group.visible = !hero;
+    const view = { group: root, hi, lo, hiOn: hero, blob: hi.blob };
+    activateKart(view, hero ? hi : lo);
     const trail = new THREE.Group();
     trail.position.set(0, 0.18, -3.8);
     const ribMat = new THREE.MeshBasicMaterial({
@@ -949,12 +981,14 @@ export function createWorld(THREE, track) {
       depthWrite: false,
       side: THREE.DoubleSide,
     });
-    const flare = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), flareMat);
-    flare.position.set(0, 0.36, -0.95);
+    const flare = new THREE.Group();
+    flare.position.set(0, 0.36, -1.15);
     flare.visible = false;
     const flareCard = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.55), flameMat);
-    flareCard.position.set(0, 0.08, -0.15);
-    flare.add(flareCard);
+    flareCard.position.set(0, 0.08, 0);
+    const flareCross = flareCard.clone();
+    flareCross.rotation.y = Math.PI / 2;
+    flare.add(flareCard, flareCross);
     view.group.add(flare);
     view.flare = flare;
     scene.add(view.group);
@@ -1076,7 +1110,9 @@ export function createWorld(THREE, track) {
     const steer = Math.max(-1, Math.min(1, k.steerSm || 0));
     const stunned = (k.stun || 0) > 0;
     const scale = view.group.scale.x || 1;
-    const steerAng = stunned ? Math.sin(race.time * 18) * 0.45 : steer * 0.62;
+    const kind = view.group.userData.kind;
+    const steerMax = kind === "nib" || kind === "tall" ? (25 * Math.PI) / 180 : (32 * Math.PI) / 180;
+    const steerAng = stunned ? Math.sin(race.time * 18) * 0.4 : steer * steerMax;
     for (const w of view.wheels || []) {
       const worldR = Math.max(0.12, w.radius * scale);
       w.spin += (fwdSp / worldR) * dt;
@@ -1088,7 +1124,7 @@ export function createWorld(THREE, track) {
     }
     const sus = view.sus || (view.sus = { y: 0, pitch: 0, roll: 0, land: 0 });
     const rate = 1 - Math.exp(-Math.max(0.001, dt) * 8);
-    const bump = Math.sin((k.x + k.z) * 0.85) * Math.min(0.045, speed * 0.0016);
+    const bump = Math.sin((k.x + k.z) * 0.85) * Math.min(0.03, speed * 0.0014);
     if ((view.airWas || 0) > 0.12 && (k.air || 0) === 0 && k.grounded) sus.land = 1;
     view.airWas = k.air || 0;
     sus.land = Math.max(0, sus.land - dt * 2.4);
@@ -1098,23 +1134,26 @@ export function createWorld(THREE, track) {
     sus.y += (targetY - sus.y) * rate;
     const noseDip = (k.braking || 0) * 0.18 - (k.throttle || 0) * 0.1 + landPitch;
     sus.pitch += (noseDip - sus.pitch) * rate;
-    const rollTarget = -steer * 0.24 + (stunned ? Math.sin(race.time * 22) * 0.22 : 0);
+    const rollTarget = -steer * ((6 * Math.PI) / 180) + (stunned ? Math.sin(race.time * 22) * 0.1 : 0);
     sus.roll += (rollTarget - sus.roll) * rate;
+    const squash = Math.sin(sus.land * Math.PI);
     if (view.chassis) {
       view.chassis.position.y = sus.y;
       view.chassis.rotation.x = sus.pitch;
       view.chassis.rotation.z = sus.roll;
-      view.chassis.rotation.y = Math.sin(race.time * (3.2 + speed * 0.08)) * Math.min(0.045, speed * 0.0014);
+      view.chassis.rotation.y = Math.sin(race.time * (3.2 + speed * 0.08)) * Math.min(0.04, speed * 0.0012);
+      view.chassis.scale.set(1 + squash * 0.02, 1 - squash * 0.07, 1 + squash * 0.03);
     }
     if (view.driver) {
-      view.driver.rotation.z = stunned ? Math.sin(race.time * 16) * 0.36 : steer * 0.32;
-      view.driver.rotation.y = stunned ? Math.sin(race.time * 8) * 0.28 : steer * 0.18;
-      view.driver.position.y = Math.sin(race.time * 10 + speed) * Math.min(0.04, speed * 0.0013);
+      const baseY = view.driver.userData.baseY || 0;
+      view.driver.rotation.z = stunned ? Math.sin(race.time * 16) * 0.28 : steer * ((12 * Math.PI) / 180);
+      view.driver.rotation.y = stunned ? Math.sin(race.time * 8) * 0.2 : steer * ((4 * Math.PI) / 180);
+      view.driver.position.y = baseY + Math.sin(race.time * 10 + speed) * Math.min(0.02, speed * 0.0008);
     }
     if (view.head) {
-      view.head.rotation.y = stunned ? Math.sin(race.time * 11) * 0.65 : steer * 0.48;
-      view.head.rotation.z = stunned ? Math.sin(race.time * 14) * 0.48 : 0;
-      view.head.rotation.x = stunned ? Math.sin(race.time * 9) * 0.16 : 0;
+      view.head.rotation.y = stunned ? Math.sin(race.time * 11) * 0.4 : steer * ((15 * Math.PI) / 180);
+      view.head.rotation.z = stunned ? Math.sin(race.time * 14) * 0.2 : 0;
+      view.head.rotation.x = stunned ? Math.sin(race.time * 9) * 0.1 : 0;
     }
     const brace = Math.min(1, Math.abs(steer) * 1.5 + (k.braking || 0));
     for (const arm of view.arms || []) {
@@ -1130,18 +1169,20 @@ export function createWorld(THREE, track) {
       t.scale.z = 1 + wind * 0.75;
     });
     (view.lanterns || []).forEach((lan, i) => {
-      const sway = 0.16 + Math.min(0.24, speed * 0.009);
+      const sway = (8 * Math.PI) / 180;
       lan.rotation.z = Math.sin(race.time * 3.4 + i * 1.3) * sway;
-      lan.rotation.x = Math.cos(race.time * 2.7 + i) * sway * 0.5;
-      if (lan.userData.glow) lan.userData.glow.emissiveIntensity = 0.75 + Math.sin(race.time * 8 + i * 2) * 0.35;
+      lan.rotation.x = Math.cos(race.time * 2.7 + i) * sway * 0.65;
+      if (lan.userData.glow) lan.userData.glow.emissiveIntensity = 0.85 + Math.sin(race.time * 8 + i * 2) * 0.35;
     });
     const boosting = (k.boost || 0) > 0.05;
     (view.flames || []).forEach((fl, i) => {
+      if (fl.userData && fl.userData.manual) return;
       const flick = 0.7 + Math.abs(Math.sin(race.time * 29 + i * 2.2)) * 0.55;
       const kick = boosting ? 1.7 : 1;
       fl.scale.set(0.8 * kick * flick, (0.75 + (boosting ? 1.2 : 0)) * flick, 1);
       if (fl.material) fl.material.opacity = boosting ? 1 : 0.88;
     });
+    if (view.pose) view.pose(race.time, speed, boosting);
     if (view.ribbon) {
       view.ribbon.visible = boosting;
       if (view.ribbonSheet) view.ribbonSheet.material.opacity = boosting ? 0.96 : 0;
@@ -1163,6 +1204,17 @@ export function createWorld(THREE, track) {
     for (let i = 0; i < race.karts.length; i++) {
       const k = race.karts[i];
       const view = views[i];
+      if (view.hi && view.lo) {
+        const want = !k.cpu;
+        if (view.hiOn !== want) {
+          view.hi.group.visible = want;
+          view.lo.group.visible = !want;
+          activateKart(view, want ? view.hi : view.lo);
+          view.hiOn = want;
+          view.group.userData.draws = (want ? view.hi : view.lo).group.userData.draws;
+          view.group.userData.tris = (want ? view.hi : view.lo).group.userData.tris;
+        }
+      }
       const fr = liveTrack.frames[k.hint] || frameAt(liveTrack, k.t);
       if (k.grounded && fr.loop && fr.up) {
         const dir = k.loopDir || 1;

@@ -1,465 +1,1578 @@
-/* Four painted carts. Nose is local +z. The rear marker sits at local -z.
-   Each build returns the same motion hooks so player and CPU share one mesh. */
+/* Painted carts. Nose is local +z, rear marker is local -z.
+   Static parts merge by material. Nails and rivets are instanced.
+   Player detail is the full mesh; CPU detail drops whiskers, tufts, and spokes. */
 
-const GEO = {};
+import { mergeGeometries } from "../vendor/BufferGeometryUtils.js?v=gd40";
 
-function geo(key, build) {
-  if (!GEO[key]) GEO[key] = build();
-  return GEO[key];
+const GEO = new Map();
+const BUILD = { lod: false, curve: 2 };
+const SIG = { bober: 91, muscle: 92, tall: 93, nib: 94 };
+
+const WOOD = [0, 0.16, 1, 1];
+const LEATHER_W = [0, 0.01, 0.5, 0.14];
+const IRON = [0.02, 0.52, 0.48, 0.98];
+const BRASS = [0.52, 0.52, 0.98, 0.98];
+const RUST = [0.02, 0.02, 0.48, 0.48];
+const GLASS = [0.52, 0.02, 0.98, 0.48];
+const FUR = [0.02, 0.4, 0.98, 0.98];
+const SCALES = [0.02, 0.02, 0.32, 0.18];
+const LEATHER = [0.34, 0.02, 0.64, 0.18];
+const EYE = [0.68, 0.02, 0.98, 0.18];
+const TEETH = [0.02, 0.22, 0.34, 0.37];
+const NOSE = [0.36, 0.22, 0.64, 0.37];
+const TONGUE = [0.68, 0.22, 0.98, 0.37];
+const RUBBER = [0.02, 0.05, 0.48, 0.95];
+const WIRON = [0.52, 0.52, 0.98, 0.98];
+const WWOOD = [0.52, 0.02, 0.98, 0.48];
+
+let MATS = null;
+
+function rng(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
-function boxGeo(THREE, w, h, d) {
-  return geo("b:" + w + "x" + h + "x" + d, () => new THREE.BoxGeometry(w, h, d));
-}
-
-function sphereGeo(THREE, r, sw, sh) {
-  return geo("s:" + r + ":" + sw + ":" + sh, () => new THREE.SphereGeometry(r, sw, sh));
-}
-
-function cylGeo(THREE, rt, rb, h, seg) {
-  return geo("c:" + rt + ":" + rb + ":" + h + ":" + seg, () => new THREE.CylinderGeometry(rt, rb, h, seg));
-}
-
-function torusGeo(THREE, r, tube, rs, ts) {
-  return geo("t:" + r + ":" + tube + ":" + rs + ":" + ts, () => new THREE.TorusGeometry(r, tube, rs, ts));
-}
-
-function canvasTex(THREE, w, h, draw) {
+function canvasOf(size, draw) {
   const c = document.createElement("canvas");
-  c.width = w;
-  c.height = h;
-  draw(c.getContext("2d"), w, h);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
+  c.width = size;
+  c.height = size;
+  draw(c.getContext("2d"), size);
+  return c;
+}
+
+function texOf(THREE, canvas, color) {
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  tex.flipY = false;
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
   tex.anisotropy = 4;
+  tex.needsUpdate = true;
   return tex;
 }
 
-function furMat(THREE) {
-  return geo("mat:fur", () => {
-    const map = canvasTex(THREE, 128, 128, (g) => {
-      g.fillStyle = "#6d452c";
-      g.fillRect(0, 0, 128, 128);
-      for (let i = 0; i < 700; i++) {
-        const light = i % 5 === 0;
-        g.strokeStyle = light ? "#c49262" : "#3e2918";
-        g.globalAlpha = 0.35 + (i % 4) * 0.12;
-        g.lineWidth = 1;
-        const x = (i * 47) % 128;
-        const y = (i * 19) % 128;
-        g.beginPath();
-        g.moveTo(x, y);
-        g.quadraticCurveTo(x + 1, y + 4, x + ((i * 3) % 5) - 2, y + 8);
-        g.stroke();
-      }
-      g.globalAlpha = 1;
-    });
-    const bump = canvasTex(THREE, 64, 64, (g) => {
-      g.fillStyle = "#808080";
-      g.fillRect(0, 0, 64, 64);
-      for (let i = 0; i < 280; i++) {
-        const s = 70 + (i % 8) * 18;
-        g.strokeStyle = "rgb(" + s + "," + s + "," + s + ")";
-        const x = (i * 17) % 64;
-        const y = (i * 9) % 64;
-        g.beginPath();
-        g.moveTo(x, y);
-        g.lineTo(x + 1, y + 6);
-        g.stroke();
-      }
-    });
-    return new THREE.MeshStandardMaterial({ map, bumpMap: bump, bumpScale: 0.28, roughness: 0.9 });
-  });
-}
-
-function flatMat(THREE, color, rough, metal) {
-  const key = "mat:" + color + ":" + rough + ":" + (metal || 0);
-  return geo(key, () => new THREE.MeshStandardMaterial({
-    color,
-    roughness: rough,
-    metalness: metal || 0,
-  }));
-}
-
-function knitMat(THREE, hex) {
-  return geo("knit:" + hex, () => {
-    const map = canvasTex(THREE, 64, 64, (g) => {
-      g.fillStyle = "#" + hex.toString(16).padStart(6, "0");
-      g.fillRect(0, 0, 64, 64);
-      g.strokeStyle = "rgba(255,255,255,0.28)";
-      g.lineWidth = 2;
-      for (let y = 3; y < 64; y += 5) {
-        g.beginPath();
-        g.moveTo(0, y);
-        for (let x = 0; x <= 64; x += 4) g.lineTo(x, y + (x % 8 === 0 ? 2 : -1));
-        g.stroke();
-      }
-      g.strokeStyle = "rgba(0,0,0,0.25)";
-      for (let y = 5; y < 64; y += 5) {
-        g.beginPath();
-        g.moveTo(0, y);
-        g.lineTo(64, y);
-        g.stroke();
-      }
-    });
-    return new THREE.MeshStandardMaterial({ map, roughness: 0.95 });
-  });
-}
-
-function woodTone(THREE, tint) {
-  return geo("wood:" + tint, () => {
-    const map = canvasTex(THREE, 128, 64, (g) => {
-      g.fillStyle = "#" + tint.toString(16).padStart(6, "0");
-      g.fillRect(0, 0, 128, 64);
-      g.globalAlpha = 0.35;
-      for (let i = 0; i < 18; i++) {
-        g.strokeStyle = i % 2 ? "rgba(255,220,170,0.45)" : "rgba(40,16,8,0.55)";
-        g.lineWidth = 1 + (i % 3);
-        g.beginPath();
-        g.moveTo(0, 2 + i * 3.4);
-        g.bezierCurveTo(40, 6 + i * 3, 80, i * 2, 128, 4 + i * 3.2);
-        g.stroke();
-      }
-      g.globalAlpha = 1;
-    });
-    return new THREE.MeshStandardMaterial({ map, roughness: 0.62, metalness: 0.04 });
-  });
-}
-
-function rustMat(THREE) {
-  return geo("mat:rust", () => {
-    const map = canvasTex(THREE, 128, 128, (g) => {
-      g.fillStyle = "#3a342f";
-      g.fillRect(0, 0, 128, 128);
-      for (let i = 0; i < 40; i++) {
-        g.fillStyle = i % 3 === 0 ? "#8a4a28" : i % 3 === 1 ? "#5c4038" : "#6e5848";
-        g.globalAlpha = 0.55 + (i % 4) * 0.1;
-        g.beginPath();
-        g.ellipse((i * 37) % 128, (i * 53) % 128, 10 + (i % 7) * 3, 8 + (i % 5) * 2, i, 0, 6.28);
-        g.fill();
-      }
-      g.globalAlpha = 0.9;
-      g.strokeStyle = "#1c1816";
-      g.lineWidth = 3;
-      g.strokeRect(6, 6, 116, 116);
-      g.fillStyle = "#c8c2b8";
-      for (let i = 0; i < 5; i++) {
-        for (let j = 0; j < 5; j++) {
-          g.beginPath();
-          g.arc(16 + i * 24, 16 + j * 24, 2.4, 0, 6.28);
-          g.fill();
-        }
-      }
-    });
-    return new THREE.MeshStandardMaterial({ map, roughness: 0.72, metalness: 0.48 });
-  });
-}
-
-function scaleMat(THREE) {
-  return geo("mat:scale", () => {
-    const map = canvasTex(THREE, 64, 64, (g) => {
-      g.fillStyle = "#3a2c24";
-      g.fillRect(0, 0, 64, 64);
-      g.strokeStyle = "#1a120e";
-      g.lineWidth = 1.5;
-      for (let y = 0; y < 8; y++) {
-        for (let x = 0; x < 8; x++) {
-          const ox = (y % 2) * 4;
-          g.strokeRect(ox + x * 8, y * 8, 7, 7);
-          g.strokeStyle = y % 2 ? "#5a4034" : "#1a120e";
-        }
-      }
-    });
-    return new THREE.MeshStandardMaterial({ map, roughness: 0.78 });
-  });
-}
-
-function put(THREE, geometry, x, y, z, rx, ry, rz, sx, sy, sz) {
-  const m = new THREE.Mesh(geometry);
-  m.position.set(x, y, z);
-  if (rx) m.rotation.x = rx;
-  if (ry) m.rotation.y = ry;
-  if (rz) m.rotation.z = rz;
-  if (sx) m.scale.set(sx, sy || sx, sz || sx);
-  m.updateMatrix();
-  return m;
-}
-
-function mergeParts(THREE, parts, material) {
-  let count = 0;
-  const baked = [];
-  for (const p of parts) {
-    const g = p.geometry.index ? p.geometry.toNonIndexed() : p.geometry.clone();
-    g.applyMatrix4(p.matrix);
-    baked.push(g);
-    count += g.attributes.position.count;
+function grain(g, s, ink, lite, knots) {
+  const img = g.getImageData(0, 0, s, s);
+  const d = img.data;
+  const rand = rng(knots);
+  for (let y = 0; y < s; y++) {
+    for (let x = 0; x < s; x++) {
+      const i = (y * s + x) * 4;
+      const n = rand();
+      const wave = Math.sin(y * 0.09 + Math.sin(x * 0.02) * 2.2) * 0.5 + 0.5;
+      const v = lite - wave * 28 - (n > 0.92 ? 50 : n * 18);
+      d[i] = d[i + 1] = d[i + 2] = Math.max(40, Math.min(245, v));
+      d[i + 3] = 255;
+    }
   }
-  const pos = new Float32Array(count * 3);
-  const nrm = new Float32Array(count * 3);
-  const uv = new Float32Array(count * 2);
-  let o = 0;
-  for (const g of baked) {
-    const p = g.attributes.position;
-    const n = g.attributes.normal;
-    const u = g.attributes.uv;
-    pos.set(p.array, o * 3);
-    if (n) nrm.set(n.array, o * 3);
-    if (u) uv.set(u.array, o * 2);
-    o += p.count;
-    g.dispose();
+  g.putImageData(img, 0, 0);
+  g.strokeStyle = ink;
+  g.globalAlpha = 0.45;
+  for (let i = 0; i < 36; i++) {
+    g.lineWidth = 1 + (i % 3);
+    g.beginPath();
+    g.moveTo(0, (i * 17) % s);
+    g.bezierCurveTo(s * 0.3, (i * 17 + 12) % s, s * 0.6, (i * 13) % s, s, (i * 19 + 4) % s);
+    g.stroke();
   }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-  geometry.setAttribute("normal", new THREE.BufferAttribute(nrm, 3));
-  geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.castShadow = true;
+  g.globalAlpha = 0.9;
+  for (let i = 0; i < 14; i++) {
+    const x = (i * 97) % s;
+    const y = (i * 53) % s;
+    const rad = 8 + (i % 5) * 4;
+    g.fillStyle = i % 2 ? "rgba(70,42,24,0.55)" : "rgba(40,24,16,0.4)";
+    g.beginPath();
+    g.ellipse(x, y, rad, rad * 0.72, i, 0, 6.28);
+    g.fill();
+    g.strokeStyle = "rgba(30,16,8,0.8)";
+    g.lineWidth = 2;
+    g.stroke();
+  }
+  g.globalAlpha = 1;
+}
+
+function paintWood(g, s) {
+  g.fillStyle = "#e7e0d4";
+  g.fillRect(0, 0, s, s);
+  grain(g, s, "rgba(90,60,36,0.55)", 214, 11);
+  g.fillStyle = "#6a4128";
+  g.fillRect(0, 0, s, Math.floor(s * 0.14));
+  g.strokeStyle = "rgba(40,22,12,0.45)";
+  for (let y = 6; y < s * 0.14; y += 5) {
+    g.beginPath();
+    g.moveTo(0, y);
+    g.lineTo(s * 0.5, y + 1);
+    g.stroke();
+  }
+  g.fillStyle = "rgba(245,236,220,0.55)";
+  const rand = rng(4);
+  for (let i = 0; i < 30; i++) {
+    g.fillRect(rand() * s, s * 0.16 + rand() * s * 0.8, 10 + rand() * 22, 6 + rand() * 8);
+  }
+}
+
+function paintMetal(g, s) {
+  const iron = g.createLinearGradient(0, 0, s, 0);
+  iron.addColorStop(0, "#8d9094");
+  iron.addColorStop(0.5, "#c5c8cc");
+  iron.addColorStop(1, "#7e8286");
+  g.fillStyle = iron;
+  g.fillRect(0, s * 0.5, s * 0.5, s * 0.5);
+  g.globalAlpha = 0.35;
+  g.strokeStyle = "#4c5054";
+  for (let y = s * 0.5; y < s; y += 3) {
+    g.beginPath();
+    g.moveTo(0, y);
+    g.lineTo(s * 0.5, y + 0.5);
+    g.stroke();
+  }
+  g.globalAlpha = 1;
+  const brass = g.createLinearGradient(0, 0, 0, s);
+  brass.addColorStop(0, "#f0d78a");
+  brass.addColorStop(0.45, "#c9a544");
+  brass.addColorStop(1, "#8a6a28");
+  g.fillStyle = brass;
+  g.fillRect(s * 0.5, s * 0.5, s * 0.5, s * 0.5);
+  g.strokeStyle = "rgba(90,60,20,0.35)";
+  for (let i = 0; i < 18; i++) {
+    g.beginPath();
+    g.moveTo(s * 0.5, s * 0.5 + i * 14);
+    g.lineTo(s, s * 0.55 + i * 13);
+    g.stroke();
+  }
+  g.fillStyle = "#5a5654";
+  g.fillRect(0, 0, s * 0.5, s * 0.5);
+  const rand = rng(19);
+  for (let i = 0; i < 80; i++) {
+    g.fillStyle = i % 3 === 0 ? "#8c4a26" : i % 3 === 1 ? "#6a3a20" : "#3a3430";
+    g.globalAlpha = 0.55 + rand() * 0.4;
+    g.beginPath();
+    g.ellipse(rand() * s * 0.5, rand() * s * 0.5, 8 + rand() * 28, 6 + rand() * 18, rand() * 3, 0, 6.28);
+    g.fill();
+  }
+  g.globalAlpha = 1;
+  const glow = g.createRadialGradient(s * 0.75, s * 0.25, 8, s * 0.75, s * 0.25, s * 0.22);
+  glow.addColorStop(0, "#fff1c4");
+  glow.addColorStop(0.45, "#e8a33c");
+  glow.addColorStop(1, "#a85a14");
+  g.fillStyle = glow;
+  g.fillRect(s * 0.5, 0, s * 0.5, s * 0.5);
+}
+
+function paintMetalMaps(gRough, gMetal, s) {
+  const rough = gRough.createImageData(s, s);
+  const metal = gMetal.createImageData(s, s);
+  for (let y = 0; y < s; y++) {
+    for (let x = 0; x < s; x++) {
+      const i = (y * s + x) * 4;
+      const brass = x >= s * 0.5 && y >= s * 0.5;
+      const rust = x < s * 0.5 && y < s * 0.5;
+      const glass = x >= s * 0.5 && y < s * 0.5;
+      let r = 180;
+      let m = 150;
+      if (brass) {
+        r = 70;
+        m = 214;
+      } else if (rust) {
+        r = 220;
+        m = 60;
+      } else if (glass) {
+        r = 30;
+        m = 20;
+      }
+      rough.data[i] = rough.data[i + 1] = rough.data[i + 2] = r;
+      rough.data[i + 3] = 255;
+      metal.data[i] = metal.data[i + 1] = metal.data[i + 2] = m;
+      metal.data[i + 3] = 255;
+    }
+  }
+  gRough.putImageData(rough, 0, 0);
+  gMetal.putImageData(metal, 0, 0);
+}
+
+function paintEmit(g, s) {
+  g.fillStyle = "#000";
+  g.fillRect(0, 0, s, s);
+  const glow = g.createRadialGradient(s * 0.75, s * 0.25, 6, s * 0.75, s * 0.25, s * 0.2);
+  glow.addColorStop(0, "#fff6d8");
+  glow.addColorStop(0.5, "#e8a33c");
+  glow.addColorStop(1, "#000");
+  g.fillStyle = glow;
+  g.fillRect(s * 0.5, 0, s * 0.5, s * 0.5);
+}
+
+function paintBeaver(g, s) {
+  g.fillStyle = "#d7d0c8";
+  g.fillRect(0, 0, s, s);
+  const rand = rng(7);
+  g.globalAlpha = 0.9;
+  for (let i = 0; i < 2800; i++) {
+    const x = rand() * s;
+    const y = s * 0.4 + rand() * s * 0.6;
+    const tip = rand();
+    g.strokeStyle = tip > 0.82 ? "#c4a07a" : tip > 0.5 ? "#8d7b6c" : "#5c5148";
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(x, y);
+    g.lineTo(x + (rand() - 0.5) * 3, y + 2 + rand() * 4);
+    g.stroke();
+  }
+  g.globalAlpha = 1;
+  g.fillStyle = "#3a3a3e";
+  g.fillRect(0, 0, s * 0.33, s * 0.19);
+  for (let row = 0; row < 4; row++) {
+    for (let col = 0; col < 6; col++) {
+      g.fillStyle = (row + col) % 2 ? "#55565c" : "#3a3a3e";
+      const ox = (row % 2) * 10;
+      g.beginPath();
+      g.ellipse(16 + col * 26 + ox, 12 + row * 22, 14, 10, 0, 0, 6.28);
+      g.fill();
+      g.strokeStyle = "#222326";
+      g.stroke();
+    }
+  }
+  g.fillStyle = "#6a4128";
+  g.fillRect(s * 0.34, 0, s * 0.3, s * 0.19);
+  g.strokeStyle = "rgba(30,16,8,0.4)";
+  for (let y = 4; y < s * 0.19; y += 4) {
+    g.beginPath();
+    g.moveTo(s * 0.34, y);
+    g.lineTo(s * 0.64, y + 1);
+    g.stroke();
+  }
+  g.fillStyle = "#f4f1ea";
+  g.fillRect(s * 0.67, 0, s * 0.33, s * 0.19);
+  g.fillStyle = "#fff";
+  g.beginPath();
+  g.arc(s * 0.86, s * 0.06, s * 0.03, 0, 6.28);
+  g.fill();
+  g.fillStyle = "#f4efe6";
+  g.fillRect(0, s * 0.21, s * 0.34, s * 0.16);
+  g.fillStyle = "#2a2320";
+  g.fillRect(s * 0.36, s * 0.21, s * 0.28, s * 0.16);
+  g.fillStyle = "#1a1412";
+  g.beginPath();
+  g.ellipse(s * 0.44, s * 0.28, 8, 5, 0, 0, 6.28);
+  g.ellipse(s * 0.54, s * 0.28, 8, 5, 0, 0, 6.28);
+  g.fill();
+  g.fillStyle = "#c9606a";
+  g.fillRect(s * 0.68, s * 0.21, s * 0.32, s * 0.16);
+}
+
+function paintBeaverRough(g, s) {
+  const img = g.createImageData(s, s);
+  for (let y = 0; y < s; y++) {
+    for (let x = 0; x < s; x++) {
+      const i = (y * s + x) * 4;
+      let rough = 230;
+      if (y < s * 0.19 && x < s * 0.33) rough = 140;
+      else if (y < s * 0.19 && x < s * 0.66) rough = 170;
+      else if (y < s * 0.19) rough = 28;
+      else if (y < s * 0.38 && x < s * 0.34) rough = 90;
+      else if (y < s * 0.38 && x < s * 0.66) rough = 120;
+      else if (y < s * 0.38) rough = 150;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = rough;
+      img.data[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+}
+
+function paintKnit(g, s) {
+  g.fillStyle = "#e6e6e6";
+  g.fillRect(0, 0, s, s);
+  for (let y = 0; y < s; y += 8) {
+    g.strokeStyle = y % 16 === 0 ? "#ffffff" : "#9a9a9a";
+    g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(0, y);
+    for (let x = 0; x <= s; x += 8) g.lineTo(x, y + (x % 16 === 0 ? 3 : -2));
+    g.stroke();
+  }
+}
+
+function paintWheel(g, s) {
+  g.fillStyle = "#1a1a1a";
+  g.fillRect(0, 0, s * 0.5, s);
+  const rand = rng(3);
+  for (let i = 0; i < 500; i++) {
+    g.fillStyle = rand() > 0.5 ? "#2c2c2c" : "#0c0c0c";
+    g.fillRect(rand() * s * 0.5, rand() * s, 2, 2 + rand() * 7);
+  }
+  g.fillStyle = "#d7b48a";
+  g.fillRect(s * 0.5, 0, s * 0.5, s * 0.5);
+  g.strokeStyle = "rgba(90,52,28,0.55)";
+  g.globalAlpha = 0.7;
+  for (let y = 4; y < s * 0.5; y += 6) {
+    g.beginPath();
+    g.moveTo(s * 0.5, y);
+    g.bezierCurveTo(s * 0.7, y + 3, s * 0.85, y - 2, s, y + 1);
+    g.stroke();
+  }
+  g.globalAlpha = 1;
+  g.fillStyle = "#8a5a32";
+  g.beginPath();
+  g.ellipse(s * 0.72, s * 0.22, 16, 11, 0.4, 0, 6.28);
+  g.fill();
+  g.fillStyle = "#c5c9cd";
+  g.fillRect(s * 0.5, s * 0.5, s * 0.5, s * 0.5);
+  g.strokeStyle = "rgba(50,54,58,0.55)";
+  for (let y = s * 0.5; y < s; y += 3) {
+    g.beginPath();
+    g.moveTo(s * 0.5, y);
+    g.lineTo(s, y);
+    g.stroke();
+  }
+}
+
+function paintWheelMaps(gRough, gMetal, s) {
+  const rough = gRough.createImageData(s, s);
+  const metal = gMetal.createImageData(s, s);
+  for (let y = 0; y < s; y++) {
+    for (let x = 0; x < s; x++) {
+      const i = (y * s + x) * 4;
+      const iron = x >= s * 0.5 && y >= s * 0.5;
+      const wood = x >= s * 0.5 && y < s * 0.5;
+      const r = iron ? 80 : wood ? 150 : 235;
+      const m = iron ? 190 : wood ? 20 : 8;
+      rough.data[i] = rough.data[i + 1] = rough.data[i + 2] = r;
+      rough.data[i + 3] = 255;
+      metal.data[i] = metal.data[i + 1] = metal.data[i + 2] = m;
+      metal.data[i + 3] = 255;
+    }
+  }
+  gRough.putImageData(rough, 0, 0);
+  gMetal.putImageData(metal, 0, 0);
+}
+
+function paintFlame(g, s) {
+  const grd = g.createLinearGradient(0, s, 0, 0);
+  grd.addColorStop(0, "rgba(255,60,0,0)");
+  grd.addColorStop(0.25, "rgba(255,90,16,0.95)");
+  grd.addColorStop(0.6, "rgba(255,170,40,0.95)");
+  grd.addColorStop(1, "rgba(255,246,210,0.2)");
+  g.fillStyle = grd;
+  g.beginPath();
+  g.moveTo(s * 0.5, s * 0.02);
+  g.bezierCurveTo(s * 0.95, s * 0.35, s * 0.8, s * 0.7, s * 0.5, s * 0.98);
+  g.bezierCurveTo(s * 0.2, s * 0.7, s * 0.05, s * 0.35, s * 0.5, s * 0.02);
+  g.fill();
+}
+
+function materials(THREE) {
+  if (MATS) return MATS;
+  const woodC = canvasOf(512, paintWood);
+  const metalC = canvasOf(512, paintMetal);
+  const beaverC = canvasOf(512, paintBeaver);
+  const knitC = canvasOf(512, paintKnit);
+  const wheelC = canvasOf(512, paintWheel);
+  const flameC = canvasOf(128, paintFlame);
+  const mRoughC = canvasOf(512, () => {});
+  const mMetalC = canvasOf(512, () => {});
+  paintMetalMaps(mRoughC.getContext("2d"), mMetalC.getContext("2d"), 512);
+  const bRoughC = canvasOf(512, paintBeaverRough);
+  const wRoughC = canvasOf(512, () => {});
+  const wMetalC = canvasOf(512, () => {});
+  paintWheelMaps(wRoughC.getContext("2d"), wMetalC.getContext("2d"), 512);
+  const emitC = canvasOf(512, paintEmit);
+  const woodMap = texOf(THREE, woodC, true);
+  const metalMap = texOf(THREE, metalC, true);
+  const beaverMap = texOf(THREE, beaverC, true);
+  const knitMap = texOf(THREE, knitC, true);
+  const wheelMap = texOf(THREE, wheelC, true);
+  const roughM = texOf(THREE, mRoughC, false);
+  const metalM = texOf(THREE, mMetalC, false);
+  const roughB = texOf(THREE, bRoughC, false);
+  const roughW = texOf(THREE, wRoughC, false);
+  const metalW = texOf(THREE, wMetalC, false);
+  const emit = texOf(THREE, emitC, true);
+  const wood = new THREE.MeshStandardMaterial({
+    map: woodMap,
+    vertexColors: true,
+    roughness: 0.72,
+    metalness: 0.04,
+  });
+  const metal = new THREE.MeshStandardMaterial({
+    map: metalMap,
+    roughnessMap: roughM,
+    metalnessMap: metalM,
+    emissive: 0xffb45a,
+    emissiveMap: emit,
+    emissiveIntensity: 0,
+    vertexColors: true,
+    roughness: 1,
+    metalness: 1,
+  });
+  const fur = new THREE.MeshStandardMaterial({
+    map: beaverMap,
+    roughnessMap: roughB,
+    vertexColors: true,
+    roughness: 1,
+    metalness: 0,
+    side: THREE.DoubleSide,
+  });
+  const knit = new THREE.MeshStandardMaterial({
+    map: knitMap,
+    vertexColors: true,
+    roughness: 0.96,
+    metalness: 0,
+    side: THREE.DoubleSide,
+  });
+  const wheel = new THREE.MeshStandardMaterial({
+    map: wheelMap,
+    roughnessMap: roughW,
+    metalnessMap: metalW,
+    vertexColors: true,
+    roughness: 1,
+    metalness: 1,
+  });
+  const flame = new THREE.MeshBasicMaterial({
+    map: texOf(THREE, flameC, true),
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+  });
+  MATS = { wood, metal, fur, knit, wheel, flame };
+  return MATS;
+}
+
+function regionUV(geo, u0, v0, u1, v1) {
+  const uv = geo.attributes.uv;
+  for (let i = 0; i < uv.count; i++) {
+    let u = uv.getX(i);
+    let v = uv.getY(i);
+    if (u < 0 || u > 1) u = u - Math.floor(u);
+    if (v < 0 || v > 1) v = v - Math.floor(v);
+    uv.setXY(i, u0 + u * (u1 - u0), v0 + v * (v1 - v0));
+  }
+}
+
+function prep(THREE, src, color, region, x, y, z, rx, ry, rz, sx, sy, sz) {
+  const g = src.index ? src.toNonIndexed() : src.clone();
+  const o = new THREE.Object3D();
+  o.position.set(x || 0, y || 0, z || 0);
+  o.rotation.set(rx || 0, ry || 0, rz || 0);
+  const fx = sx || 1;
+  o.scale.set(fx, sy == null ? fx : sy, sz == null ? fx : sz);
+  o.updateMatrix();
+  g.applyMatrix4(o.matrix);
+  g.computeVertexNormals();
+  if (!g.attributes.uv) {
+    g.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+  }
+  if (region) regionUV(g, region[0], region[1], region[2], region[3]);
+  const c = new THREE.Color(color == null ? 0xffffff : color);
+  const n = g.attributes.position.count;
+  const col = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    col[i * 3] = c.r;
+    col[i * 3 + 1] = c.g;
+    col[i * 3 + 2] = c.b;
+  }
+  g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  return g;
+}
+
+function mergeParts(geos, label) {
+  if (!geos.length) return null;
+  const merged = mergeGeometries(geos, false);
+  if (!merged) throw new Error("merge " + label);
+  return merged;
+}
+
+function solidMesh(THREE, geos, material, shadow, label) {
+  const merged = mergeParts(geos, label);
+  if (!merged) return null;
+  const mesh = new THREE.Mesh(merged, material);
+  mesh.name = label || "part";
+  mesh.castShadow = !!shadow;
   mesh.receiveShadow = true;
   return mesh;
 }
 
-function addMerged(THREE, parent, parts, material) {
-  if (!parts.length) return null;
-  const mesh = mergeParts(THREE, parts, material);
+function rr(THREE, w, h, rad) {
+  const r = Math.max(0.004, Math.min(rad, w * 0.45, h * 0.45));
+  const s = new THREE.Shape();
+  const x = -w / 2;
+  const y = -h / 2;
+  s.moveTo(x + r, y);
+  s.lineTo(x + w - r, y);
+  s.quadraticCurveTo(x + w, y, x + w, y + r);
+  s.lineTo(x + w, y + h - r);
+  s.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  s.lineTo(x + r, y + h);
+  s.quadraticCurveTo(x, y + h, x, y + h - r);
+  s.lineTo(x, y + r);
+  s.quadraticCurveTo(x, y, x + r, y);
+  return s;
+}
+
+function chip(THREE, w, h, d) {
+  const key = "chip" + [w, h, d].join(":");
+  let g = GEO.get(key);
+  if (!g) {
+    const s = new THREE.Shape();
+    s.moveTo(-w / 2, -h / 2);
+    s.lineTo(w / 2, -h / 2);
+    s.lineTo(w / 2 * 0.7, h / 2);
+    s.lineTo(-w / 2 * 0.7, h / 2);
+    s.closePath();
+    const b = Math.min(0.02, w * 0.35, h * 0.35, d * 0.4);
+    g = new THREE.ExtrudeGeometry(s, {
+      depth: Math.max(d, 0.012),
+      bevelEnabled: true,
+      bevelThickness: Math.min(0.006, d * 0.3),
+      bevelSize: Math.max(0.008, b),
+      bevelSegments: 2,
+      curveSegments: 1,
+      steps: 1,
+    });
+    g.translate(0, 0, -Math.max(d, 0.012) / 2);
+    GEO.set(key, g);
+  }
+  return g;
+}
+
+function board(THREE, w, h, d, bevel) {
+  const b = Math.min(0.04, Math.max(0.02, bevel == null ? 0.026 : bevel), w * 0.42, h * 0.42);
+  const key = [BUILD.curve, w, h, d, b].join(":");
+  let g = GEO.get(key);
+  if (!g) {
+    g = new THREE.ExtrudeGeometry(rr(THREE, w, h, b), {
+      depth: d,
+      bevelEnabled: true,
+      bevelThickness: Math.min(0.012, d * 0.3),
+      bevelSize: b,
+      bevelSegments: 2,
+      curveSegments: BUILD.curve,
+      steps: 1,
+    });
+    g.translate(0, 0, -d / 2);
+    GEO.set(key, g);
+  }
+  return g;
+}
+
+function lBracket(THREE, a, b, t) {
+  const key = "L" + [a, b, t, BUILD.curve].join(":");
+  let g = GEO.get(key);
+  if (!g) {
+    const s = new THREE.Shape();
+    s.moveTo(0, 0);
+    s.lineTo(a, 0);
+    s.lineTo(a, t);
+    s.lineTo(t, t);
+    s.lineTo(t, b);
+    s.lineTo(0, b);
+    s.closePath();
+    const bevel = Math.min(0.028, t * 0.35);
+    g = new THREE.ExtrudeGeometry(s, {
+      depth: t,
+      bevelEnabled: true,
+      bevelThickness: Math.min(0.01, t * 0.25),
+      bevelSize: bevel,
+      bevelSegments: 2,
+      curveSegments: BUILD.curve,
+      steps: 1,
+    });
+    g.translate(-t, -t, -t / 2);
+    GEO.set(key, g);
+  }
+  return g;
+}
+
+function lathe(THREE, pts, segs) {
+  const key = "lat" + segs + ":" + pts.map((p) => p[0] + "," + p[1]).join(";");
+  let g = GEO.get(key);
+  if (!g) {
+    g = new THREE.LatheGeometry(pts.map((p) => new THREE.Vector2(p[0], p[1])), segs);
+    GEO.set(key, g);
+  }
+  return g;
+}
+
+function tube(THREE, points, radius, tubular, radial) {
+  const curve = new THREE.CatmullRomCurve3(points.map((p) => new THREE.Vector3(p[0], p[1], p[2])));
+  return new THREE.TubeGeometry(curve, tubular, radius, radial, false);
+}
+
+function lineTube(THREE, a, b, radius, radial) {
+  const curve = new THREE.LineCurve3(new THREE.Vector3(a[0], a[1], a[2]), new THREE.Vector3(b[0], b[1], b[2]));
+  return new THREE.TubeGeometry(curve, 1, radius, radial || 4, false);
+}
+
+function rivetGeo(THREE) {
+  let g = GEO.get("rivet");
+  if (!g) {
+    g = lathe(THREE, [[0.001, 0], [0.028, 0.005], [0.016, 0.016], [0.001, 0.022]], 4);
+    GEO.set("rivet", g);
+  }
+  return g;
+}
+
+function nails(THREE, parent, spots, color, shadow) {
+  if (!spots.length) return null;
+  const mesh = new THREE.InstancedMesh(rivetGeo(THREE), new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.38,
+    metalness: 0.72,
+  }), spots.length);
+  const dummy = new THREE.Object3D();
+  const up = new THREE.Vector3(0, 1, 0);
+  const dir = new THREE.Vector3();
+  spots.forEach((s, i) => {
+    dummy.position.set(s[0], s[1], s[2]);
+    dir.set(s[3] || 0, s[4] == null ? 1 : s[4], s[5] || 0);
+    if (dir.lengthSq() < 1e-6) dir.set(0, 1, 0);
+    dir.normalize();
+    dummy.quaternion.setFromUnitVectors(up, dir);
+    dummy.scale.setScalar(s[6] || 1);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(i, dummy.matrix);
+  });
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.name = "rivets";
+  mesh.castShadow = !!shadow;
+  mesh.receiveShadow = true;
   parent.add(mesh);
   return mesh;
 }
 
-function nailField(THREE, parent, spots, material) {
-  const g = boxGeo(THREE, 0.035, 0.035, 0.02);
-  addMerged(THREE, parent, spots.map((s) => put(THREE, g, s[0], s[1], s[2])), material);
-}
-
-function wheelUnit(THREE, radius, width, style, mats) {
-  const spin = new THREE.Group();
-  const tube = Math.max(0.045, width * 0.42);
-  const tireMat = style === "wood" ? mats.wood : mats.rubber;
-  const spokeMat = style === "wood" ? mats.woodDark : mats.spoke;
-  const rimMat = style === "wood" ? mats.iron : mats.spoke;
-  const tire = new THREE.Mesh(torusGeo(THREE, radius * 0.78, tube, 6, 16), tireMat);
-  tire.rotation.y = Math.PI / 2;
-  tire.castShadow = true;
-  spin.add(tire);
-  const rim = new THREE.Mesh(torusGeo(THREE, radius * 0.9, Math.max(0.012, tube * 0.28), 5, 16), rimMat);
-  rim.rotation.y = Math.PI / 2;
-  spin.add(rim);
-  const spokeGeo = boxGeo(THREE, width * 0.18, radius * 0.06, radius * 0.78);
-  for (let i = 0; i < 8; i++) {
-    const spoke = new THREE.Mesh(spokeGeo, spokeMat);
-    spoke.rotation.x = (i / 8) * Math.PI;
-    spin.add(spoke);
-  }
-  const hub = new THREE.Mesh(cylGeo(THREE, radius * 0.2, radius * 0.2, width * 0.72, 8), mats.hub);
-  hub.rotation.z = Math.PI / 2;
-  spin.add(hub);
-  const cap = new THREE.Mesh(cylGeo(THREE, radius * 0.1, radius * 0.1, width * 0.2, 8), mats.hub);
-  cap.rotation.z = Math.PI / 2;
-  cap.position.x = width * 0.28;
-  spin.add(cap);
-  if (style === "knob") {
-    const knob = boxGeo(THREE, width * 0.7, radius * 0.16, radius * 0.18);
-    for (let i = 0; i < 10; i++) {
-      const a = (i / 10) * Math.PI * 2;
-      const n = new THREE.Mesh(knob, mats.rubber);
-      n.position.set(0, Math.cos(a) * radius * 0.9, Math.sin(a) * radius * 0.9);
-      n.rotation.x = a;
-      spin.add(n);
+function displaceTire(geo, mode, knobs) {
+  const pos = geo.attributes.position;
+  let tubeR = 0.015;
+  for (let i = 0; i < pos.count; i += 3) tubeR = Math.max(tubeR, Math.abs(pos.getZ(i)));
+  for (let i = 0; i < pos.count; i++) {
+    let x = pos.getX(i);
+    let y = pos.getY(i);
+    const z = pos.getZ(i);
+    const ring = Math.hypot(x, y) || 1;
+    const ang = Math.atan2(y, x);
+    let disp = Math.sin(ang * 18) * tubeR * 0.2;
+    if (mode === "knob") {
+      const lobe = Math.pow(Math.max(0, Math.sin(ang * knobs)), 1.35);
+      const tread = 1 - Math.min(1, Math.abs(z) / tubeR);
+      disp = lobe * tubeR * (0.2 + tread * 0.9);
     }
+    x += (x / ring) * disp;
+    y += (y / ring) * disp;
+    pos.setXYZ(i, x, y, z);
   }
-  return spin;
+  geo.computeVertexNormals();
 }
 
-function addAxle(THREE, parent, x, y, z, radius, half, width, style, mats, steer) {
-  const yawPivot = new THREE.Group();
-  yawPivot.position.set(x, y, z);
-  const spinPivot = new THREE.Group();
-  yawPivot.add(spinPivot);
-  const sides = half === 0 ? [0] : [-1, 1];
+function wheelParts(THREE, opt, side, xOff) {
+  const parts = [];
+  const cap = side < 0 ? -1 : 1;
+  const tire = new THREE.TorusGeometry(opt.ring, opt.tube, opt.radial, opt.tubular);
+  displaceTire(tire, opt.mode, opt.knobs || 10);
+  parts.push(prep(THREE, tire, opt.tireColor || 0xffffff, opt.tireUV, xOff, 0, 0, 0, Math.PI / 2, 0));
+  if (opt.band) {
+    const band = new THREE.TorusGeometry(opt.ring + opt.tube * 0.82, opt.tube * 0.28, 4, opt.tubular);
+    displaceTire(band, "tread", 8);
+    parts.push(prep(THREE, band, 0xffffff, WIRON, xOff, 0, 0, 0, Math.PI / 2, 0));
+  }
+  const n = BUILD.lod ? 8 : opt.spokes;
+  const inner = opt.ring * 0.22;
+  const outer = opt.ring * 0.86;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const spoke = lineTube(
+      THREE,
+      [xOff, Math.cos(a) * inner, Math.sin(a) * inner],
+      [xOff, Math.cos(a) * outer, Math.sin(a) * outer],
+      opt.spokeR || 0.012,
+      4
+    );
+    parts.push(prep(THREE, spoke, 0xffffff, opt.spokeUV));
+  }
+  const hub = lathe(THREE, [[0.02, 0], [opt.hubR, 0.01], [opt.hubR * 0.7, opt.hubW], [0.015, opt.hubW]], 10);
+  const hubRot = cap > 0 ? -Math.PI / 2 : Math.PI / 2;
+  parts.push(prep(THREE, hub, opt.hubColor || 0xffffff, opt.hubUV, xOff, 0, 0, 0, 0, hubRot));
+  return parts;
+}
+
+function addAxle(THREE, parent, spec, mats, shadow) {
+  const yaw = new THREE.Group();
+  yaw.position.set(spec.x, spec.y, spec.z);
+  const spin = new THREE.Group();
+  yaw.add(spin);
+  const geos = [];
+  const sides = spec.half ? [-1, 1] : [1];
   for (const side of sides) {
-    const unit = wheelUnit(THREE, radius, width, style, mats);
-    unit.position.x = side * half;
-    spinPivot.add(unit);
+    const xOff = spec.half ? side * spec.half : 0;
+    geos.push(...wheelParts(THREE, spec.wheel, side, xOff));
   }
-  if (sides.length === 2) {
-    const bar = new THREE.Mesh(cylGeo(THREE, radius * 0.08, radius * 0.08, half * 2, 6), mats.iron);
-    bar.rotation.z = Math.PI / 2;
-    spinPivot.add(bar);
+  if (spec.half) {
+    const axle = lineTube(THREE, [-spec.half, 0, 0], [spec.half, 0, 0], spec.wheel.hubR * 0.28, 5);
+    geos.push(prep(THREE, axle, 0xffffff, WIRON));
   }
-  if (steer) {
-    const fork = new THREE.Mesh(boxGeo(THREE, Math.max(0.04, radius * 0.22), radius * 0.85, Math.max(0.04, radius * 0.16)), mats.iron);
-    fork.position.y = radius * 0.2;
-    yawPivot.add(fork);
+  let lock = null;
+  if (spec.fork) {
+    const start = geos.reduce((n, g) => n + g.attributes.position.count, 0);
+    geos.push(...spec.fork);
+    lock = { start, count: geos.reduce((n, g) => n + g.attributes.position.count, 0) - start };
   }
-  parent.add(yawPivot);
-  return { yawPivot, spinPivot, radius, steer: !!steer, spin: 0 };
+  const merged = mergeParts(geos, "wheel");
+  const mesh = new THREE.Mesh(merged, mats.wheel);
+  mesh.castShadow = !!shadow;
+  mesh.receiveShadow = true;
+  spin.add(mesh);
+  if (lock) {
+    lock.base = new Float32Array(merged.attributes.position.array);
+    lock.geo = merged;
+  }
+  parent.add(yaw);
+  return {
+    yawPivot: yaw,
+    spinPivot: spin,
+    radius: spec.wheel.outer,
+    steer: !!spec.steer,
+    spin: 0,
+    lock,
+    mesh,
+  };
 }
 
-function addBeaver(THREE, chassis, spec) {
-  const fur = furMat(THREE);
-  const driver = new THREE.Group();
-  driver.name = "driver";
-  const body = new THREE.Mesh(sphereGeo(THREE, 0.5, 12, 10), fur);
-  body.scale.set(spec.body.x, spec.body.y, spec.body.z);
-  body.position.set(0, spec.bodyY, spec.bodyZ);
-  body.castShadow = true;
-  driver.add(body);
-  const belly = new THREE.Mesh(sphereGeo(THREE, 0.5, 10, 8), flatMat(THREE, 0xe4c4a0, 0.84, 0));
-  belly.scale.set(spec.body.x * 0.62, spec.body.y * 0.55, spec.body.z * 0.5);
-  belly.position.set(0, spec.bodyY - spec.body.y * 0.12, spec.bodyZ + spec.body.z * 0.28);
-  driver.add(belly);
+function countVerts(geos) {
+  return geos.reduce((n, g) => n + g.attributes.position.count, 0);
+}
 
-  const head = new THREE.Group();
-  head.position.set(0, spec.headY, spec.headZ);
-  const skull = new THREE.Mesh(sphereGeo(THREE, 0.5, 12, 10), fur);
-  skull.scale.set(spec.head.x, spec.head.y, spec.head.z);
-  skull.castShadow = true;
-  head.add(skull);
-  const snout = new THREE.Mesh(sphereGeo(THREE, 0.5, 10, 8), fur);
-  snout.scale.set(spec.head.x * 0.72, spec.head.y * 0.48, spec.head.z * 0.7);
-  snout.position.set(0, -spec.head.y * 0.22, spec.head.z * 0.62);
-  head.add(snout);
-  const nose = new THREE.Mesh(sphereGeo(THREE, 0.5, 8, 6), flatMat(THREE, 0x1a120e, 0.45, 0.05));
-  nose.scale.set(spec.head.x * 0.28, spec.head.y * 0.18, 0.08);
-  nose.position.set(0, -spec.head.y * 0.12, spec.head.z * 0.98);
-  head.add(nose);
-  const mouth = new THREE.Mesh(sphereGeo(THREE, 0.5, 8, 6), flatMat(THREE, 0x2a1410, 0.7, 0));
-  mouth.scale.set(spec.mouthW, spec.mouthH, 0.06);
-  mouth.position.set(0, -spec.head.y * 0.42, spec.head.z * 0.78);
-  head.add(mouth);
-  const toothMat = flatMat(THREE, spec.toothColor, 0.4, 0.05);
-  const tooth = new THREE.Mesh(boxGeo(THREE, spec.toothW, spec.toothH, spec.toothD), toothMat);
-  tooth.position.set(0, -spec.head.y * 0.5, spec.head.z * 0.9);
-  head.add(tooth);
-  const tooth2 = tooth.clone();
-  tooth.position.x = -spec.toothW * 0.55;
-  tooth2.position.x = spec.toothW * 0.55;
-  head.add(tooth2);
-
-  const eyeWhite = flatMat(THREE, 0xf6f1e6, 0.32, 0);
-  const pupilMat = flatMat(THREE, 0x140e0c, 0.25, 0.1);
-  const shine = flatMat(THREE, 0xffffff, 0.15, 0);
-  for (const side of [-1, 1]) {
-    const eye = new THREE.Mesh(sphereGeo(THREE, spec.eyeR, 8, 6), eyeWhite);
-    eye.scale.set(1.05, spec.eyeTall ? 1.15 : 0.86, 0.72);
-    eye.position.set(side * spec.head.x * 0.42, spec.head.y * 0.08, spec.head.z * 0.42);
-    const pupil = new THREE.Mesh(sphereGeo(THREE, spec.eyeR * 0.48, 6, 5), pupilMat);
-    pupil.position.set(side * 0.01, 0, spec.eyeR * 0.55);
-    eye.add(pupil);
-    const glint = new THREE.Mesh(sphereGeo(THREE, spec.eyeR * 0.16, 5, 4), shine);
-    glint.position.set(spec.eyeR * 0.22, spec.eyeR * 0.22, spec.eyeR * 0.7);
-    eye.add(glint);
-    head.add(eye);
-    const ear = new THREE.Mesh(sphereGeo(THREE, 0.5, 8, 6), fur);
-    ear.scale.set(spec.ear.x, spec.ear.y, spec.ear.z);
-    ear.position.set(side * spec.head.x * 0.72, spec.head.y * 0.55, -spec.head.z * 0.05);
-    head.add(ear);
+function scarfPose(geo) {
+  const base = new Float32Array(geo.attributes.position.array);
+  const n = base.length / 3;
+  let zMin = Infinity;
+  let zMax = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const z = base[i * 3 + 2];
+    if (z < zMin) zMin = z;
+    if (z > zMax) zMax = z;
   }
-  const whisk = boxGeo(THREE, 0.22, 0.012, 0.012);
-  const whiskMat = flatMat(THREE, 0xf0e6d4, 0.5, 0);
-  const whiskers = [];
-  for (const side of [-1, 1]) {
-    for (const row of [-1, 0, 1]) {
-      whiskers.push(put(
+  const span = zMax - zMin || 1;
+  const along = new Float32Array(n);
+  for (let i = 0; i < n; i++) along[i] = (zMax - base[i * 3 + 2]) / span;
+  const bones = 4;
+  return (time, wind) => {
+    const pos = geo.attributes.position;
+    const off = [];
+    for (let b = 0; b < bones; b++) {
+      const t = b / (bones - 1);
+      const w = Math.sin(time * (5.2 + wind * 6.5) + b * 0.8);
+      off.push([
+        w * t * (0.06 + wind * 0.12),
+        Math.sin(time * 3.1 + b * 1.1) * t * (0.025 + wind * 0.04) - t * wind * 0.02,
+        -t * (0.04 + wind * 0.3),
+      ]);
+    }
+    for (let i = 0; i < n; i++) {
+      const t = along[i];
+      const f = t * (bones - 1);
+      const b0 = Math.min(bones - 2, Math.max(0, Math.floor(f)));
+      const u = Math.min(1, f - b0);
+      const a = off[b0];
+      const c = off[b0 + 1];
+      pos.setXYZ(
+        i,
+        base[i * 3] + a[0] * (1 - u) + c[0] * u,
+        base[i * 3 + 1] + a[1] * (1 - u) + c[1] * u,
+        base[i * 3 + 2] + a[2] * (1 - u) + c[2] * u
+      );
+    }
+    pos.needsUpdate = true;
+  };
+}
+
+function tailPose(geo, start, root) {
+  const base = new Float32Array(geo.attributes.position.array);
+  const end = geo.attributes.position.count;
+  return (time, speed) => {
+    const amp = 0.18 + Math.min(0.28, speed * 0.01);
+    const yaw = Math.sin(time * 3.3) * amp;
+    const pitch = Math.sin(time * 2.1 + 0.6) * amp * 0.35;
+    const cy = Math.cos(yaw);
+    const sy = Math.sin(yaw);
+    const cx = Math.cos(pitch);
+    const sx = Math.sin(pitch);
+    const pos = geo.attributes.position;
+    for (let i = start; i < end; i++) {
+      let x = base[i * 3] - root[0];
+      let y = base[i * 3 + 1] - root[1];
+      let z = base[i * 3 + 2] - root[2];
+      const x1 = x * cy + z * sy;
+      const z1 = -x * sy + z * cy;
+      const y1 = y * cx - z1 * sx;
+      const z2 = y * sx + z1 * cx;
+      pos.setXYZ(i, x1 + root[0], y1 + root[1], z2 + root[2]);
+    }
+    pos.needsUpdate = true;
+  };
+}
+
+function lockPose(wheels) {
+  return () => {
+    for (const w of wheels) {
+      if (!w.lock) continue;
+      const pos = w.lock.geo.attributes.position;
+      const b = w.lock.base;
+      const th = -w.spinPivot.rotation.x;
+      const c = Math.cos(th);
+      const s = Math.sin(th);
+      const last = w.lock.start + w.lock.count;
+      for (let i = w.lock.start; i < last; i++) {
+        const x = b[i * 3];
+        const y = b[i * 3 + 1];
+        const z = b[i * 3 + 2];
+        pos.setXYZ(i, x, y * c - z * s, y * s + z * c);
+      }
+      pos.needsUpdate = true;
+    }
+  };
+}
+
+function lanternPose(THREE, mesh, clusters, lanterns) {
+  const base = new Float32Array(mesh.geometry.attributes.position.array);
+  const q = new THREE.Quaternion();
+  const e = new THREE.Euler();
+  const v = new THREE.Vector3();
+  return () => {
+    const pos = mesh.geometry.attributes.position;
+    for (const cl of clusters) {
+      const lan = lanterns[cl.i];
+      e.set(lan.rotation.x, lan.rotation.y, lan.rotation.z);
+      q.setFromEuler(e);
+      for (let n = 0; n < cl.count; n++) {
+        const i = cl.start + n;
+        v.set(base[i * 3] - cl.p[0], base[i * 3 + 1] - cl.p[1], base[i * 3 + 2] - cl.p[2]);
+        v.applyQuaternion(q);
+        pos.setXYZ(i, v.x + cl.p[0], v.y + cl.p[1], v.z + cl.p[2]);
+      }
+    }
+    pos.needsUpdate = true;
+  };
+}
+
+function flamePose(mesh, clusters) {
+  const base = new Float32Array(mesh.geometry.attributes.position.array);
+  return (time, boost) => {
+    const pos = mesh.geometry.attributes.position;
+    const kick = boost ? 1.75 : 0.72;
+    clusters.forEach((cl, i) => {
+      const flick = 0.72 + Math.abs(Math.sin(time * 29 + i * 2.1)) * 0.55;
+      const s = kick * flick;
+      for (const idx of cl.indices) {
+        const x = base[idx * 3] - cl.o[0];
+        const y = base[idx * 3 + 1] - cl.o[1];
+        const z = base[idx * 3 + 2] - cl.o[2];
+        pos.setXYZ(idx, cl.o[0] + x * (0.8 + flick * 0.25), cl.o[1] + y * s, cl.o[2] + z * (0.8 + flick * 0.2));
+      }
+    });
+    pos.needsUpdate = true;
+    if (mesh.material) mesh.material.opacity = boost ? 1 : 0.8;
+  };
+}
+
+function pearGeo(THREE) {
+  return lathe(THREE, [
+    [0.05, 0], [0.18, 0.08], [0.34, 0.26], [0.44, 0.5], [0.42, 0.74],
+    [0.34, 0.96], [0.26, 1.12], [0.16, 1.26], [0.07, 1.34],
+  ], 24);
+}
+
+function headGeo(THREE) {
+  return lathe(THREE, [
+    [0.04, 0], [0.2, 0.06], [0.3, 0.18], [0.32, 0.34], [0.24, 0.48], [0.1, 0.56], [0.03, 0.6],
+  ], BUILD.lod ? 16 : 20);
+}
+
+function earGeo(THREE) {
+  return lathe(THREE, [[0.02, 0], [0.07, 0.02], [0.09, 0.07], [0.05, 0.12], [0.015, 0.15]], 8);
+}
+
+function addCrew(THREE, chassis, spec, mats, shadow) {
+  const driver = new THREE.Group();
+  driver.position.set(spec.seat[0], spec.seat[1], spec.seat[2]);
+  driver.userData.baseY = spec.seat[1];
+  const bodyParts = [];
+  const fur = 0xffffff;
+  bodyParts.push(prep(THREE, pearGeo(THREE), spec.fur || 0x6b4226, FUR, 0, -0.42, 0, 0, 0, 0, spec.body[0], spec.body[1], spec.body[2]));
+  const belly = lathe(THREE, [[0.02, 0], [0.16, 0.04], [0.2, 0.16], [0.1, 0.26], [0.02, 0.3]], 12);
+  bodyParts.push(prep(THREE, belly, 0x5a3820, FUR, 0, -0.05, spec.body[2] * 0.28, 0.4, 0, 0, spec.body[0] * 0.7, 0.7, 0.55));
+  const rand = rng(spec.seed);
+  const tufts = BUILD.lod ? 16 : spec.tufts || 40;
+  const card = new THREE.PlaneGeometry(0.07, 0.11);
+  for (let i = 0; i < tufts; i++) {
+    const y = -0.2 + rand() * 1.15;
+    const ang = rand() * 6.28;
+    const chest = y > 0.2 && y < 0.85;
+    const rad = 0.16 + (chest ? 0.12 : 0.05) + rand() * 0.04;
+    const x = Math.cos(ang) * rad * spec.body[0];
+    const z = Math.sin(ang) * rad * spec.body[2];
+    const tip = i % 3 === 0 ? 0xa06a3c : 0x8b5a2b;
+    bodyParts.push(prep(THREE, card, tip, FUR, x, y, z, (rand() - 0.5) * 0.5, ang, (rand() - 0.5) * 0.8));
+  }
+  const arm = lathe(THREE, [[0.025, 0], [0.07, 0.04], [0.085, 0.16], [0.07, 0.3], [0.055, 0.42]], 10);
+  const pawBoard = board(THREE, 0.16, 0.11, 0.045, 0.02);
+  const claw = chip(THREE, 0.03, 0.055, 0.016);
+  spec.paws.forEach((p, pi) => {
+    const side = p[0] < 0 ? -1 : 1;
+    const shoulder = [side * 0.28 * spec.body[0], 0.48, 0.02];
+    const dir = [p[0] - shoulder[0], p[1] - shoulder[1], p[2] - shoulder[2]];
+    const len = Math.hypot(dir[0], dir[1], dir[2]) || 1;
+    const q = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      new THREE.Vector3(dir[0] / len, dir[1] / len, dir[2] / len)
+    );
+    const o = new THREE.Object3D();
+    o.position.set(shoulder[0], shoulder[1], shoulder[2]);
+    o.quaternion.copy(q);
+    o.scale.set(1, len / 0.42, 1);
+    o.updateMatrix();
+    const ag = prep(THREE, arm, 0x6b4226, FUR);
+    ag.applyMatrix4(o.matrix);
+    ag.computeVertexNormals();
+    bodyParts.push(ag);
+    bodyParts.push(prep(THREE, pawBoard, 0x6b4226, FUR, p[0], p[1], p[2], Math.PI / 2, 0, side * 0.2));
+    for (let c = 0; c < 4; c++) {
+      bodyParts.push(prep(
         THREE,
-        whisk,
-        side * (spec.head.x * 0.55 + 0.08),
-        -spec.head.y * 0.18 + row * 0.035,
-        spec.head.z * 0.7,
+        claw,
+        0x2b1d14,
+        FUR,
+        p[0] + side * (c - 1.5) * 0.028,
+        p[1] - 0.01,
+        p[2] + 0.07,
+        0.9,
         0,
-        0,
-        side * row * -0.15
+        side * 0.15
       ));
     }
+    if (spec.reins && !BUILD.lod) {
+      const rein = tube(THREE, [
+        [p[0], p[1] + 0.02, p[2] + 0.04],
+        [side * 0.18, p[1] - 0.05, p[2] + 0.28],
+        [side * 0.1, -0.05, 0.85],
+      ], 0.012, 6, 4);
+      bodyParts.push(prep(THREE, rein, 0xffffff, LEATHER));
+    }
+  });
+  if (spec.harness && !BUILD.lod) {
+    bodyParts.push(prep(THREE, board(THREE, 0.55, 0.06, 0.04, 0.02), 0xffffff, LEATHER, 0, 0.42, 0.22, 0.3, 0, 0));
+    for (const side of [-1, 1]) {
+      bodyParts.push(prep(THREE, board(THREE, 0.05, 0.42, 0.035, 0.02), 0xffffff, LEATHER, side * 0.16, 0.28, 0.12, 0.15, 0, side * -0.2));
+    }
   }
-  head.add(mergeParts(THREE, whiskers, whiskMat));
+  const tailStart = countVerts(bodyParts);
+  const tailShape = rr(THREE, spec.tail.w, spec.tail.l, 0.04);
+  const tailEx = new THREE.ExtrudeGeometry(tailShape, {
+    depth: 0.035,
+    bevelEnabled: true,
+    bevelThickness: 0.008,
+    bevelSize: 0.02,
+    bevelSegments: 2,
+    curveSegments: BUILD.curve,
+    steps: 1,
+  });
+  tailEx.translate(0, -spec.tail.l * 0.35, -0.017);
+  bendPaddle(tailEx, 0.65);
+  const tailG = prep(THREE, tailEx, 0xffffff, SCALES, spec.tail.x, spec.tail.y, spec.tail.z, spec.tail.rx || -0.5, spec.tail.ry || 0.4, spec.tail.rz || 0);
+  bodyParts.push(tailG);
+  const bodyMesh = solidMesh(THREE, bodyParts, mats.fur, shadow, "body");
+  driver.add(bodyMesh);
+
+  const head = new THREE.Group();
+  head.position.set(0, spec.neckY, spec.neckZ);
+  const headParts = [];
+  headParts.push(prep(THREE, headGeo(THREE), spec.fur || 0x6b4226, FUR, 0, 0.05, 0, 0, 0, 0, spec.head[0], spec.head[1], spec.head[2]));
+  const muzzle = lathe(THREE, [[0.02, 0], [0.12, 0.02], [0.14, 0.08], [0.08, 0.14], [0.02, 0.16]], 12);
+  headParts.push(prep(THREE, muzzle, 0x8b5a2b, FUR, 0, 0.02, spec.head[2] * 0.42, -Math.PI / 2, 0, 0, spec.head[0] * 0.85, 0.7, spec.head[1] * 0.7));
+  for (const side of [-1, 1]) {
+    headParts.push(prep(THREE, earGeo(THREE), 0x3a2618, FUR, side * spec.head[0] * 0.32, spec.head[1] * 0.42, -0.02, 0.3, 0, side * 0.5, 1, 1, 0.45));
+    const cheek = lathe(THREE, [[0.02, 0], [0.08, 0.02], [0.09, 0.06], [0.03, 0.1]], 8);
+    headParts.push(prep(THREE, cheek, 0xa87a55, FUR, side * spec.head[0] * 0.22, -0.02, spec.head[2] * 0.28, 0, 0, side * 0.4, 1, 0.7, 0.8));
+  }
+  const noseL = lathe(THREE, [[0.012, 0], [0.055, 0.012], [0.06, 0.04], [0.02, 0.07]], 8);
+  headParts.push(prep(THREE, noseL, 0xffffff, NOSE, 0, -0.02, spec.head[2] * 0.48, -Math.PI / 2, 0, 0, 0.85, 0.55, 0.7));
+  const bead = lathe(THREE, [[0.01, 0], [0.04, 0.012], [0.045, 0.04], [0.015, 0.065]], spec.eyeBig ? 10 : 8);
+  const irisL = lathe(THREE, [[0.004, 0], [0.022, 0.004], [0.02, 0.012], [0.004, 0.016]], 8);
+  for (const side of [-1, 1]) {
+    const ex = side * spec.head[0] * (spec.eyeBig ? 0.16 : 0.2);
+    const ey = spec.head[1] * 0.08;
+    const ez = spec.head[2] * 0.34;
+    if (spec.eyeBig) {
+      headParts.push(prep(THREE, bead, 0xf7f4ee, EYE, ex, ey, ez, 0, 0, 0, 1.35, 1.55, 1));
+      headParts.push(prep(THREE, irisL, 0x6b3a1a, EYE, ex, ey, ez + 0.045, -Math.PI / 2, 0, 0, 1.1, 0.35, 1.1));
+      headParts.push(prep(THREE, irisL, 0x14110f, EYE, ex, ey, ez + 0.055, -Math.PI / 2, 0, 0, 0.45, 0.2, 0.45));
+    } else {
+      headParts.push(prep(THREE, bead, 0x14110f, EYE, ex, ey, ez, 0, 0, 0, 1, 1, 0.85));
+    }
+    const glint = new THREE.PlaneGeometry(0.016, 0.016);
+    headParts.push(prep(THREE, glint, 0xffffff, EYE, ex + 0.012, ey + 0.016, ez + (spec.eyeBig ? 0.07 : 0.05)));
+  }
+  const tooth = chip(THREE, spec.toothW, spec.toothH, spec.toothD);
+  headParts.push(prep(THREE, tooth, spec.tooth, TEETH, -spec.toothW * 0.62, -0.02, spec.head[2] * 0.34, 0.35, 0, 0));
+  headParts.push(prep(THREE, tooth, spec.tooth, TEETH, spec.toothW * 0.62, -0.02, spec.head[2] * 0.34, 0.35, 0, 0));
+  if (spec.tongue) {
+    const tongue = chip(THREE, 0.08, 0.05, 0.016);
+    headParts.push(prep(THREE, tongue, 0xffffff, TONGUE, 0, -0.05, spec.head[2] * 0.3, 0.9, 0, 0));
+  }
+  if (!BUILD.lod) {
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 6; i++) {
+        const y = -0.02 + (i - 2.5) * 0.02;
+        const whisk = tube(THREE, [
+          [side * spec.head[0] * 0.16, y, spec.head[2] * 0.42],
+          [side * spec.head[0] * 0.32, y + (i - 2) * 0.008, spec.head[2] * 0.46],
+          [side * spec.head[0] * 0.46, y + (i - 2.5) * 0.012, spec.head[2] * 0.4],
+        ], 0.004, 3, 4);
+        headParts.push(prep(THREE, whisk, 0xe7d7c4, FUR));
+      }
+    }
+  }
+  const headMesh = solidMesh(THREE, headParts, mats.fur, shadow, "head");
+  head.add(headMesh);
   driver.add(head);
 
-  const scarfMat = knitMat(THREE, spec.scarf);
-  const collar = new THREE.Mesh(torusGeo(THREE, spec.neck, spec.scarfThick, 6, 12), scarfMat);
-  collar.position.set(0, spec.neckY, spec.bodyZ + 0.02);
-  collar.rotation.x = Math.PI / 2;
-  driver.add(collar);
+  const scarfParts = [];
+  const collar = tube(THREE, [
+    [0.16, spec.neckY - 0.02, 0.02],
+    [0, spec.neckY + 0.02, 0.12],
+    [-0.16, spec.neckY - 0.02, 0.02],
+    [0, spec.neckY - 0.06, -0.08],
+    [0.16, spec.neckY - 0.02, 0.02],
+  ], spec.scarfR, 10, 5);
+  scarfParts.push(prep(THREE, collar, spec.scarfA, null));
   if (spec.knot) {
-    const knot = new THREE.Mesh(boxGeo(THREE, 0.12, 0.1, 0.1), scarfMat);
-    knot.position.set(0, spec.neckY - 0.02, spec.bodyZ + spec.body.z * 0.45);
-    driver.add(knot);
+    const knot = lathe(THREE, [[0.02, 0], [0.07, 0.02], [0.06, 0.08], [0.02, 0.1]], 8);
+    scarfParts.push(prep(THREE, knot, spec.scarfA, null, 0, spec.neckY - 0.08, 0.12, Math.PI / 2, 0, 0));
   }
-  const scarfTails = [];
-  const fringeN = spec.fringe || 5;
-  for (let i = 0; i < fringeN; i++) {
-    const pivot = new THREE.Group();
-    const spread = (i - (fringeN - 1) / 2) * spec.fringeGap;
-    pivot.position.set(spread, spec.neckY - 0.08, spec.bodyZ - Math.max(0.2, spec.body.z * 0.62));
-    const len = spec.fringeLen;
-    const strip = new THREE.Mesh(boxGeo(THREE, spec.fringeW, 0.02, len), scarfMat);
-    strip.position.z = -len * 0.5;
-    pivot.add(strip);
-    driver.add(pivot);
-    scarfTails.push(pivot);
-  }
-
-  const arms = [];
-  for (const side of [-1, 1]) {
-    const arm = new THREE.Group();
-    const limb = new THREE.Mesh(cylGeo(THREE, spec.armR, spec.armR * 1.05, spec.armL, 7), fur);
-    limb.position.y = -spec.armL * 0.45;
-    limb.castShadow = true;
-    arm.add(limb);
-    const paw = new THREE.Mesh(sphereGeo(THREE, spec.armR * 1.35, 7, 6), fur);
-    paw.scale.set(1.3, 0.7, 1.15);
-    paw.position.set(side * spec.pawReach, -spec.armL * 0.92, spec.pawZ);
-    arm.add(paw);
-    if (spec.claws) {
-      const claw = new THREE.Mesh(boxGeo(THREE, 0.035, 0.02, 0.07), flatMat(THREE, 0x1a120e, 0.4, 0.2));
-      claw.position.set(side * spec.pawReach, -spec.armL * 0.95, spec.pawZ + 0.08);
-      arm.add(claw);
-    }
-    arm.position.set(side * spec.body.x * 0.72, spec.bodyY + spec.body.y * 0.15, spec.bodyZ + 0.05);
-    arm.rotation.z = side * spec.armOut;
-    arm.rotation.x = spec.armPitch;
-    arm.userData.baseZ = arm.rotation.z;
-    arm.userData.baseX = arm.rotation.x;
-    arm.userData.side = side;
-    driver.add(arm);
-    arms.push(arm);
-  }
-
-  if (spec.harness) {
-    const leather = flatMat(THREE, 0x5a3a28, 0.8, 0.08);
-    const band = new THREE.Mesh(boxGeo(THREE, spec.body.x * 1.15, 0.06, 0.08), leather);
-    band.position.set(0, spec.bodyY + 0.05, spec.bodyZ + spec.body.z * 0.35);
-    driver.add(band);
-    for (const side of [-1, 1]) {
-      const strap = new THREE.Mesh(boxGeo(THREE, 0.05, spec.body.y * 0.7, 0.04), leather);
-      strap.position.set(side * spec.body.x * 0.28, spec.bodyY + 0.08, spec.bodyZ + 0.02);
-      strap.rotation.z = side * -0.15;
-      driver.add(strap);
-    }
-    const reinMat = flatMat(THREE, 0x6a4630, 0.75, 0);
-    for (const side of [-1, 1]) {
-      const rein = new THREE.Mesh(boxGeo(THREE, 0.025, 0.025, 0.85), reinMat);
-      rein.position.set(side * 0.16, spec.bodyY + 0.02, spec.bodyZ + 0.55);
-      rein.rotation.x = 0.35;
-      driver.add(rein);
+  for (let t = 0; t < spec.tails; t++) {
+    const spread = (t - (spec.tails - 1) / 2) * spec.tailGap;
+    const len = spec.tailLen * (spec.tatter && t === 0 ? 0.62 : 1);
+    const tailTube = tube(THREE, [
+      [spread * 0.3, spec.neckY - 0.08, -0.02],
+      [spread, spec.neckY - 0.16, -len * 0.45],
+      [spread * 1.15, spec.neckY - 0.22, -len],
+    ], spec.scarfR * (spec.chunky ? 1.25 : 0.85), 6, 5);
+    const col = t % 2 ? spec.scarfB : spec.scarfA;
+    scarfParts.push(prep(THREE, tailTube, col, null));
+    const fringeN = BUILD.lod ? 2 : 4;
+    for (let f = 0; f < fringeN; f++) {
+      const fr = tube(THREE, [
+        [spread * 1.15 + (f - 1.5) * 0.03, spec.neckY - 0.22, -len],
+        [spread * 1.2 + (f - 1.5) * 0.04, spec.neckY - 0.3, -len - 0.12],
+      ], spec.scarfR * 0.35, 2, 3);
+      scarfParts.push(prep(THREE, fr, spec.scarfB, null));
     }
   }
-
-  if (spec.tail) {
-    const tail = new THREE.Mesh(boxGeo(THREE, spec.tail.w, 0.06, spec.tail.l), scaleMat(THREE));
-    tail.position.set(spec.tail.x, spec.tail.y, spec.tail.z);
-    tail.rotation.z = spec.tail.rz || 0;
-    tail.rotation.x = spec.tail.rx || -0.4;
-    tail.castShadow = true;
-    driver.add(tail);
-  }
-
+  const scarfMesh = solidMesh(THREE, scarfParts, mats.knit, false, "scarf");
+  driver.add(scarfMesh);
+  const scarfTails = [new THREE.Object3D()];
+  driver.add(scarfTails[0]);
   chassis.add(driver);
-  return { driver, head, arms, scarfTails };
+  return {
+    driver,
+    head,
+    arms: [],
+    scarfTails,
+    tailFn: tailPose(bodyMesh.geometry, tailStart, [spec.tail.x, spec.tail.y, spec.tail.z]),
+    scarfFn: scarfPose(scarfMesh.geometry),
+  };
 }
 
-function pack(THREE, g, chassis, wheels, scale, kind, sig, extra) {
+function bendPaddle(geo, arc) {
+  const pos = geo.attributes.position;
+  let yMin = Infinity;
+  let yMax = -Infinity;
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i);
+    if (y < yMin) yMin = y;
+    if (y > yMax) yMax = y;
+  }
+  const span = yMax - yMin || 1;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const t = (y - yMin) / span;
+    const a = t * arc;
+    const cy = Math.cos(a);
+    const sy = Math.sin(a);
+    pos.setXYZ(i, x, yMin + (y - yMin) * cy, z - (y - yMin) * sy);
+  }
+  geo.computeVertexNormals();
+}
+
+function forkBits(THREE, opt) {
+  const parts = [];
+  const w = opt.tube * 2.2;
+  for (const side of [-1, 1]) {
+    parts.push(prep(THREE, board(THREE, 0.025, opt.outer * 0.7, 0.03, 0.02), 0xb0b4b8, WIRON, side * (w + 0.02), opt.outer * 0.25, 0));
+  }
+  parts.push(prep(THREE, board(THREE, w * 2.4, 0.04, 0.04, 0.02), 0xb0b4b8, WIRON, 0, opt.outer * 0.55, 0));
+  parts.push(prep(THREE, tube(THREE, [
+    [0, opt.outer * 0.5, 0],
+    [opt.strut[0] * 0.45, opt.strut[1] * 0.55, opt.strut[2] * 0.45],
+    opt.strut,
+  ], 0.02, 5, 5), 0x8a8580, WIRON));
+  return parts;
+}
+
+function buildBober(THREE, mats, shadow) {
+  const g = new THREE.Group();
+  const chassis = new THREE.Group();
+  g.add(chassis);
+  const wood = [];
+  const colors = [0xd9c9a3, 0x9fa8ae, 0xb5584a, 0xc97a6b, 0x8e8a82];
+  const sideLen = [1.28, 1.4, 1.16, 1.34];
+  for (const x of [-0.6, 0.6]) {
+    for (let i = 0; i < 4; i++) {
+      const len = sideLen[i];
+      const plank = board(THREE, len, 0.15, 0.055, 0.028);
+      const skew = (i - 1.5) * 0.035 * Math.sign(x);
+      wood.push(prep(THREE, plank, colors[(i + (x < 0 ? 0 : 2)) % 5], WOOD, x + skew * 0.4, 0.58 + i * 0.13, -0.02 + (i % 2) * 0.04, 0, Math.PI / 2 + skew, (i - 2) * 0.02));
+    }
+  }
+  for (let i = 0; i < 3; i++) {
+    wood.push(prep(THREE, board(THREE, 1.12, 0.15, 0.05, 0.026), colors[(i + 1) % 5], WOOD, (i - 1) * 0.02, 0.62 + i * 0.15, -0.74, 0, (i - 1) * 0.03, 0));
+  }
+  for (let i = 0; i < 3; i++) {
+    wood.push(prep(THREE, board(THREE, 0.36, 1.15, 0.05, 0.024), colors[(i + 3) % 5], WOOD, -0.32 + i * 0.32, 0.5, 0.02, Math.PI / 2, 0, (i - 1) * 0.03));
+  }
+  const posts = [[-0.62, -0.72], [0.62, -0.72], [-0.62, 0.62], [0.62, 0.66]];
+  posts.forEach((p, i) => {
+    const h = i === 3 ? 0.55 : 0.78;
+    wood.push(prep(THREE, board(THREE, 0.09, 0.09, h, 0.02), 0xcdbb92, WOOD, p[0], 0.48 + h * 0.5, p[1], Math.PI / 2, 0, 0));
+  });
+  wood.push(prep(THREE, board(THREE, 0.045, 0.28, 0.04, 0.02), 0xcdbb92, WOOD, 0.68, 1.08, 0.66, 0.2, 0, 0.45));
+  wood.push(prep(THREE, board(THREE, 0.045, 0.26, 0.04, 0.02), 0xcdbb92, WOOD, 0.56, 1.06, 0.6, -0.15, 0, -0.5));
+  const woodMesh = solidMesh(THREE, wood, mats.wood, shadow, "bober-wood");
+  chassis.add(woodMesh);
+  const spots = [];
+  for (const x of [-0.6, 0.6]) {
+    for (let i = 0; i < 4; i++) {
+      for (const z of [-0.45, 0.05, 0.45]) spots.push([x, 0.6 + i * 0.13, z, x > 0 ? 1 : -1, 0, 0, 0.7]);
+    }
+  }
+  for (let i = 0; i < 3; i++) {
+    for (const x of [-0.35, 0, 0.35]) spots.push([x, 0.64 + i * 0.15, -0.78, 0, 0, -1, 0.65]);
+  }
+  nails(THREE, chassis, spots.slice(0, BUILD.lod ? 24 : 40), 0x2a2622, false);
+  const rearR = 0.48;
+  const frontR = rearR * 0.35;
+  const wheelOpt = (outer, tubeR, spokes, mode) => ({
+    outer,
+    ring: outer - tubeR,
+    tube: tubeR,
+    radial: BUILD.lod ? 4 : mode === "knob" ? 7 : 6,
+    tubular: BUILD.lod ? 12 : mode === "knob" ? 20 : 18,
+    spokes,
+    mode,
+    knobs: 8,
+    spokeR: 0.011,
+    hubR: outer * 0.18,
+    hubW: tubeR * 1.3,
+    tireUV: RUBBER,
+    spokeUV: WIRON,
+    hubUV: WIRON,
+    tireColor: 0xffffff,
+  });
+  const frontWheel = wheelOpt(frontR, frontR * 0.28, 8, "tread");
+  const wheels = [
+    addAxle(THREE, g, {
+      x: 0, y: rearR, z: -0.28, half: 0.78, steer: false,
+      wheel: wheelOpt(rearR, rearR * 0.2, 16, "tread"),
+    }, mats, shadow),
+    addAxle(THREE, g, {
+      x: 0.32, y: frontR, z: 0.92, half: 0, steer: true,
+      wheel: frontWheel,
+      fork: forkBits(THREE, { tube: frontR * 0.28, outer: frontR, strut: [-0.22, 0.42 - frontR, -0.55] }),
+    }, mats, shadow),
+  ];
+  const crew = addCrew(THREE, chassis, {
+    seed: 81,
+    seat: [0, 0.78, 0.02],
+    body: [1.05, 1, 0.92],
+    head: [1.05, 1, 0.95],
+    neckY: 0.95,
+    neckZ: 0.08,
+    tooth: 0xf08a24,
+    toothW: 0.055,
+    toothH: 0.12,
+    toothD: 0.035,
+    scarfA: 0x3fa535,
+    scarfB: 0x2e7d2a,
+    scarfR: 0.045,
+    tails: 2,
+    tailLen: 0.72,
+    tailGap: 0.14,
+    paws: [[-0.52, 0.28, 0.22], [0.52, 0.26, 0.18]],
+    tail: { x: 0.28, y: 0.22, z: -0.42, w: 0.42, l: 0.62, rx: -0.8, ry: 0.5 },
+    tufts: 42,
+  }, mats, shadow);
+  return pack(THREE, g, chassis, wheels, "bober", crew, mats);
+}
+
+function buildMuscle(THREE, mats, shadow) {
+  const g = new THREE.Group();
+  const chassis = new THREE.Group();
+  g.add(chassis);
+  const metalMat = mats.metal.clone();
+  metalMat.emissiveIntensity = 0;
+  const plates = [];
+  for (const x of [-0.66, 0.66]) {
+    plates.push(prep(THREE, board(THREE, 1.25, 0.72, 0.05, 0.03), 0xffffff, RUST, x, 0.78, 0.02, 0, Math.PI / 2, 0));
+    for (let i = 0; i < 3; i++) {
+      plates.push(prep(THREE, board(THREE, 0.06, 0.7, 0.035, 0.02), 0x5a5654, IRON, x + (x > 0 ? 0.03 : -0.03), 0.78, -0.4 + i * 0.4, 0, Math.PI / 2, 0));
+    }
+  }
+  plates.push(prep(THREE, board(THREE, 1.2, 0.62, 0.05, 0.03), 0xffffff, RUST, 0, 0.78, -0.68));
+  plates.push(prep(THREE, board(THREE, 1.15, 1.15, 0.05, 0.028), 0xffffff, RUST, 0, 0.52, 0, Math.PI / 2, 0, 0));
+  plates.push(prep(THREE, board(THREE, 1.28, 0.08, 0.05, 0.02), 0x5a5654, IRON, 0, 1.16, 0.02, 0, Math.PI / 2, 0));
+  for (const x of [-0.2, 0.2]) {
+    const pipe = tube(THREE, [
+      [x, 1.05, -0.62],
+      [x * 1.1, 1.28, -0.78],
+      [x * 1.3, 1.48, -0.7],
+    ], 0.055, 6, 6);
+    plates.push(prep(THREE, pipe, 0x3a3836, IRON));
+    const flange = lathe(THREE, [[0.04, 0], [0.09, 0.015], [0.09, 0.04], [0.05, 0.05]], 8);
+    plates.push(prep(THREE, flange, 0x3a3836, IRON, x * 1.3, 1.5, -0.7, 0.4, 0, 0));
+  }
+  const cart = solidMesh(THREE, plates, metalMat, shadow, "muscle-metal");
+  chassis.add(cart);
+  const spots = [];
+  for (const x of [-0.66, 0.66]) {
+    for (let i = 0; i < 5; i++) {
+      for (let j = 0; j < 4; j++) spots.push([x + (x > 0 ? 0.04 : -0.04), 0.5 + j * 0.16, -0.5 + i * 0.24, x > 0 ? 1 : -1, 0, 0, 1.15]);
+    }
+  }
+  for (let i = 0; i < 8; i++) spots.push([-0.45 + i * 0.13, 0.78, -0.72, 0, 0, -1, 1.1]);
+  nails(THREE, chassis, spots.slice(0, BUILD.lod ? 60 : 100), 0xc8c2ba, false);
+  const rearR = 0.5;
+  const frontR = rearR * 0.35;
+  const wheelOpt = (outer, tubeR, spokes, mode) => ({
+    outer,
+    ring: outer - tubeR,
+    tube: tubeR,
+    radial: 6,
+    tubular: mode === "knob" ? 24 : 16,
+    spokes,
+    mode,
+    knobs: 9,
+    spokeR: 0.014,
+    hubR: outer * 0.2,
+    hubW: tubeR * 1.1,
+    tireUV: RUBBER,
+    spokeUV: WIRON,
+    hubUV: WIRON,
+  });
+  const wheels = [
+    addAxle(THREE, g, {
+      x: 0, y: rearR, z: -0.32, half: 0.86, steer: false,
+      wheel: wheelOpt(rearR, rearR * 0.24, 12, "knob"),
+    }, mats, shadow),
+    addAxle(THREE, g, {
+      x: 0.34, y: frontR, z: 0.98, half: 0, steer: true,
+      wheel: wheelOpt(frontR, frontR * 0.3, 8, "knob"),
+      fork: forkBits(THREE, { tube: frontR * 0.3, outer: frontR, strut: [-0.24, 0.48 - frontR, -0.58] }),
+    }, mats, shadow),
+  ];
+  const crew = addCrew(THREE, chassis, {
+    seed: 82,
+    seat: [0, 0.86, 0.04],
+    body: [1.22, 0.96, 0.9],
+    head: [1.02, 0.96, 0.9],
+    neckY: 0.9,
+    neckZ: 0.1,
+    tooth: 0xefe3c2,
+    toothW: 0.07,
+    toothH: 0.11,
+    toothD: 0.04,
+    scarfA: 0xc4432a,
+    scarfB: 0x9a301c,
+    scarfR: 0.055,
+    chunky: true,
+    tails: 2,
+    tailLen: 0.58,
+    tailGap: 0.16,
+    paws: [[-0.62, 0.32, 0.2], [0.6, 0.3, 0.16]],
+    tail: { x: 0.2, y: 0.18, z: -0.35, w: 0.4, l: 0.5, rx: -0.7, ry: 0.35 },
+    tufts: 40,
+  }, mats, shadow);
+  const flameGeos = [];
+  const clusters = [];
+  for (const x of [-0.26, 0.26]) {
+    const origin = [x, 1.58, -0.72];
+    const start = countVerts(flameGeos);
+    const a = new THREE.PlaneGeometry(0.2, 0.46);
+    const b = new THREE.PlaneGeometry(0.2, 0.46);
+    flameGeos.push(prep(THREE, a, 0xffffff, null, origin[0], origin[1] + 0.2, origin[2]));
+    flameGeos.push(prep(THREE, b, 0xffffff, null, origin[0], origin[1] + 0.2, origin[2], 0, Math.PI / 2, 0));
+    const count = countVerts(flameGeos) - start;
+    const indices = [];
+    for (let i = 0; i < count; i++) indices.push(start + i);
+    clusters.push({ o: origin, indices });
+  }
+  const flameMesh = solidMesh(THREE, flameGeos, mats.flame, false, "flames");
+  flameMesh.userData.manual = true;
+  chassis.add(flameMesh);
+  const flames = [new THREE.Object3D(), new THREE.Object3D()];
+  flames.forEach((f) => {
+    f.userData.manual = true;
+    chassis.add(f);
+  });
+  const built = pack(THREE, g, chassis, wheels, "muscle", crew, mats);
+  built.flames = flames;
+  const prev = built.pose;
+  const flick = flamePose(flameMesh, clusters);
+  built.pose = (time, speed, boost) => {
+    prev(time, speed, boost);
+    flick(time, boost);
+  };
+  return built;
+}
+
+function buildNib(THREE, mats, shadow) {
+  const g = new THREE.Group();
+  const chassis = new THREE.Group();
+  g.add(chassis);
+  const wood = [];
+  const tones = [0x4a3a2c, 0x5e4a36];
+  for (const x of [-0.68, 0.68]) {
+    for (let i = 0; i < 3; i++) {
+      wood.push(prep(THREE, board(THREE, 1.55, 0.2, 0.05, 0.024), tones[i % 2], WOOD, x, 0.62 + i * 0.2, 0, 0, Math.PI / 2, (i - 1) * 0.015));
+    }
+  }
+  for (let i = 0; i < 2; i++) {
+    wood.push(prep(THREE, board(THREE, 1.25, 0.2, 0.05, 0.024), tones[i], WOOD, 0, 0.7 + i * 0.22, -0.78));
+    wood.push(prep(THREE, board(THREE, 1.2, 0.16, 0.045, 0.02), tones[1], WOOD, 0, 0.7 + i * 0.18, 0.72));
+  }
+  wood.push(prep(THREE, board(THREE, 1.2, 1.45, 0.05, 0.024), 0x5e4a36, WOOD, 0, 0.55, 0, Math.PI / 2, 0, 0));
+  const logLathe = lathe(THREE, [[0.07, 0], [0.09, 0.04], [0.085, 0.2], [0.09, 0.4], [0.06, 0.48]], 8);
+  for (let i = 0; i < (BUILD.lod ? 3 : 5); i++) {
+    wood.push(prep(THREE, logLathe, i % 2 ? 0x4a3a2c : 0x5e4a36, WOOD, -0.28 + (i % 3) * 0.2, 1.22 + Math.floor(i / 3) * 0.16, -0.48, 0, 0, Math.PI / 2));
+  }
+  const crates = BUILD.lod ? [-0.05] : [-0.05, 0.38];
+  for (const x of crates) {
+    wood.push(prep(THREE, board(THREE, 0.36, 0.28, 0.32, 0.02), 0x5e4a36, WOOD, x, 1.18, -0.42, 0, 0.15, 0));
+  }
+  const belt = tube(THREE, [[-0.45, 1.28, -0.2], [0, 1.48, -0.5], [0.5, 1.3, -0.7]], 0.02, 6, 4);
+  wood.push(prep(THREE, belt, 0x6a4128, LEATHER_W));
+  const buckle = board(THREE, 0.08, 0.06, 0.02, 0.02);
+  wood.push(prep(THREE, buckle, 0xc8c2ba, LEATHER_W, 0.15, 1.42, -0.48));
+  for (const z of [-0.15, 0.55]) {
+    const pole = board(THREE, 0.06, 0.06, 0.7, 0.02);
+    wood.push(prep(THREE, pole, 0x5e4a36, WOOD, -0.16, 0.48, z, Math.PI / 2, 0, 0));
+    wood.push(prep(THREE, pole, 0x5e4a36, WOOD, 0.16, 0.48, z, Math.PI / 2, 0, 0));
+  }
+  chassis.add(solidMesh(THREE, wood, mats.wood, shadow, "nib-wood"));
+
+  const metalMat = mats.metal.clone();
+  metalMat.emissiveIntensity = 1.15;
+  const iron = [];
+  const bandY = BUILD.lod ? [0.7, 1.02] : [0.62, 0.82, 1.02];
+  for (const y of bandY) {
+    iron.push(prep(THREE, board(THREE, 1.42, 0.045, 0.02, 0.02), 0xffffff, IRON, 0, y, 0.76));
+    iron.push(prep(THREE, board(THREE, 1.42, 0.045, 0.02, 0.02), 0xffffff, IRON, 0, y, -0.8));
+  }
+  if (!BUILD.lod) {
+    for (const x of [-0.68, 0.68]) {
+      iron.push(prep(THREE, board(THREE, 0.05, 0.06, 1.5, 0.02), 0xffffff, IRON, x, 0.78, 0, 0, Math.PI / 2, 0));
+    }
+  }
+  iron.push(prep(THREE, board(THREE, 0.34, 0.26, 0.02, 0.02), 0xffffff, RUST, 0.42, 0.9, 0.78));
+  iron.push(prep(THREE, board(THREE, 0.3, 0.22, 0.02, 0.02), 0xffffff, RUST, -0.3, 0.78, -0.82));
+  iron.push(prep(THREE, board(THREE, 0.28, 0.2, 0.02, 0.02), 0xffffff, RUST, 0.2, 0.7, -0.82));
+  const draw = tube(THREE, [[-0.12, 0.5, 0.7], [0, 0.46, 1.15], [0.12, 0.5, 0.7]], 0.025, 4, 4);
+  iron.push(prep(THREE, draw, 0xffffff, IRON));
+  const lanterns = [];
+  const clusters = [];
+  const lamps = [[-0.78, 0.95, 0.48], [0.78, 0.95, -0.62]];
+  lamps.forEach((p, i) => {
+    const hang = new THREE.Object3D();
+    hang.position.set(p[0], p[1], p[2]);
+    hang.userData.glow = metalMat;
+    chassis.add(hang);
+    lanterns.push(hang);
+    iron.push(prep(THREE, board(THREE, 0.08, 0.08, 0.12, 0.02), 0xffffff, BRASS, p[0], p[1], p[2], 0, Math.PI / 2, 0));
+    const start = countVerts(iron);
+    const glass = lathe(THREE, [[0.02, 0], [0.07, 0.03], [0.08, 0.1], [0.05, 0.16], [0.02, 0.18]], 10);
+    iron.push(prep(THREE, glass, 0xffffff, GLASS, p[0], p[1] - 0.2, p[2]));
+    if (!BUILD.lod) {
+      for (const side of [-1, 1]) {
+        iron.push(prep(THREE, chip(THREE, 0.02, 0.16, 0.02), 0xffffff, BRASS, p[0] + side * 0.07, p[1] - 0.18, p[2]));
+        iron.push(prep(THREE, chip(THREE, 0.02, 0.16, 0.02), 0xffffff, BRASS, p[0], p[1] - 0.18, p[2] + side * 0.07));
+      }
+    }
+    iron.push(prep(THREE, chip(THREE, 0.16, 0.04, 0.16), 0xffffff, BRASS, p[0], p[1] - 0.08, p[2]));
+    iron.push(prep(THREE, tube(THREE, [[p[0], p[1], p[2]], [p[0], p[1] - 0.08, p[2]]], 0.008, 2, 4), 0xffffff, BRASS));
+    clusters.push({ i, start, count: countVerts(iron) - start, p });
+  });
+  const metalMesh = solidMesh(THREE, iron, metalMat, shadow, "nib-iron");
+  chassis.add(metalMesh);
+  const spots = [];
+  for (const y of [0.62, 0.82, 1.02]) {
+    for (const x of [-0.5, -0.2, 0.15, 0.45]) spots.push([x, y, 0.78, 0, 0, 1, 0.85]);
+  }
+  for (let i = 0; i < 8; i++) spots.push([-0.55 + (i % 4) * 0.3, 0.7 + Math.floor(i / 4) * 0.25, -0.82, 0, 0, -1, 0.8]);
+  for (const x of [-0.68, 0.68]) {
+    for (let i = 0; i < 6; i++) spots.push([x, 0.78, -0.6 + i * 0.22, x > 0 ? 1 : -1, 0, 0, 0.75]);
+  }
+  nails(THREE, chassis, spots.filter((_, i) => !BUILD.lod || i % 2 === 0), 0xd5d8dc, false);
+
+  const cartH = 1.05;
+  const rearR = cartH * 0.75 * 0.5;
+  const frontR = cartH * 0.65 * 0.5;
+  const woodWheel = (outer) => ({
+    outer,
+    ring: outer - outer * 0.12,
+    tube: outer * 0.12,
+    radial: BUILD.lod ? 4 : 6,
+    tubular: BUILD.lod ? 10 : 16,
+    spokes: 12,
+    mode: "tread",
+    spokeR: 0.012,
+    hubR: outer * 0.16,
+    hubW: outer * 0.08,
+    tireUV: WWOOD,
+    spokeUV: WWOOD,
+    hubUV: WIRON,
+    band: true,
+  });
+  const wheels = [
+    addAxle(THREE, g, { x: 0, y: rearR, z: -0.48, half: 0.84, steer: false, wheel: woodWheel(rearR) }, mats, shadow),
+    addAxle(THREE, g, { x: 0, y: frontR, z: 0.58, half: 0.8, steer: true, wheel: woodWheel(frontR) }, mats, shadow),
+  ];
+  const crew = addCrew(THREE, chassis, {
+    seed: 84,
+    seat: [0, 0.82, 0.12],
+    body: [1.02, 0.98, 0.9],
+    head: [0.98, 0.94, 0.88],
+    neckY: 0.9,
+    neckZ: 0.1,
+    tooth: 0xe8b84a,
+    toothW: 0.04,
+    toothH: 0.07,
+    toothD: 0.03,
+    scarfA: 0xb53a2a,
+    scarfB: 0x8a2a22,
+    scarfR: 0.038,
+    tatter: true,
+    tails: 2,
+    tailLen: 0.55,
+    tailGap: 0.12,
+    harness: true,
+    reins: true,
+    paws: [[-0.22, 0.32, 0.42], [0.22, 0.32, 0.42]],
+    tail: { x: -0.15, y: 0.15, z: -0.4, w: 0.36, l: 0.48, rx: -0.6, ry: -0.2 },
+    tufts: 36,
+  }, mats, shadow);
+  const built = pack(THREE, g, chassis, wheels, "nib", crew, mats);
+  built.lanterns = lanterns;
+  const swing = lanternPose(THREE, metalMesh, clusters, lanterns);
+  const prev = built.pose;
+  built.pose = (time, speed, boost) => {
+    prev(time, speed, boost);
+    swing();
+  };
+  return built;
+}
+
+function buildTall(THREE, mats, shadow) {
+  const g = new THREE.Group();
+  const chassis = new THREE.Group();
+  g.add(chassis);
+  const woodMat = mats.wood.clone();
+  woodMat.roughness = 0.35;
+  const wood = [];
+  const tones = [0xb5522e, 0xd1703f, 0x7a3620];
+  for (const x of [-0.62, 0.62]) {
+    for (let i = 0; i < 2; i++) {
+      wood.push(prep(THREE, board(THREE, 1.45, 0.28, 0.07, 0.03), tones[(i + (x < 0 ? 0 : 1)) % 3], WOOD, x, 0.7 + i * 0.28, 0.02, 0, Math.PI / 2, 0));
+    }
+  }
+  for (const z of [-0.74, 0.76]) {
+    wood.push(prep(THREE, board(THREE, 1.2, 0.32, 0.06, 0.03), tones[z < 0 ? 2 : 0], WOOD, 0, 0.78, z));
+    wood.push(prep(THREE, board(THREE, 1.16, 0.22, 0.055, 0.028), tones[1], WOOD, 0, 1.05, z));
+  }
+  wood.push(prep(THREE, board(THREE, 1.15, 1.4, 0.06, 0.03), 0xb5522e, WOOD, 0, 0.58, 0.02, Math.PI / 2, 0, 0));
+  wood.push(prep(THREE, board(THREE, 1.32, 0.08, 1.58, 0.024), 0xd1703f, WOOD, 0, 1.2, 0.02));
+  chassis.add(solidMesh(THREE, wood, woodMat, shadow, "tall-wood"));
+  const brassMat = mats.metal.clone();
+  brassMat.emissiveIntensity = 0;
+  const brass = [];
+  const corners = [[-0.62, 0.58, 0.76], [0.62, 0.58, 0.76], [-0.62, 1.05, 0.76], [0.62, 1.05, 0.76], [-0.62, 0.58, -0.74], [0.62, 0.58, -0.74], [-0.62, 1.05, -0.74], [0.62, 1.05, -0.74]];
+  for (const c of corners) {
+    const sx = c[0] > 0 ? -1 : 1;
+    const sz = c[2] > 0 ? 1 : -1;
+    brass.push(prep(THREE, lBracket(THREE, 0.2, 0.18, 0.035), 0xffffff, BRASS, c[0], c[1], c[2] + sz * 0.02, 0, c[2] > 0 ? 0 : Math.PI, 0, sx, 1, 1));
+    brass.push(prep(THREE, lBracket(THREE, 0.16, 0.14, 0.03), 0xffffff, BRASS, c[0] + sx * -0.02, c[1], c[2], 0, Math.PI / 2 * sz, 0));
+  }
+  chassis.add(solidMesh(THREE, brass, brassMat, shadow, "tall-brass"));
+  const spots = [];
+  for (const c of corners) {
+    spots.push([c[0], c[1], c[2] + Math.sign(c[2]) * 0.04, 0, 0, Math.sign(c[2]), 0.7]);
+    spots.push([c[0] + Math.sign(c[0]) * 0.08, c[1], c[2], Math.sign(c[0]), 0, 0, 0.65]);
+  }
+  for (let i = 0; i < 8; i++) spots.push([-0.4 + i * 0.11, 1.2, 0.78, 0, 0, 1, 0.55]);
+  nails(THREE, chassis, spots.slice(0, BUILD.lod ? 16 : 32), 0xc9a544, false);
+  const cartH = 1.15;
+  const radius = cartH * 0.8 * 0.5;
+  const woodWheel = {
+    outer: radius,
+    ring: radius * 0.8,
+    tube: radius * 0.11,
+    radial: BUILD.lod ? 4 : 6,
+    tubular: BUILD.lod ? 10 : 16,
+    spokes: 12,
+    mode: "tread",
+    spokeR: 0.013,
+    hubR: radius * 0.16,
+    hubW: radius * 0.09,
+    tireUV: WWOOD,
+    spokeUV: WWOOD,
+    hubUV: WIRON,
+    hubColor: 0xf0d48a,
+    band: true,
+  };
+  const wheels = [
+    addAxle(THREE, g, { x: 0, y: radius, z: -0.5, half: 0.78, steer: false, wheel: woodWheel }, mats, shadow),
+    addAxle(THREE, g, { x: 0, y: radius, z: 0.62, half: 0.78, steer: true, wheel: woodWheel }, mats, shadow),
+  ];
+  const crew = addCrew(THREE, chassis, {
+    seed: 83,
+    seat: [0, 0.95, 0.02],
+    body: [0.82, 1.12, 0.72],
+    head: [1.15, 1.05, 1.05],
+    neckY: 1.12,
+    neckZ: 0.12,
+    tooth: 0xf6ebd9,
+    toothW: 0.07,
+    toothH: 0.16,
+    toothD: 0.04,
+    eyeBig: true,
+    tongue: true,
+    scarfA: 0xe88a1a,
+    scarfB: 0xc46a10,
+    scarfR: 0.042,
+    knot: true,
+    tails: 2,
+    tailLen: 0.7,
+    tailGap: 0.1,
+    paws: [[-0.28, 0.28, 0.62], [0.28, 0.28, 0.62]],
+    tail: { x: 0.42, y: 0.05, z: -1.05, w: 0.7, l: 0.95, rx: -1.15, ry: 0.7, rz: -0.35 },
+    tufts: 38,
+  }, mats, shadow);
+  return pack(THREE, g, chassis, wheels, "tall", crew, mats);
+}
+
+function pack(THREE, g, chassis, wheels, kind, crew) {
   const rear = new THREE.Object3D();
   rear.name = "rearPost";
   rear.position.set(0, 0.85, -1.05);
@@ -470,418 +1583,54 @@ function pack(THREE, g, chassis, wheels, scale, kind, sig, extra) {
   );
   blob.rotation.x = -Math.PI / 2;
   blob.position.y = 0.02;
-  blob.castShadow = false;
-  g.add(chassis);
   g.userData.kind = kind;
-  g.userData.sig = sig;
-  g.scale.setScalar(scale);
+  g.userData.sig = SIG[kind];
+  g.scale.setScalar(1.2);
+  const spinLock = lockPose(wheels);
+  const pose = (time, speed) => {
+    crew.scarfFn(time, Math.min(1.6, speed / 14));
+    crew.tailFn(time, speed);
+    spinLock();
+  };
+  let draws = 0;
+  let tris = 0;
+  g.traverse((o) => {
+    if (!o.isMesh && !o.isInstancedMesh) return;
+    draws += 1;
+    const geo = o.geometry;
+    const n = geo.index ? geo.index.count / 3 : geo.attributes.position.count / 3;
+    tris += n * (o.isInstancedMesh ? o.count : 1);
+    const banned = o.geometry && o.geometry.type;
+    if (banned === "BoxGeometry" || banned === "SphereGeometry" || banned === "CylinderGeometry" || banned === "ConeGeometry") {
+      throw new Error(kind + " bare " + banned);
+    }
+  });
+  g.userData.draws = draws;
+  g.userData.tris = Math.round(tris);
   return {
     group: g,
     wheels,
     blob,
     rear,
     chassis,
-    driver: extra.driver,
-    head: extra.head,
-    arms: extra.arms,
-    scarfTails: extra.scarfTails,
-    flames: extra.flames || [],
-    lanterns: extra.lanterns || [],
+    driver: crew.driver,
+    head: crew.head,
+    arms: crew.arms,
+    scarfTails: crew.scarfTails,
+    flames: [],
+    lanterns: [],
+    pose,
   };
 }
 
-function buildBober(THREE) {
-  const g = new THREE.Group();
-  const chassis = new THREE.Group();
-  const salmon = woodTone(THREE, 0xc47868);
-  const grey = woodTone(THREE, 0xc5c1b4);
-  const cream = woodTone(THREE, 0xf0e2c4);
-  const post = woodTone(THREE, 0xc4a574);
-  const nail = flatMat(THREE, 0x2a2420, 0.6, 0.3);
-  const iron = flatMat(THREE, 0x8e969c, 0.4, 0.55);
-  const mats = {
-    rubber: flatMat(THREE, 0x161616, 0.94, 0),
-    spoke: flatMat(THREE, 0xd5dde2, 0.32, 0.62),
-    hub: flatMat(THREE, 0xc5ced4, 0.35, 0.5),
-    iron,
-    wood: post,
-    woodDark: woodTone(THREE, 0x8a623c),
-  };
-  const bed = boxGeo(THREE, 1.2, 0.06, 0.28);
-  const bedParts = [];
-  for (let i = 0; i < 6; i++) {
-    const tone = i % 3 === 0 ? salmon : i % 3 === 1 ? grey : cream;
-    bedParts.push([put(THREE, bed, 0, 0.58, -0.7 + i * 0.3), tone]);
-  }
-  for (const tone of [salmon, grey, cream]) {
-    addMerged(THREE, chassis, bedParts.filter((row) => row[1] === tone).map((row) => row[0]), tone);
-  }
-
-  const slat = boxGeo(THREE, 0.08, 0.1, 1.15);
-  const back = boxGeo(THREE, 1.05, 0.1, 0.08);
-  const tones = [salmon, grey, cream];
-  tones.forEach((mat, layer) => {
-    const y = 0.72 + layer * 0.14;
-    const parts = [
-      put(THREE, slat, -0.62, y, 0.05),
-      put(THREE, slat, 0.62, y, 0.05),
-      put(THREE, back, 0, y, -0.72),
-    ];
-    addMerged(THREE, chassis, parts, mat);
-  });
-  const postGeo = boxGeo(THREE, 0.09, 0.55, 0.09);
-  const posts = [
-    put(THREE, postGeo, -0.62, 0.9, -0.7),
-    put(THREE, postGeo, 0.62, 0.9, -0.7),
-    put(THREE, postGeo, -0.62, 0.9, 0.55),
-  ];
-  addMerged(THREE, chassis, posts, post);
-  const tall = new THREE.Mesh(boxGeo(THREE, 0.1, 0.95, 0.1), post);
-  tall.position.set(0.62, 1.12, 0.72);
-  tall.castShadow = true;
-  chassis.add(tall);
-  const nails = [];
-  for (const x of [-0.62, 0.62]) {
-    for (const z of [-0.45, 0, 0.4]) nails.push([x, 0.78, z]);
-    for (const z of [-0.45, 0.15]) nails.push([x, 0.92, z]);
-  }
-  for (const x of [-0.3, 0, 0.3]) nails.push([x, 0.78, -0.72]);
-  nailField(THREE, chassis, nails, nail);
-  const strut = new THREE.Mesh(boxGeo(THREE, 0.06, 0.06, 0.7), iron);
-  strut.position.set(0.22, 0.38, 0.7);
-  strut.rotation.x = 0.22;
-  strut.rotation.z = -0.12;
-  chassis.add(strut);
-  const fork = new THREE.Mesh(boxGeo(THREE, 0.05, 0.16, 0.05), iron);
-  fork.position.set(0.34, 0.3, 1.02);
-  chassis.add(fork);
-
-  const wheels = [
-    addAxle(THREE, g, 0, 0.5, -0.4, 0.5, 0.82, 0.16, "rubber", mats, false),
-    addAxle(THREE, g, 0.34, 0.2, 1.02, 0.2, 0, 0.08, "rubber", mats, true),
-  ];
-  const beaver = addBeaver(THREE, chassis, {
-    body: { x: 0.92, y: 0.88, z: 0.7 },
-    bodyY: 1.08,
-    bodyZ: 0.02,
-    head: { x: 0.7, y: 0.58, z: 0.56 },
-    headY: 1.78,
-    headZ: 0.22,
-    ear: { x: 0.16, y: 0.16, z: 0.1 },
-    eyeR: 0.07,
-    mouthW: 0.2,
-    mouthH: 0.09,
-    toothW: 0.07,
-    toothH: 0.16,
-    toothD: 0.05,
-    toothColor: 0xe36a22,
-    scarf: 0x2f9a4a,
-    scarfThick: 0.07,
-    neck: 0.26,
-    neckY: 1.42,
-    fringe: 6,
-    fringeLen: 0.55,
-    fringeW: 0.07,
-    fringeGap: 0.06,
-    armR: 0.09,
-    armL: 0.48,
-    armOut: 0.65,
-    armPitch: 0.95,
-    pawReach: 0.08,
-    pawZ: 0.22,
-  });
-  return pack(THREE, g, chassis, wheels, 1.2, "bober", 81, beaver);
-}
-
-function buildMuscle(THREE) {
-  const g = new THREE.Group();
-  const chassis = new THREE.Group();
-  const rust = rustMat(THREE);
-  const iron = flatMat(THREE, 0x2e2a28, 0.55, 0.62);
-  const chip = flatMat(THREE, 0x6a5348, 0.7, 0.2);
-  const mats = {
-    rubber: flatMat(THREE, 0x141414, 0.96, 0),
-    spoke: flatMat(THREE, 0xb7c0c6, 0.38, 0.58),
-    hub: flatMat(THREE, 0x9aa3a8, 0.4, 0.5),
-    iron,
-    wood: iron,
-    woodDark: iron,
-  };
-  const shell = new THREE.Mesh(boxGeo(THREE, 1.4, 0.62, 1.55), rust);
-  shell.position.set(0, 0.95, 0.02);
-  shell.castShadow = true;
-  shell.receiveShadow = true;
-  chassis.add(shell);
-  const lip = new THREE.Mesh(boxGeo(THREE, 1.48, 0.08, 1.62), iron);
-  lip.position.set(0, 1.26, 0.02);
-  chassis.add(lip);
-  const postGeo = boxGeo(THREE, 0.08, 0.55, 0.08);
-  addMerged(THREE, chassis, [
-    put(THREE, postGeo, -0.66, 1.2, -0.7),
-    put(THREE, postGeo, 0.66, 1.2, -0.7),
-    put(THREE, postGeo, -0.66, 1.2, 0.72),
-    put(THREE, postGeo, 0.66, 1.2, 0.72),
-  ], iron);
-  const patch = boxGeo(THREE, 0.28, 0.22, 0.02);
-  addMerged(THREE, chassis, [
-    put(THREE, patch, -0.4, 0.9, 0.8),
-    put(THREE, patch, 0.35, 1.05, 0.8),
-    put(THREE, patch, 0.2, 0.85, -0.76, 0, Math.PI, 0),
-  ], chip);
-  const pipeGeo = cylGeo(THREE, 0.07, 0.09, 0.42, 8);
-  const pipes = [];
-  for (const x of [-0.22, 0.22]) {
-    const pipe = new THREE.Mesh(pipeGeo, iron);
-    pipe.position.set(x, 1.42, -0.62);
-    chassis.add(pipe);
-    pipes.push(pipe);
-  }
-  const flames = [];
-  pipes.forEach((pipe) => {
-    const mat = new THREE.MeshBasicMaterial({ color: 0xff6a1a, transparent: true, opacity: 0.95, depthWrite: false, side: THREE.DoubleSide });
-    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.48, 7), mat);
-    flame.position.set(0, 0.36, 0);
-    const side = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.42), mat);
-    side.position.y = 0.05;
-    flame.add(side);
-    const cross = side.clone();
-    cross.rotation.y = Math.PI / 2;
-    flame.add(cross);
-    pipe.add(flame);
-    flames.push(flame);
-  });
-  const strut = new THREE.Mesh(boxGeo(THREE, 0.07, 0.06, 0.62), iron);
-  strut.position.set(0.28, 0.4, 0.78);
-  strut.rotation.x = 0.28;
-  chassis.add(strut);
-
-  const wheels = [
-    addAxle(THREE, g, 0, 0.55, -0.38, 0.55, 0.9, 0.22, "knob", mats, false),
-    addAxle(THREE, g, 0.36, 0.18, 1.08, 0.18, 0, 0.08, "rubber", mats, true),
-  ];
-  const beaver = addBeaver(THREE, chassis, {
-    body: { x: 1.02, y: 0.82, z: 0.68 },
-    bodyY: 1.2,
-    bodyZ: 0.04,
-    head: { x: 0.68, y: 0.56, z: 0.52 },
-    headY: 1.82,
-    headZ: 0.24,
-    ear: { x: 0.15, y: 0.14, z: 0.09 },
-    eyeR: 0.065,
-    mouthW: 0.22,
-    mouthH: 0.08,
-    toothW: 0.065,
-    toothH: 0.12,
-    toothD: 0.04,
-    toothColor: 0xf4f0e6,
-    scarf: 0xc24a2c,
-    scarfThick: 0.09,
-    neck: 0.28,
-    neckY: 1.5,
-    fringe: 5,
-    fringeLen: 0.48,
-    fringeW: 0.09,
-    fringeGap: 0.08,
-    armR: 0.11,
-    armL: 0.46,
-    armOut: 0.85,
-    armPitch: 0.85,
-    pawReach: 0.1,
-    pawZ: 0.26,
-  });
-  return pack(THREE, g, chassis, wheels, 1.2, "muscle", 82, { ...beaver, flames });
-}
-
-function buildTall(THREE) {
-  const g = new THREE.Group();
-  const chassis = new THREE.Group();
-  const wood = woodTone(THREE, 0xc46a32);
-  const brass = flatMat(THREE, 0xd4a017, 0.28, 0.78);
-  const rivet = flatMat(THREE, 0xf0d48a, 0.3, 0.7);
-  const mats = {
-    rubber: flatMat(THREE, 0x222, 0.8, 0),
-    spoke: woodTone(THREE, 0xa85a30),
-    hub: flatMat(THREE, 0x8a9094, 0.35, 0.6),
-    iron: flatMat(THREE, 0x6e757a, 0.4, 0.55),
-    wood,
-    woodDark: woodTone(THREE, 0x8d4a28),
-  };
-  const box = new THREE.Mesh(boxGeo(THREE, 1.25, 0.48, 1.45), wood);
-  box.position.set(0, 0.78, 0.02);
-  box.castShadow = true;
-  box.receiveShadow = true;
-  chassis.add(box);
-  const rimBox = new THREE.Mesh(boxGeo(THREE, 1.32, 0.06, 1.52), woodTone(THREE, 0xa85a28));
-  rimBox.position.set(0, 1.04, 0.02);
-  chassis.add(rimBox);
-  const bracket = boxGeo(THREE, 0.22, 0.2, 0.04);
-  const corners = [
-    [-0.58, 0.62, 0.7], [0.58, 0.62, 0.7], [-0.58, 0.96, 0.7], [0.58, 0.96, 0.7],
-    [-0.58, 0.62, -0.68], [0.58, 0.62, -0.68], [-0.58, 0.96, -0.68], [0.58, 0.96, -0.68],
-  ];
-  const plates = [];
-  const rivets = [];
-  for (const [x, y, z] of corners) {
-    plates.push(put(THREE, bracket, x, y, z > 0 ? z + 0.04 : z - 0.04));
-    plates.push(put(THREE, boxGeo(THREE, 0.03, 0.16, 0.16), x > 0 ? x + 0.04 : x - 0.04, y, z));
-    rivets.push([x, y, z > 0 ? z + 0.07 : z - 0.07]);
-  }
-  addMerged(THREE, chassis, plates, brass);
-  nailField(THREE, chassis, rivets, rivet);
-
-  const wheels = [
-    addAxle(THREE, g, 0, 0.4, -0.5, 0.4, 0.78, 0.1, "wood", mats, false),
-    addAxle(THREE, g, 0, 0.4, 0.62, 0.4, 0.78, 0.1, "wood", mats, true),
-  ];
-  const beaver = addBeaver(THREE, chassis, {
-    body: { x: 0.7, y: 0.95, z: 0.55 },
-    bodyY: 1.02,
-    bodyZ: 0.02,
-    head: { x: 0.78, y: 0.66, z: 0.62 },
-    headY: 1.78,
-    headZ: 0.28,
-    ear: { x: 0.16, y: 0.16, z: 0.1 },
-    eyeR: 0.11,
-    eyeTall: true,
-    mouthW: 0.26,
-    mouthH: 0.12,
-    toothW: 0.08,
-    toothH: 0.22,
-    toothD: 0.05,
-    toothColor: 0xf7f4ee,
-    scarf: 0xf0a024,
-    scarfThick: 0.08,
-    neck: 0.26,
-    neckY: 1.38,
-    knot: true,
-    fringe: 6,
-    fringeLen: 0.58,
-    fringeW: 0.08,
-    fringeGap: 0.06,
-    armR: 0.07,
-    armL: 0.55,
-    armOut: 0.45,
-    armPitch: 1.15,
-    pawReach: 0.06,
-    pawZ: 0.32,
-    claws: true,
-    tail: { w: 0.55, l: 0.9, x: 0.78, y: 0.92, z: -0.15, rz: -1.15, rx: 0.55 },
-  });
-  return pack(THREE, g, chassis, wheels, 1.2, "tall", 83, beaver);
-}
-
-function buildNib(THREE) {
-  const g = new THREE.Group();
-  const chassis = new THREE.Group();
-  const wood = woodTone(THREE, 0x6b5340);
-  const dark = woodTone(THREE, 0x4a3a2e);
-  const iron = flatMat(THREE, 0x3e3a36, 0.5, 0.6);
-  const rust = flatMat(THREE, 0x7a3e28, 0.72, 0.25);
-  const mats = {
-    rubber: iron,
-    spoke: woodTone(THREE, 0x7a5a40),
-    hub: flatMat(THREE, 0x8d9296, 0.35, 0.62),
-    iron,
-    wood,
-    woodDark: dark,
-  };
-  const bed = new THREE.Mesh(boxGeo(THREE, 1.35, 0.42, 1.6), wood);
-  bed.position.set(0, 0.82, 0);
-  bed.castShadow = true;
-  bed.receiveShadow = true;
-  chassis.add(bed);
-  const band = boxGeo(THREE, 1.4, 0.06, 0.08);
-  addMerged(THREE, chassis, [
-    put(THREE, band, 0, 0.7, 0.35),
-    put(THREE, band, 0, 0.95, -0.15),
-    put(THREE, boxGeo(THREE, 0.08, 0.06, 1.5), -0.64, 0.78, 0),
-    put(THREE, boxGeo(THREE, 0.08, 0.06, 1.5), 0.64, 0.78, 0),
-  ], iron);
-  const patch = boxGeo(THREE, 0.32, 0.24, 0.03);
-  addMerged(THREE, chassis, [
-    put(THREE, patch, 0.4, 0.9, 0.81),
-    put(THREE, patch, -0.35, 0.75, -0.81, 0, Math.PI, 0),
-  ], rust);
-  nailField(THREE, chassis, [
-    [-0.55, 0.7, 0.35], [0, 0.7, 0.35], [0.55, 0.7, 0.35],
-    [-0.55, 0.95, -0.15], [0.55, 0.95, -0.15],
-    [0.4, 0.9, 0.84], [-0.2, 0.9, 0.84],
-  ], flatMat(THREE, 0xd0d4d8, 0.35, 0.7));
-
-  const logGeo = cylGeo(THREE, 0.06, 0.06, 0.55, 6);
-  const logs = [];
-  for (let i = 0; i < 4; i++) logs.push(put(THREE, logGeo, -0.28 + (i % 2) * 0.18, 1.14 + Math.floor(i / 2) * 0.12, -0.48, 0, 0, Math.PI / 2));
-  addMerged(THREE, chassis, logs, dark);
-  const crate = new THREE.Mesh(boxGeo(THREE, 0.32, 0.26, 0.28), woodTone(THREE, 0x5c4636));
-  crate.position.set(0.32, 1.16, -0.42);
-  crate.rotation.y = 0.2;
-  crate.castShadow = true;
-  chassis.add(crate);
-
-  const lanterns = [];
-  for (const x of [-0.78, 0.78]) {
-    const hang = new THREE.Group();
-    hang.position.set(x, 0.95, 0.15);
-    const hook = new THREE.Mesh(boxGeo(THREE, 0.02, 0.16, 0.02), iron);
-    hook.position.y = 0.08;
-    const cage = new THREE.Mesh(boxGeo(THREE, 0.2, 0.26, 0.2), iron);
-    cage.position.y = -0.16;
-    const glowMat = new THREE.MeshStandardMaterial({
-      color: 0xffd27a,
-      emissive: 0xffc04a,
-      emissiveIntensity: 1.35,
-      roughness: 0.22,
-    });
-    const glow = new THREE.Mesh(boxGeo(THREE, 0.12, 0.16, 0.12), glowMat);
-    glow.position.y = -0.16;
-    hang.add(hook, cage, glow);
-    hang.userData.glow = glowMat;
-    chassis.add(hang);
-    lanterns.push(hang);
-  }
-
-  const wheels = [
-    addAxle(THREE, g, 0, 0.46, -0.55, 0.46, 0.84, 0.1, "wood", mats, false),
-    addAxle(THREE, g, 0, 0.46, 0.62, 0.46, 0.84, 0.1, "wood", mats, true),
-  ];
-  const beaver = addBeaver(THREE, chassis, {
-    body: { x: 0.9, y: 0.82, z: 0.66 },
-    bodyY: 1.12,
-    bodyZ: 0.16,
-    head: { x: 0.64, y: 0.54, z: 0.5 },
-    headY: 1.72,
-    headZ: 0.32,
-    ear: { x: 0.14, y: 0.14, z: 0.09 },
-    eyeR: 0.06,
-    mouthW: 0.12,
-    mouthH: 0.045,
-    toothW: 0.045,
-    toothH: 0.08,
-    toothD: 0.035,
-    toothColor: 0xf3ecdf,
-    scarf: 0xc4372a,
-    scarfThick: 0.06,
-    neck: 0.24,
-    neckY: 1.42,
-    fringe: 6,
-    fringeLen: 0.62,
-    fringeW: 0.055,
-    fringeGap: 0.05,
-    armR: 0.08,
-    armL: 0.42,
-    armOut: 0.4,
-    armPitch: 1.2,
-    pawReach: 0.04,
-    pawZ: 0.24,
-    harness: true,
-  });
-  return pack(THREE, g, chassis, wheels, 1.2, "nib", 84, { ...beaver, lanterns });
-}
-
-export function buildKart(THREE, def) {
+export function buildKart(THREE, def, _wood, opts) {
+  BUILD.lod = !!(opts && opts.lod);
+  BUILD.curve = BUILD.lod ? 1 : 2;
+  const mats = materials(THREE);
   const id = def && def.id;
-  if (id === "muscle") return buildMuscle(THREE);
-  if (id === "tall") return buildTall(THREE);
-  if (id === "nib") return buildNib(THREE);
-  return buildBober(THREE);
+  const shadow = !BUILD.lod;
+  if (id === "muscle") return buildMuscle(THREE, mats, shadow);
+  if (id === "tall") return buildTall(THREE, mats, shadow);
+  if (id === "nib") return buildNib(THREE, mats, shadow);
+  return buildBober(THREE, mats, shadow);
 }

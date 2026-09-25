@@ -1,5 +1,5 @@
 /* Eight lodge throws. One held item. Boxes return in 4.5s. */
-import { frameAt, forward, livePlace } from "./sim.js?v=gd39";
+import { frameAt, forward, livePlace } from "./sim.js?v=gd40";
 
 export const ITEM_IDS = ["boost", "trap", "pine", "surge", "magnet", "buckler", "meteor", "slick"];
 export const ITEM_NAME = {
