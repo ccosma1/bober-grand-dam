@@ -1,5 +1,5 @@
 /* Eight lodge throws. One held item. Boxes return in 4.5s. */
-import { frameAt, forward, livePlace } from "./sim.js?v=gd34";
+import { frameAt, forward, livePlace } from "./sim.js?v=gd39";
 
 export const ITEM_IDS = ["boost", "trap", "pine", "surge", "magnet", "buckler", "meteor", "slick"];
 export const ITEM_NAME = {
@@ -26,7 +26,8 @@ const BASE = [
 const LEAD_BIAS = { boost: 1.25, slick: 1.25, trap: 1.25, buckler: 1.25 };
 const BACK_BIAS = { meteor: 1.35, magnet: 1.35, pine: 1.35 };
 
-const PINE_R = 2.4;
+const PINE_R = 1.45;
+const PINE_REACH = 3.05;
 const PINE_SPEED = 48;
 const SURGE_AHEAD = 4;
 const SURGE_SPEED = 46;
@@ -35,8 +36,9 @@ const SURGE_ALONG = 2;
 const MAG_RANGE = 70;
 const BUCK_R = 5;
 const METEOR_R = 7;
-const SLICK_W = 2.5;
-const SLICK_L = 3.75;
+const SLICK_W = 1.6;
+const SLICK_L = 2.1;
+const REACH = 3.05;
 const HURT = 1.6;
 
 function hash(n) {
@@ -165,7 +167,7 @@ export function onHitKart(race, kart, spec) {
       }
     }
     noteHit(race, spec.fx || "block", kart);
-    return true;
+    return false;
   }
   let felt = false;
   if (specStun > 0) {
@@ -235,20 +237,20 @@ export function launchHeld(race, kart) {
     juice(race, "boost", 0.4);
     burst(race, "boost", kart.x - f.x * 1.4, kart.y + 0.4, kart.z - f.z * 1.4, 0.45);
   } else if (id === "trap") {
-    const plate = frameAt(race.track, kart.t - 6 / length);
-    const px = kart.x - f.x * 6;
-    const pz = kart.z - f.z * 6;
-    const onRoad = Math.hypot(px - plate.p.x, pz - plate.p.z) < 2.8;
+    const drop = 6;
+    const plate = frameAt(race.track, kart.t - drop / length);
     race.traps.push({
       owner: kart.id,
-      x: onRoad ? px : plate.p.x,
-      z: onRoad ? pz : plate.p.z,
+      x: plate.p.x,
+      z: plate.p.z,
       y: plate.p.y,
-      yaw: Math.atan2(f.x, f.z),
+      yaw: Math.atan2(plate.tangent.x, plate.tangent.z),
       life: 12,
-      armed: 0.2,
+      armed: 0.05,
+      halfW: 3.2,
+      halfL: 2.8,
     });
-    burst(race, "trap", onRoad ? px : plate.p.x, plate.p.y + 0.5, onRoad ? pz : plate.p.z, 0.45);
+    burst(race, "trap", plate.p.x, plate.p.y + 0.5, plate.p.z, 0.45);
   } else if (id === "pine") {
     const prey = nearestAhead(race, kart, 50);
     const yaw = prey
@@ -291,8 +293,10 @@ export function launchHeld(race, kart) {
   } else if (id === "magnet") {
     const tgt = nearestAhead(race, kart, MAG_RANGE);
     if (tgt) {
-      race.tethers.push({ owner: kart.id, id: tgt.kart.id, life: 1.5, pull: 18, pulse: 0, hit: false });
-      onHitKart(race, tgt.kart, { slow: 1.5, mul: 0.5, fx: "magnet", shake: 0.35 });
+      race.tethers.push({ owner: kart.id, id: tgt.kart.id, life: 1.6, pull: 18, pulse: 0, hit: false });
+      onHitKart(race, tgt.kart, { stun: 0.4, slow: 1.6, mul: 0.32, fx: "magnet", shake: 0.45 });
+      tgt.kart.slowT = Math.max(tgt.kart.slowT || 0, 1.6);
+      tgt.kart.speedMul = Math.min(tgt.kart.speedMul > 0 ? tgt.kart.speedMul : 1, 0.32);
     } else {
       burst(race, "magnet", kart.x, kart.y + 1.2, kart.z, 0.3);
     }
@@ -328,6 +332,7 @@ export function launchHeld(race, kart) {
     const dest = frameAt(race.track, leadT);
     race.meteors.push({
       owner: kart.id,
+      prey: prey ? prey.kart.id : null,
       x: dest.p.x,
       y: dest.p.y + 9,
       z: dest.p.z,
@@ -365,20 +370,6 @@ function stepItems(race, dt) {
     if (k.held) k.holdAge = (k.holdAge || 0) + dt;
     if (k.got > 0) k.got -= dt;
     if (k.buckler > 0) k.buckler = Math.max(0, k.buckler - dt);
-  }
-  const youHold = race.karts.find((k) => !k.cpu && k.held);
-  if (youHold && !youHold.assist && youHold.held !== "boost") {
-    let near = null;
-    for (const k of race.karts) {
-      if (!k.cpu || k.finished) continue;
-      let rel = wrapDt(youHold.t, k.t);
-      const dist = Math.hypot(k.x - youHold.x, k.z - youHold.z);
-      if (rel > 0.004 && dist > 35 && dist < 90 && (!near || dist < near.dist)) near = { k, dist };
-    }
-    if (near && (near.k.slowT || 0) < 0.2) {
-      near.k.speedMul = Math.min(near.k.speedMul || 1, 0.7);
-      near.k.slowT = Math.max(near.k.slowT || 0, 0.25);
-    }
   }
   for (const box of race.boxes || []) {
     if (!box.alive) {
@@ -430,8 +421,11 @@ function stepItems(race, dt) {
     if (shot.age > 0.05) {
       for (const k of race.karts) {
         if (k.id === shot.owner || k.finished) continue;
-        if (!overlapsKart(k, shot.x, shot.z, PINE_R)) continue;
-        onHitKart(race, k, { stun: 0.6, slow: 0.8, mul: 0.5, fx: "pine", shake: 0.32 });
+        const pdx = k.x - shot.x;
+        const pdz = k.z - shot.z;
+        const pineReach = Math.max(PINE_R, PINE_REACH);
+        if (pdx * pdx + pdz * pdz > pineReach * pineReach) continue;
+        if (!onHitKart(race, k, { stun: 0.6, slow: 0.8, mul: 0.5, fx: "pine", shake: 0.32 })) continue;
         shot.life = 0;
         break;
       }
@@ -441,22 +435,23 @@ function stepItems(race, dt) {
 
   for (const trap of race.traps || []) {
     trap.life -= dt;
-    trap.armed -= dt;
-    if (trap.armed > 0) continue;
+    trap.armed = Math.max(0, (trap.armed || 0) - dt);
     const yaw = trap.yaw || 0;
     const s = Math.sin(yaw);
     const c = Math.cos(yaw);
+    const halfW = Math.max(1.2, trap.halfW || 1.3);
+    const halfL = Math.max(1.4, trap.halfL || 1.5);
     for (const k of race.karts) {
       if (k.id === trap.owner || k.finished) continue;
       const dx = k.x - trap.x;
       const dz = k.z - trap.z;
       const along = dx * s + dz * c;
       const across = dx * c - dz * s;
-      const onPlate = Math.abs(across) < 2.25 + HURT && Math.abs(along) < 1.6 + HURT;
-      if (!onPlate && !overlapsKart(k, trap.x, trap.z, 2.2)) continue;
+      const onPlate = Math.abs(across) <= halfW && Math.abs(along) <= halfL;
+      if (!onPlate && dx * dx + dz * dz > REACH * REACH) continue;
       const back = forward(k.yaw);
-      onHitKart(race, k, {
-        stun: 0.95,
+      const landed = onHitKart(race, k, {
+        stun: 1.05,
         slow: 0.8,
         mul: 0.4,
         ix: -back.x * 10,
@@ -464,6 +459,7 @@ function stepItems(race, dt) {
         fx: "trap",
         shake: 0.55,
       });
+      if (!landed) continue;
       k.yaw += 1.1;
       trap.life = 0;
       break;
@@ -475,8 +471,9 @@ function stepItems(race, dt) {
   for (const wall of race.surges || []) {
     wall.life -= dt;
     const step = SURGE_SPEED * dt;
-    const fr = frameAt(race.track, wall.t + step / length);
-    wall.t = fr.t;
+    wall.t = wall.t + step / length;
+    if (wall.t >= 1) wall.t -= 1;
+    const fr = frameAt(race.track, wall.t);
     wall.x = fr.p.x;
     wall.y = fr.p.y;
     wall.z = fr.p.z;
@@ -488,9 +485,10 @@ function stepItems(race, dt) {
       const dz = k.z - wall.z;
       const across = dx * fr.right.x + dz * fr.right.z;
       const along = dx * fr.tangent.x + dz * fr.tangent.z;
-      if (Math.abs(across) > SURGE_HALF + HURT || Math.abs(along) > SURGE_ALONG + HURT) continue;
+      const inSlab = Math.abs(across) <= SURGE_HALF && Math.abs(along) <= SURGE_ALONG;
+      if (!inSlab && dx * dx + dz * dz > REACH * REACH) continue;
       const sign = Math.sign(across) || 1;
-      onHitKart(race, k, {
+      const landed = onHitKart(race, k, {
         stun: 0.75,
         slow: 0.9,
         mul: 0.45,
@@ -500,7 +498,7 @@ function stepItems(race, dt) {
         fx: "surge",
         shake: 0.5,
       });
-      wall.hit[k.id] = true;
+      if (landed) wall.hit[k.id] = true;
     }
   }
   race.surges = (race.surges || []).filter((w) => w.life > 0);
@@ -513,18 +511,23 @@ function stepItems(race, dt) {
       link.life = 0;
       continue;
     }
-    tgt.slowT = Math.max(tgt.slowT || 0, link.life);
-    tgt.speedMul = Math.min(tgt.speedMul && tgt.speedMul > 0 ? tgt.speedMul : 1, 0.5);
+    tgt.slowT = Math.max(tgt.slowT || 0, 1.6);
+    tgt.speedMul = Math.min(tgt.speedMul && tgt.speedMul > 0 ? tgt.speedMul : 1, 0.32);
     link.pulse = (link.pulse || 0) + dt;
-    if (link.pull > 0 && link.pulse >= 0.2) {
+    if (link.pulse >= 0.2) {
       link.pulse -= 0.2;
       const dx = owner.x - tgt.x;
       const dz = owner.z - tgt.z;
       const d = Math.hypot(dx, dz) || 1;
-      const step = Math.min(link.pull, 3.2, Math.max(0, d - 3));
-      tgt.x += (dx / d) * step;
-      tgt.z += (dz / d) * step;
-      link.pull -= step;
+      const step = d > 2.2 ? Math.max(2, Math.min(3.4, d - 1.4)) : 0;
+      if (step > 0) {
+        tgt.x += (dx / d) * step;
+        tgt.z += (dz / d) * step;
+        link.hauled = (link.hauled || 0) + step;
+      }
+      if ((tgt.stun || 0) < 0.35) {
+        onHitKart(race, tgt, { stun: 0.35, slow: 1.6, mul: 0.32, fx: "magnet", shake: 0.3 });
+      }
     }
     link.ax = owner.x;
     link.az = owner.z;
@@ -537,6 +540,16 @@ function stepItems(race, dt) {
   for (const chip of race.meteors || []) {
     chip.age += dt;
     chip.life -= dt;
+    if (!chip.boom && chip.prey) {
+      const prey = race.karts.find((k) => k.id === chip.prey && !k.finished);
+      if (prey) {
+        chip.tx = prey.x;
+        chip.tz = prey.z;
+        chip.ty = prey.y + 0.4;
+        chip.x = prey.x;
+        chip.z = prey.z;
+      }
+    }
     const k = Math.min(1, chip.age / 0.42);
     chip.y = chip.ty + (1 - k) * 9;
     chip.x = chip.tx;
@@ -551,16 +564,16 @@ function stepItems(race, dt) {
       for (const kart of race.karts) {
         if (kart.finished) continue;
         if (kart.id === chip.owner && chip.age < 0.2) continue;
-        if (!overlapsKart(kart, chip.x, chip.z, METEOR_R)) continue;
-        const dx = kart.x - chip.x;
-        const dz = kart.z - chip.z;
-        const d = Math.hypot(dx, dz) || 1;
+        const mdx = kart.x - chip.x;
+        const mdz = kart.z - chip.z;
+        if (mdx * mdx + mdz * mdz > METEOR_R * METEOR_R) continue;
+        const d = Math.hypot(mdx, mdz) || 1;
         onHitKart(race, kart, {
           stun: 1.25,
           slow: 1.1,
           mul: 0.35,
-          ix: (dx / d) * 8,
-          iz: (dz / d) * 8,
+          ix: (mdx / d) * 8,
+          iz: (mdz / d) * 8,
           fx: "meteor",
           shake: 0.6,
         });
@@ -581,10 +594,10 @@ function stepItems(race, dt) {
       const dz = k.z - patch.z;
       const along = dx * s + dz * c;
       const across = dx * c - dz * s;
-      if (Math.abs(along) > SLICK_L + HURT && Math.abs(across) > SLICK_W + HURT) continue;
-      if (!overlapsKart(k, patch.x, patch.z, Math.max(SLICK_W, SLICK_L)) && (Math.abs(along) > SLICK_L + HURT || Math.abs(across) > SLICK_W + HURT)) continue;
+      const inPatch = Math.abs(across) <= SLICK_W && Math.abs(along) <= SLICK_L;
+      if (!inPatch && dx * dx + dz * dz > REACH * REACH) continue;
+      if (!onHitKart(race, k, { slow: 1.6, mul: 0.3, fx: "slick", shake: 0.3 })) continue;
       patch.hit[k.id] = true;
-      onHitKart(race, k, { slow: 1.6, mul: 0.3, fx: "slick", shake: 0.3 });
     }
   }
   race.slicks = (race.slicks || []).filter((p) => p.life > 0);

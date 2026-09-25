@@ -1,7 +1,7 @@
 /* Race sim. No rendering.
    yaw 0 faces +z. yaw > 0 turns toward +x (screen-left in the chase view).
    forward = (sin(yaw), 0, cos(yaw)). */
-import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd34";
+import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd39";
 export { launchHeld };
 
 export const LAPS = 3;
@@ -926,6 +926,8 @@ function integrate(kart, input, dt) {
   const steer = stunned ? 0 : kart.steerSm;
   const gas = stunned ? 0 : Math.max(0, Math.min(1, Number(input.gas) || 0));
   const brake = stunned ? 0 : input.brake ? 1 : 0;
+  kart.throttle = gas;
+  kart.braking = brake;
   const speed = Math.hypot(kart.vx, kart.vz);
   kart.drifting = false;
   kart.spark = 0;
@@ -980,7 +982,7 @@ function integrate(kart, input, dt) {
   const cap =
     (kart.baseCap || (kart.cpu ? 27 : MAX_SPEED)) *
     (kart.boost > 0 && !stunned ? 1.65 : 1) *
-    (stunned ? 0.15 : slowMul) *
+    (stunned ? 0.1 : slowMul) *
     (kart.orb > 0 ? 1.18 : 1);
   if (sp > cap) {
     kart.vx *= cap / sp;
@@ -1101,7 +1103,7 @@ function bodyStep(track, kart, dt) {
     const cap =
       (kart.baseCap || (kart.cpu ? 27 : MAX_SPEED)) *
       (kart.boost > 0 && !stunned ? 1.65 : 1) *
-      (stunned ? 0.15 : slowMul) *
+      (stunned ? 0.1 : slowMul) *
       (kart.orb > 0 ? 1.18 : 1);
     const floor = stunned ? 0 : fr.ceiling || (fr.up && fr.up.y < 0.35) ? 18 : 13;
     sp = Math.max(floor, Math.min(cap, sp));

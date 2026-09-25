@@ -1,5 +1,5 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd34";
-import { buildKart } from "./racers.js?v=gd32";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd39";
+import { buildKart } from "./racers.js?v=gd39";
 
 function canvasTex(THREE, draw, w, h, repeat) {
   const c = document.createElement("canvas");
@@ -878,6 +878,7 @@ export function createWorld(THREE, track) {
   const sparkLife = new Float32Array(sparkN);
   let sparkCursor = 0;
 
+  let aimLock = null;
   const look = new THREE.Vector3(0, 12, -10);
   const camGoal = new THREE.Vector3();
   const lookGoal = new THREE.Vector3();
@@ -903,20 +904,59 @@ export function createWorld(THREE, track) {
     side: THREE.DoubleSide,
   });
 
+  const ribMap = canvasTex(THREE, (g, w, h) => {
+    const grd = g.createLinearGradient(0, h, 0, 0);
+    grd.addColorStop(0, "rgba(255,244,210,0.98)");
+    grd.addColorStop(0.18, "rgba(255,176,32,0.95)");
+    grd.addColorStop(0.55, "rgba(255,120,16,0.72)");
+    grd.addColorStop(1, "rgba(255,80,0,0)");
+    g.fillStyle = grd;
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = "rgba(255,236,170,0.85)";
+    g.fillRect(w * 0.38, 0, w * 0.24, h * 0.72);
+  }, 64, 256, false);
   function mountKart(def) {
     const view = buildKart(THREE, def, woodMap);
-    const pipes = def.id === "muscle" ? [-0.46, 0.46] : [0];
-    const fy = 0.22;
-    const fz = -1.72;
-    view.flames = pipes.map((x) => {
-      const flame = new THREE.Mesh(new THREE.PlaneGeometry(0.28, 0.42), flameMat);
-      flame.position.set(x, fy, fz);
-      const side = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.32), flameMat);
-      side.rotation.y = Math.PI / 2;
-      flame.add(side);
-      view.group.add(flame);
-      return flame;
+    const trail = new THREE.Group();
+    trail.position.set(0, 0.18, -3.8);
+    const ribMat = new THREE.MeshBasicMaterial({
+      map: ribMap,
+      color: 0xffc24a,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      side: THREE.DoubleSide,
     });
+    const ribbon = new THREE.Mesh(new THREE.PlaneGeometry(1.85, 6.1), ribMat);
+    ribbon.rotation.x = -Math.PI / 2;
+    ribbon.renderOrder = 4;
+    const coreMat = ribMat.clone();
+    coreMat.color.setHex(0xfff1b0);
+    const core = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 6.1), coreMat);
+    core.rotation.x = -Math.PI / 2;
+    core.position.y = 0.05;
+    core.renderOrder = 5;
+    trail.add(ribbon, core);
+    trail.visible = false;
+    view.group.add(trail);
+    view.ribbon = trail;
+    view.ribbonCore = core;
+    view.ribbonSheet = ribbon;
+    const flareMat = new THREE.MeshBasicMaterial({
+      color: 0xfff0a8,
+      transparent: true,
+      opacity: 0.95,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const flare = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), flareMat);
+    flare.position.set(0, 0.36, -0.95);
+    flare.visible = false;
+    const flareCard = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.55), flameMat);
+    flareCard.position.set(0, 0.08, -0.15);
+    flare.add(flareCard);
+    view.group.add(flare);
+    view.flare = flare;
     scene.add(view.group);
     scene.add(view.blob);
     views.push(view);
@@ -961,6 +1001,13 @@ export function createWorld(THREE, track) {
       sparkCol[i * 3] = 1;
       sparkCol[i * 3 + 1] = 0.95;
       sparkCol[i * 3 + 2] = 0.7;
+      return;
+    }
+    if (ice === "dust") {
+      sparkLife[i] = 0.55;
+      sparkCol[i * 3] = 0.55;
+      sparkCol[i * 3 + 1] = 0.4;
+      sparkCol[i * 3 + 2] = 0.22;
       return;
     }
     const heat = hot ? 1 : 0.55 + Math.random() * 0.4;
@@ -1022,6 +1069,93 @@ export function createWorld(THREE, track) {
     return { ok: true, nose: { x: nose.x, z: nose.z } };
   }
 
+  function poseCart(view, k, dt, race) {
+    const speed = k.speed || 0;
+    const nose = forward(k.yaw);
+    const fwdSp = (k.vx || 0) * nose.x + (k.vz || 0) * nose.z;
+    const steer = Math.max(-1, Math.min(1, k.steerSm || 0));
+    const stunned = (k.stun || 0) > 0;
+    const scale = view.group.scale.x || 1;
+    const steerAng = stunned ? Math.sin(race.time * 18) * 0.45 : steer * 0.62;
+    for (const w of view.wheels || []) {
+      const worldR = Math.max(0.12, w.radius * scale);
+      w.spin += (fwdSp / worldR) * dt;
+      w.spinPivot.rotation.x = w.spin;
+      if (w.steer && w.yawPivot) {
+        const cur = w.yawPivot.rotation.y;
+        w.yawPivot.rotation.y = cur + (steerAng - cur) * Math.min(1, dt * 12);
+      }
+    }
+    const sus = view.sus || (view.sus = { y: 0, pitch: 0, roll: 0, land: 0 });
+    const rate = 1 - Math.exp(-Math.max(0.001, dt) * 8);
+    const bump = Math.sin((k.x + k.z) * 0.85) * Math.min(0.045, speed * 0.0016);
+    if ((view.airWas || 0) > 0.12 && (k.air || 0) === 0 && k.grounded) sus.land = 1;
+    view.airWas = k.air || 0;
+    sus.land = Math.max(0, sus.land - dt * 2.4);
+    const landY = -Math.sin(sus.land * Math.PI) * 0.11;
+    const landPitch = Math.sin(sus.land * Math.PI * 2) * 0.14 * sus.land;
+    const targetY = bump - (k.throttle || 0) * 0.045 + landY;
+    sus.y += (targetY - sus.y) * rate;
+    const noseDip = (k.braking || 0) * 0.18 - (k.throttle || 0) * 0.1 + landPitch;
+    sus.pitch += (noseDip - sus.pitch) * rate;
+    const rollTarget = -steer * 0.24 + (stunned ? Math.sin(race.time * 22) * 0.22 : 0);
+    sus.roll += (rollTarget - sus.roll) * rate;
+    if (view.chassis) {
+      view.chassis.position.y = sus.y;
+      view.chassis.rotation.x = sus.pitch;
+      view.chassis.rotation.z = sus.roll;
+      view.chassis.rotation.y = Math.sin(race.time * (3.2 + speed * 0.08)) * Math.min(0.045, speed * 0.0014);
+    }
+    if (view.driver) {
+      view.driver.rotation.z = stunned ? Math.sin(race.time * 16) * 0.36 : steer * 0.32;
+      view.driver.rotation.y = stunned ? Math.sin(race.time * 8) * 0.28 : steer * 0.18;
+      view.driver.position.y = Math.sin(race.time * 10 + speed) * Math.min(0.04, speed * 0.0013);
+    }
+    if (view.head) {
+      view.head.rotation.y = stunned ? Math.sin(race.time * 11) * 0.65 : steer * 0.48;
+      view.head.rotation.z = stunned ? Math.sin(race.time * 14) * 0.48 : 0;
+      view.head.rotation.x = stunned ? Math.sin(race.time * 9) * 0.16 : 0;
+    }
+    const brace = Math.min(1, Math.abs(steer) * 1.5 + (k.braking || 0));
+    for (const arm of view.arms || []) {
+      const wob = stunned ? Math.sin(race.time * 20 + arm.userData.side) * 0.28 : 0;
+      arm.rotation.z = (arm.userData.baseZ || 0) + arm.userData.side * brace * 0.32;
+      arm.rotation.x = (arm.userData.baseX || 0) + wob;
+    }
+    const wind = Math.min(1.5, speed / 15);
+    (view.scarfTails || []).forEach((t, i) => {
+      const wave = Math.sin(race.time * (6 + wind * 13) + i * 0.75);
+      t.rotation.x = -0.3 - wind * 0.7 + wave * (0.2 + wind * 0.38);
+      t.rotation.y = wave * (0.24 + wind * 0.58);
+      t.scale.z = 1 + wind * 0.75;
+    });
+    (view.lanterns || []).forEach((lan, i) => {
+      const sway = 0.16 + Math.min(0.24, speed * 0.009);
+      lan.rotation.z = Math.sin(race.time * 3.4 + i * 1.3) * sway;
+      lan.rotation.x = Math.cos(race.time * 2.7 + i) * sway * 0.5;
+      if (lan.userData.glow) lan.userData.glow.emissiveIntensity = 0.75 + Math.sin(race.time * 8 + i * 2) * 0.35;
+    });
+    const boosting = (k.boost || 0) > 0.05;
+    (view.flames || []).forEach((fl, i) => {
+      const flick = 0.7 + Math.abs(Math.sin(race.time * 29 + i * 2.2)) * 0.55;
+      const kick = boosting ? 1.7 : 1;
+      fl.scale.set(0.8 * kick * flick, (0.75 + (boosting ? 1.2 : 0)) * flick, 1);
+      if (fl.material) fl.material.opacity = boosting ? 1 : 0.88;
+    });
+    if (view.ribbon) {
+      view.ribbon.visible = boosting;
+      if (view.ribbonSheet) view.ribbonSheet.material.opacity = boosting ? 0.96 : 0;
+      if (view.ribbonCore) view.ribbonCore.material.opacity = boosting ? 1 : 0;
+    }
+    if (view.flare) {
+      view.flare.visible = boosting;
+      if (boosting) {
+        const flick = 0.9 + Math.sin(race.time * 42) * 0.18;
+        view.flare.scale.setScalar(flick);
+      }
+    }
+  }
+
   function update(race, dt, portrait) {
     waterMat.uniforms.uTime.value += dt;
     spillMat.uniforms.uTime.value += dt;
@@ -1057,22 +1191,18 @@ export function createWorld(THREE, track) {
       view.group.position.set(k.x, k.y + hop, k.z);
       view.blob.position.set(k.x, (k.grounded ? k.y : 0.08) + 0.04, k.z);
       view.blob.material.opacity = k.grounded ? 0.28 : 0.1;
-      const spin = k.speed * dt * 1.6;
-      for (const w of view.wheels) w.rotation.x += spin;
-      if (view.driver) {
-        const lean = Math.max(-1, Math.min(1, k.steerSm || 0));
-        view.driver.rotation.y = lean * ((20 * Math.PI) / 180);
-      }
-      const icy = liveTrack.theme === "frost";
-      const hot = k.spark > 0.72 || k.boost > 0;
-      const spraying = (k.drifting && k.spark > 0.05) || k.boost > 0 || k.speed > 16;
-      if (spraying) {
-        const f = forward(k.yaw);
+      poseCart(view, k, dt, race);
+      const noseF = forward(k.yaw);
+      const fwdSp = k.vx * noseF.x + k.vz * noseF.z;
+      const moving = Math.abs(fwdSp) > 4;
+      if (moving) {
+        const icy = liveTrack.theme === "frost";
+        const wet = (k.wet || 0) > 0.02 || (k.splash || 0) > 0.05;
+        const kind = icy ? "ice" : wet ? "foam" : "dust";
         const rx = Math.cos(k.yaw);
         const rz = -Math.sin(k.yaw);
-        const kind = hot ? false : icy ? "ice" : "foam";
-        for (const side of [-0.7, 0.7]) {
-          emitSpark(k.x - f.x * 1.05 + rx * side, k.y + 0.22, k.z - f.z * 1.05 + rz * side, hot, kind);
+        for (const side of [-0.75, 0.75]) {
+          emitSpark(k.x - noseF.x * 0.85 + rx * side, k.y + 0.12, k.z - noseF.z * 0.85 + rz * side, false, kind);
         }
       }
       if (k.boost > 0.15) {
@@ -1103,13 +1233,6 @@ export function createWorld(THREE, track) {
       }
       if ((k.splash || 0) > 0.4) {
         for (let n = 0; n < 3; n++) emitSpark(k.x + (n - 1) * 0.4, k.y + 0.15, k.z, false, "foam");
-      }
-      const power = k.boost > 0 ? 2.15 : 0.45 + Math.min(1, (k.speed || 0) / 29) * 0.85;
-      for (const flame of view.flames || []) {
-        const flick = 0.7 + Math.random() * 0.55;
-        const tall = Math.max(0.45, Math.min(k.boost > 0 ? 0.95 : 0.85, power)) * flick;
-        flame.scale.set(flick * (k.boost > 0 ? 1.05 : 0.8), tall, flick * 0.8);
-        flame.material.color.set(k.boost > 0 ? 0xffc14a : 0xff3b22);
       }
     }
     for (let i = 0; i < sparkN; i++) {
@@ -1181,6 +1304,25 @@ export function createWorld(THREE, track) {
       camera.position.z += Math.sin(race.time * 41) * kick * 0.35;
     }
     camera.lookAt(look);
+    if (aimLock) {
+      const ai = ROSTER.findIndex((r) => r.id === aimLock.id);
+      const vg = views[ai] && views[ai].group;
+      if (vg) {
+        const p = new THREE.Vector3();
+        vg.getWorldPosition(p);
+        const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(vg.quaternion);
+        const right = new THREE.Vector3(1, 0, 0).applyQuaternion(vg.quaternion);
+        const side = aimLock.side || 3.4;
+        const front = aimLock.front == null ? -1.1 : aimLock.front;
+        camera.position.copy(p).addScaledVector(right, side).addScaledVector(fwd, front);
+        camera.position.y = p.y + 1.55;
+        camera.lookAt(p.x, p.y + 1.05, p.z);
+        if (Math.abs(camera.fov - 40) > 0.2) {
+          camera.fov = 40;
+          camera.updateProjectionMatrix();
+        }
+      }
+    }
     const boostFov = you.boost > 0 ? 9 : 0;
     const fov = (portrait ? 74 : 52) + boostFov;
     if (Math.abs(camera.fov - fov) > 0.2) {
@@ -1306,7 +1448,7 @@ export function createWorld(THREE, track) {
       groundBlob(shot.x, shot.y - 0.7, shot.z, shot.kind === "rocket" ? 1.1 : 1.4);
       if (shot.kind === "pine") {
         const g = new THREE.Group();
-        const body = new THREE.Mesh(new THREE.ConeGeometry(0.9, 1.7, 8), rocketMat);
+        const body = new THREE.Mesh(new THREE.ConeGeometry(1.35, 2.05, 8), rocketMat);
         body.rotation.x = Math.PI / 2;
         const band = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.1, 6, 10), emberMat);
         band.rotation.x = Math.PI / 2;
@@ -1339,14 +1481,21 @@ export function createWorld(THREE, track) {
       });
     }
     for (const trap of race.traps || []) {
-      groundBlob(trap.x, trap.y, trap.z, 2.4);
-      const ring = addMesh(ringGeo, new THREE.MeshStandardMaterial({ color: 0xc4522a, emissive: 0x8a3018, emissiveIntensity: 0.8 }), trap.x, trap.y + 0.08, trap.z, 2.65);
-      ring.rotation.x = -Math.PI / 2;
-      for (let i = 0; i < 8; i++) {
-        const m = addMesh(stickGeo, stickMat, trap.x + Math.cos(i) * 1.7, trap.y + 0.7, trap.z + Math.sin(i) * 1.7, 1.7);
-        m.rotation.z = i * 0.7;
-        m.rotation.x = 0.4;
+      const g = new THREE.Group();
+      g.position.set(trap.x, trap.y + 0.08, trap.z);
+      g.rotation.y = trap.yaw || 0;
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.1, 5.6), new THREE.MeshStandardMaterial({
+        color: 0xc4522a, emissive: 0x8a3018, emissiveIntensity: 0.75,
+      }));
+      g.add(plate);
+      for (let i = 0; i < 6; i++) {
+        const m = new THREE.Mesh(stickGeo, stickMat);
+        m.position.set((i % 2 ? -1.5 : 1.5), 0.45, -2.0 + i * 0.72);
+        m.rotation.z = (i - 2.5) * 0.4;
+        m.rotation.x = 0.55;
+        g.add(m);
       }
+      fx.add(g);
     }
     for (const wall of race.surges || []) {
       const g = new THREE.Group();
@@ -1364,17 +1513,22 @@ export function createWorld(THREE, track) {
       if (link.ax == null) continue;
       const dx = link.bx - link.ax;
       const dz = link.bz - link.az;
-      const steps = 7;
+      const len = Math.hypot(dx, dz) || 0.2;
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, len, 6), boltMat);
+      beam.position.set((link.ax + link.bx) * 0.5, link.y || 1, (link.az + link.bz) * 0.5);
+      beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(dx / len, 0.15, dz / len).normalize());
+      fx.add(beam);
+      const steps = 5;
       for (let i = 0; i <= steps; i++) {
         const t = i / steps;
-        addMesh(sapGeo, boltMat, link.ax + dx * t, (link.y || 1) + Math.sin(t * Math.PI) * 0.8, link.az + dz * t, i % 2 ? 0.42 : 0.28);
+        addMesh(sapGeo, boltCoreMat, link.ax + dx * t, (link.y || 1) + Math.sin(t * Math.PI) * 0.45, link.az + dz * t, 0.34);
       }
     }
     for (const patch of race.slicks || []) {
       const puddle = addMesh(diskGeo, new THREE.MeshBasicMaterial({ color: 0xf0a024, transparent: true, opacity: 0.82, side: THREE.DoubleSide }), patch.x, patch.y + 0.08, patch.z, 1);
       puddle.rotation.x = -Math.PI / 2;
       puddle.rotation.z = patch.yaw || 0;
-      puddle.scale.set(2.78, 4.17, 1);
+      puddle.scale.set(1.78, 2.34, 1);
     }
     for (const chip of race.meteors || []) {
       const rock = addMesh(new THREE.DodecahedronGeometry(0.7, 0), rocketMat, chip.x, chip.y, chip.z, 1.3);
@@ -1795,5 +1949,42 @@ export function createWorld(THREE, track) {
     return raycaster.intersectObjects(walls, false).length === 0;
   }
 
-  return { renderer, scene, camera, resize, update, frameCheck, views, setTrack, ready, modelOf, sightClear };
+  function motion() {
+    return views.map((v) => {
+      const drive = (v.wheels || [])[0];
+      const steer = (v.wheels || []).find((w) => w.steer);
+      const tail = v.scarfTails && v.scarfTails[0];
+      return {
+        kind: v.group.userData.kind,
+        spin: drive ? drive.spin : 0,
+        steer: steer ? steer.yawPivot.rotation.y : 0,
+        roll: v.chassis ? v.chassis.rotation.z : 0,
+        pitch: v.chassis ? v.chassis.rotation.x : 0,
+        scarf: tail ? tail.rotation.x : 0,
+        scarfLen: tail ? tail.scale.z : 1,
+        flames: (v.flames || []).length,
+        lanterns: (v.lanterns || []).length,
+      };
+    });
+  }
+
+  function stats() {
+    const info = renderer.info.render;
+    return { calls: info.calls, tris: info.triangles };
+  }
+
+  function aim(id, side, front) {
+    aimLock = id ? { id, side: side == null ? 3.4 : side, front: front == null ? -1.1 : front } : null;
+  }
+
+  function ribbonSpan() {
+    const v = views[0];
+    if (!v || !v.ribbon) return null;
+    v.group.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(v.ribbon);
+    const size = box.getSize(new THREE.Vector3());
+    return { x: size.x, y: size.y, z: size.z, max: Math.max(size.x, size.y, size.z) };
+  }
+
+  return { renderer, scene, camera, resize, update, frameCheck, views, setTrack, ready, modelOf, sightClear, motion, stats, aim, ribbonSpan };
 }

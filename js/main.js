@@ -5,6 +5,7 @@ import {
   createRace,
   createTrack,
   lapOf,
+  frameAt,
   livePlace,
   raceProgress,
   loadSave,
@@ -17,9 +18,9 @@ import {
   setDriver as chooseDriver,
   swapTrack,
   writeSave,
-} from "./sim.js?v=gd34";
-import { createWorld } from "./world.js?v=gd34";
-import { createSfx } from "./audio.js?v=gd34";
+} from "./sim.js?v=gd39";
+import { createWorld } from "./world.js?v=gd39";
+import { createSfx } from "./audio.js?v=gd39";
 
 const app = document.getElementById("app");
 const stage = document.getElementById("stage");
@@ -128,13 +129,41 @@ bindHold("desk-left", "left");
 bindHold("desk-right", "right");
 bindHold("desk-go", "gas");
 bindHold("desk-brake", "brake");
-document.getElementById("desk-fire").addEventListener("pointerdown", (e) => {
+let fireHold = null;
+const LAB_ITEMS = ["boost", "trap", "pine", "surge", "magnet", "buckler", "meteor", "slick"];
+let labCursor = 0;
+
+function cycleHold() {
+  if (!inRace()) return "";
+  const you = humanOf(race);
+  if (!you || you.finished) return "";
+  const id = LAB_ITEMS[labCursor % LAB_ITEMS.length];
+  labCursor += 1;
+  you.held = id;
+  you.holdAge = 0;
+  you.fireCd = 0;
+  return id;
+}
+
+function beginFire(e) {
   e.preventDefault();
+  const you = humanOf(race);
+  fireHold = { t: performance.now(), empty: !(you && you.held), used: false };
   firePulse = true;
-  document.getElementById("desk-fire").classList.add("on");
-});
+  e.currentTarget.classList.add("on");
+}
+
+function endFire(el) {
+  el.classList.remove("on");
+  fireHold = null;
+}
+
+document.getElementById("desk-fire").addEventListener("pointerdown", beginFire);
 document.getElementById("desk-fire").addEventListener("pointerup", () => {
-  document.getElementById("desk-fire").classList.remove("on");
+  endFire(document.getElementById("desk-fire"));
+});
+document.getElementById("desk-fire").addEventListener("pointercancel", () => {
+  endFire(document.getElementById("desk-fire"));
 });
 const stick = document.getElementById("stick");
 const knob = document.getElementById("stick-knob");
@@ -173,13 +202,12 @@ function stickUp() {
 }
 stick.addEventListener("pointerup", stickUp);
 stick.addEventListener("pointercancel", stickUp);
-document.getElementById("btn-fire").addEventListener("pointerdown", (e) => {
-  e.preventDefault();
-  firePulse = true;
-  document.getElementById("btn-fire").classList.add("on");
-});
+document.getElementById("btn-fire").addEventListener("pointerdown", beginFire);
 document.getElementById("btn-fire").addEventListener("pointerup", () => {
-  document.getElementById("btn-fire").classList.remove("on");
+  endFire(document.getElementById("btn-fire"));
+});
+document.getElementById("btn-fire").addEventListener("pointercancel", () => {
+  endFire(document.getElementById("btn-fire"));
 });
 
 function inRace() {
@@ -309,6 +337,11 @@ window.addEventListener("keydown", (e) => {
     ArrowDown: "brake",
     KeyS: "brake",
   };
+  if (e.code === "KeyG" && !e.repeat) {
+    e.preventDefault();
+    cycleHold();
+    return;
+  }
   if (e.code === "KeyF" || e.code === "KeyE" || e.code === "Enter" || e.code === "NumpadEnter") {
     e.preventDefault();
     firePulse = true;
@@ -714,6 +747,14 @@ function hudTick() {
 function frame(now) {
   const dt = Math.min(0.05, (now - lastTick) / 1000);
   lastTick = now;
+  if (fireHold && !fireHold.used && fireHold.empty && performance.now() - fireHold.t >= 1500) {
+    const emptyYou = humanOf(race);
+    if (emptyYou && !emptyYou.held) {
+      cycleHold();
+      fireHold.used = true;
+      fireHold.empty = false;
+    }
+  }
   const inputs = {};
   for (const k of race.karts) {
     inputs[k.id] = k.cpu ? adviceFor(race, k.id) : youInput();
@@ -789,6 +830,14 @@ window.__grand = {
       colors: race.karts.map((k) => k.color),
       model: world.modelOf(you.id).kind,
       sig: world.modelOf(you.id).sig,
+      foes: race.karts.filter((k) => k.cpu).map((k) => ({
+        id: k.id,
+        stun: k.stun || 0,
+        slowT: k.slowT || 0,
+        mul: k.speedMul || 1,
+        flash: k.hitFlash || 0,
+        speed: k.speed || 0,
+      })),
     };
   },
   setDriver(id) {
@@ -821,6 +870,58 @@ window.__grand = {
   },
   sightClear(x, y, z) {
     return world.sightClear(x, y, z);
+  },
+  motion() {
+    return world.motion();
+  },
+  stats() {
+    return world.stats();
+  },
+  aim(id, side, front) {
+    world.aim(id, side, front);
+  },
+  ribbonSpan() {
+    return world.ribbonSpan();
+  },
+  cycleHold,
+  dump() {
+    const you = humanOf(race);
+    return {
+      you: { id: you.id, x: you.x, z: you.z, yaw: you.yaw, t: you.t, stun: you.stun || 0 },
+      karts: race.karts.map((k) => ({ id: k.id, x: k.x, z: k.z, t: k.t, stun: k.stun || 0, mul: k.speedMul || 1, flash: k.hitFlash || 0 })),
+      traps: (race.traps || []).map((t) => ({ x: t.x, z: t.z, yaw: t.yaw, life: t.life, armed: t.armed, owner: t.owner })),
+      surges: (race.surges || []).map((s) => ({ x: s.x, z: s.z, t: s.t, life: s.life, travel: s.travel || 0 })),
+      shots: (race.shots || []).map((s) => ({ x: s.x, z: s.z, life: s.life })),
+      meteors: (race.meteors || []).map((m) => ({ x: m.x, z: m.z, tx: m.tx, tz: m.tz, boom: !!m.boom, age: m.age })),
+      slicks: (race.slicks || []).map((s) => ({ x: s.x, z: s.z })),
+      tethers: (race.tethers || []).length,
+      length: race.track && race.track.length,
+    };
+  },
+  draft(gap) {
+    const you = humanOf(race);
+    const foe = race.karts.find((k) => k.cpu && !k.finished);
+    if (!you || !foe) return "";
+    const dist = gap == null ? 6 : gap;
+    const len = Math.max(80, race.track.length || 1000);
+    const fr = frameAt(race.track, you.t - dist / len);
+    foe.x = fr.p.x + fr.right.x * 0.4;
+    foe.z = fr.p.z + fr.right.z * 0.4;
+    foe.y = fr.p.y;
+    foe.yaw = Math.atan2(fr.tangent.x, fr.tangent.z);
+    foe.t = fr.t;
+    foe.vx = fr.tangent.x * 18;
+    foe.vz = fr.tangent.z * 18;
+    foe.speed = 18;
+    foe.stun = 0;
+    foe.stunCd = 0;
+    foe.buckler = 0;
+    foe.bucklerHits = 0;
+    foe.slowT = 0;
+    foe.speedMul = 1;
+    foe.hitFlash = 0;
+    foe.finished = false;
+    return foe.id;
   },
 };
 requestAnimationFrame(frame);
