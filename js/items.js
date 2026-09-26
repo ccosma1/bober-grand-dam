@@ -1,5 +1,5 @@
 /* Eight lodge throws. One held item. Boxes return in 4.5s. */
-import { frameAt, forward, livePlace } from "./sim.js?v=gd40";
+import { frameAt, forward, livePlace } from "./sim.js?v=gd41";
 
 export const ITEM_IDS = ["boost", "trap", "pine", "surge", "magnet", "buckler", "meteor", "slick"];
 export const ITEM_NAME = {
@@ -31,7 +31,6 @@ const PINE_REACH = 3.05;
 const PINE_SPEED = 48;
 const SURGE_AHEAD = 4;
 const SURGE_SPEED = 46;
-const SURGE_HALF = 2.75;
 const SURGE_ALONG = 2;
 const MAG_RANGE = 70;
 const BUCK_R = 5;
@@ -163,6 +162,7 @@ export function onHitKart(race, kart, spec) {
           fx: "buckler",
           shake: 0.35,
           unblockable: true,
+          by: kart.id,
         });
       }
     }
@@ -194,11 +194,25 @@ export function onHitKart(race, kart, spec) {
   }
   if (!felt) return false;
   kart.stunCd = 0.4;
-  kart.hitFlash = Math.max(kart.hitFlash || 0, 0.4);
   burst(race, spec.fx || "hit", kart.x, kart.y + 1.1, kart.z, spec.fxLife || 0.55);
   juice(race, spec.fx || "hit", spec.shake || 0.35);
   kart.hitTick = (kart.hitTick || 0) + 1;
   noteHit(race, spec.fx || "hit", kart);
+  const mulNow = kart.speedMul && kart.speedMul > 0 ? kart.speedMul : 1;
+  kart.speedMul = Math.min(mulNow, 0.2);
+  kart.slowT = Math.max(kart.slowT || 0, 1.6);
+  kart.vx = (kart.vx || 0) * 0.2;
+  kart.vz = (kart.vz || 0) * 0.2;
+  kart.spinT = 1.4;
+  kart.spinDir = Math.random() < 0.5 ? -1 : 1;
+  kart.dizzyT = 1.8;
+  kart.hitMarkT = 1;
+  kart.hitFlash = 0.8;
+  const you = (race.karts || []).find((k) => k && !k.cpu);
+  if (spec.by != null && you && spec.by === you.id && kart.id !== you.id) {
+    race.hitToast = "HIT " + String(kart.name || kart.id).toUpperCase() + "!";
+    race.hitToastT = 1;
+  }
   return true;
 }
 
@@ -215,12 +229,30 @@ function nearestAhead(race, from, range) {
   for (const k of race.karts) {
     if (k.id === from.id || k.finished) continue;
     const dt = wrapDt(from.t, k.t);
-    if (dt <= 0.002 || dt > 0.42) continue;
+    if (dt <= -0.003 || dt > 0.42) continue;
     const dist = Math.hypot(k.x - from.x, k.z - from.z);
     if (dist > range) continue;
     if (!best || dist < best.dist) best = { kart: k, dist, dt };
   }
   return best;
+}
+
+function pickTarget(race, from, range) {
+  const ahead = nearestAhead(race, from, range);
+  if (ahead) return ahead;
+  let best = null;
+  for (const k of race.karts) {
+    if (k.id === from.id || k.finished) continue;
+    const dist = Math.hypot(k.x - from.x, k.z - from.z);
+    if (dist > range) continue;
+    if (!best || dist < best.dist) best = { kart: k, dist, dt: wrapDt(from.t, k.t) };
+  }
+  return best;
+}
+
+function refundItem(kart, id) {
+  kart.held = id;
+  kart.fireCd = 0.2;
 }
 
 export function launchHeld(race, kart) {
@@ -237,7 +269,7 @@ export function launchHeld(race, kart) {
     juice(race, "boost", 0.4);
     burst(race, "boost", kart.x - f.x * 1.4, kart.y + 0.4, kart.z - f.z * 1.4, 0.45);
   } else if (id === "trap") {
-    const drop = 6;
+    const drop = 3;
     const plate = frameAt(race.track, kart.t - drop / length);
     race.traps.push({
       owner: kart.id,
@@ -252,10 +284,13 @@ export function launchHeld(race, kart) {
     });
     burst(race, "trap", plate.p.x, plate.p.y + 0.5, plate.p.z, 0.45);
   } else if (id === "pine") {
-    const prey = nearestAhead(race, kart, 50);
-    const yaw = prey
-      ? Math.atan2(prey.kart.x - kart.x, prey.kart.z - kart.z)
-      : Math.atan2(f.x, f.z);
+    const prey = pickTarget(race, kart, 70);
+    if (!prey) {
+      refundItem(kart, id);
+      return "";
+    }
+    const yaw = Math.atan2(prey.kart.x - kart.x, prey.kart.z - kart.z);
+    const volley = (race.volley = (race.volley || 0) + 1);
     for (const deg of [-18, -9, 0, 9, 18]) {
       const a = yaw + (deg * Math.PI) / 180;
       const vx = Math.sin(a);
@@ -263,46 +298,53 @@ export function launchHeld(race, kart) {
       race.shots.push({
         kind: "pine",
         owner: kart.id,
+        prey: prey.kart.id,
+        volley,
         x: kart.x + vx * 1.4,
         y: kart.y + 0.9,
         z: kart.z + vz * 1.4,
         vx,
         vz,
         t: kart.t,
-        life: 1.35,
+        life: 1.8,
         age: 0,
         trail: [],
       });
     }
     juice(race, "pine", 0.3);
   } else if (id === "surge") {
-    const ahead = frameAt(race.track, kart.t + SURGE_AHEAD / length);
-    race.surges.push({
-      owner: kart.id,
-      t: ahead.t,
-      x: ahead.p.x,
-      y: ahead.p.y,
-      z: ahead.p.z,
-      yaw: Math.atan2(ahead.tangent.x, ahead.tangent.z),
-      life: 1.4,
-      max: 1.4,
-      travel: 0,
-      hit: {},
-    });
+    const spawnWall = (sample, back) => {
+      race.surges.push({
+        owner: kart.id,
+        t: sample.t,
+        x: sample.p.x,
+        y: sample.p.y,
+        z: sample.p.z,
+        yaw: Math.atan2(sample.tangent.x, sample.tangent.z),
+        life: 1.4,
+        max: 1.4,
+        travel: 0,
+        hit: {},
+        back: !!back,
+      });
+    };
+    spawnWall(frameAt(race.track, kart.t + SURGE_AHEAD / length), false);
+    spawnWall(frameAt(race.track, kart.t - 4 / length), true);
     juice(race, "surge", 0.45);
   } else if (id === "magnet") {
-    const tgt = nearestAhead(race, kart, MAG_RANGE);
-    if (tgt) {
-      race.tethers.push({ owner: kart.id, id: tgt.kart.id, life: 1.6, pull: 18, pulse: 0, hit: false });
-      onHitKart(race, tgt.kart, { stun: 0.4, slow: 1.6, mul: 0.32, fx: "magnet", shake: 0.45 });
-      tgt.kart.slowT = Math.max(tgt.kart.slowT || 0, 1.6);
-      tgt.kart.speedMul = Math.min(tgt.kart.speedMul > 0 ? tgt.kart.speedMul : 1, 0.32);
-    } else {
-      burst(race, "magnet", kart.x, kart.y + 1.2, kart.z, 0.3);
+    const tgt = pickTarget(race, kart, 90);
+    if (!tgt) {
+      refundItem(kart, id);
+      return "";
     }
+    race.tethers.push({ owner: kart.id, id: tgt.kart.id, life: 1.6, pull: 18, pulse: 0, hit: false });
+    onHitKart(race, tgt.kart, { stun: 0.4, slow: 1.6, mul: 0.32, fx: "magnet", shake: 0.45, by: kart.id });
+    tgt.kart.slowT = Math.max(tgt.kart.slowT || 0, 1.6);
+    tgt.kart.speedMul = Math.min(tgt.kart.speedMul > 0 ? tgt.kart.speedMul : 1, 0.2);
   } else if (id === "buckler") {
     kart.buckler = 2.5;
     kart.bucklerHits = 1;
+    kart.buckHit = {};
     juice(race, "buckler", 0.3);
     burst(race, "buckler", kart.x, kart.y + 1, kart.z, 0.5);
     for (const k of race.karts) {
@@ -313,7 +355,7 @@ export function launchHeld(race, kart) {
       if (d > BUCK_R + HURT) continue;
       const nx = dx / d;
       const nz = dz / d;
-      onHitKart(race, k, {
+      const landed = onHitKart(race, k, {
         stun: 0.4,
         slow: 0.5,
         mul: 0.55,
@@ -322,17 +364,21 @@ export function launchHeld(race, kart) {
         nudge: { x: nx * 3.2, z: nz * 3.2 },
         fx: "buckler",
         shake: 0.4,
+        by: kart.id,
       });
+      if (landed) kart.buckHit[k.id] = true;
     }
   } else if (id === "meteor") {
-    const prey = nearestAhead(race, kart, 70);
-    const leadT = prey
-      ? prey.kart.t + (Math.max(12, prey.kart.speed || 16) * 0.4) / length
-      : kart.t + 14 / length;
+    const prey = pickTarget(race, kart, 90);
+    if (!prey) {
+      refundItem(kart, id);
+      return "";
+    }
+    const leadT = prey.kart.t + (Math.max(12, prey.kart.speed || 16) * 0.4) / length;
     const dest = frameAt(race.track, leadT);
     race.meteors.push({
       owner: kart.id,
-      prey: prey ? prey.kart.id : null,
+      prey: prey.kart.id,
       x: dest.p.x,
       y: dest.p.y + 9,
       z: dest.p.z,
@@ -366,10 +412,35 @@ export function launchHeld(race, kart) {
 
 function stepItems(race, dt) {
   if (race.shake > 0) race.shake = Math.max(0, race.shake - dt * 1.6);
+  if (race.hitToastT > 0) race.hitToastT = Math.max(0, race.hitToastT - dt);
   for (const k of race.karts) {
     if (k.held) k.holdAge = (k.holdAge || 0) + dt;
     if (k.got > 0) k.got -= dt;
-    if (k.buckler > 0) k.buckler = Math.max(0, k.buckler - dt);
+    if (k.buckler > 0) {
+      k.buckler = Math.max(0, k.buckler - dt);
+      if (!k.buckHit) k.buckHit = {};
+      for (const other of race.karts) {
+        if (other.id === k.id || other.finished || k.buckHit[other.id]) continue;
+        const dx = other.x - k.x;
+        const dz = other.z - k.z;
+        const d = Math.hypot(dx, dz) || 1;
+        if (d > BUCK_R + HURT) continue;
+        const nx = dx / d;
+        const nz = dz / d;
+        const landed = onHitKart(race, other, {
+          stun: 0.4,
+          slow: 0.5,
+          mul: 0.55,
+          ix: nx * 8,
+          iz: nz * 8,
+          nudge: { x: nx * 3.2, z: nz * 3.2 },
+          fx: "buckler",
+          shake: 0.4,
+          by: k.id,
+        });
+        if (landed) k.buckHit[other.id] = true;
+      }
+    }
   }
   for (const box of race.boxes || []) {
     if (!box.alive) {
@@ -399,10 +470,25 @@ function stepItems(race, dt) {
     }
   }
   for (const shot of race.shots || []) {
+    if (shot.life <= 0) continue;
     shot.life -= dt;
     shot.age = (shot.age || 0) + dt;
     shot.trail.push({ x: shot.x, y: shot.y, z: shot.z });
     if (shot.trail.length > 8) shot.trail.shift();
+    if (shot.prey) {
+      const prey = race.karts.find((k) => k.id === shot.prey && !k.finished);
+      if (prey) {
+        const dx = prey.x - shot.x;
+        const dz = prey.z - shot.z;
+        const dist = Math.hypot(dx, dz) || 1;
+        const aim = Math.min(1, dt * 6);
+        shot.vx += (dx / dist - shot.vx) * aim;
+        shot.vz += (dz / dist - shot.vz) * aim;
+        const n = Math.hypot(shot.vx, shot.vz) || 1;
+        shot.vx /= n;
+        shot.vz /= n;
+      }
+    }
     shot.x += shot.vx * PINE_SPEED * dt;
     shot.z += shot.vz * PINE_SPEED * dt;
     let best = shot.t;
@@ -425,8 +511,10 @@ function stepItems(race, dt) {
         const pdz = k.z - shot.z;
         const pineReach = Math.max(PINE_R, PINE_REACH);
         if (pdx * pdx + pdz * pdz > pineReach * pineReach) continue;
-        if (!onHitKart(race, k, { stun: 0.6, slow: 0.8, mul: 0.5, fx: "pine", shake: 0.32 })) continue;
-        shot.life = 0;
+        if (!onHitKart(race, k, { stun: 0.6, slow: 0.8, mul: 0.5, fx: "pine", shake: 0.32, by: shot.owner })) continue;
+        for (const other of race.shots) {
+          if (other.owner === shot.owner && other.volley === shot.volley) other.life = 0;
+        }
         break;
       }
     }
@@ -458,9 +546,9 @@ function stepItems(race, dt) {
         iz: -back.z * 10,
         fx: "trap",
         shake: 0.55,
+        by: trap.owner,
       });
       if (!landed) continue;
-      k.yaw += 1.1;
       trap.life = 0;
       break;
     }
@@ -470,9 +558,9 @@ function stepItems(race, dt) {
   const length = Math.max(80, race.track.length || 1000);
   for (const wall of race.surges || []) {
     wall.life -= dt;
-    const step = SURGE_SPEED * dt;
+    const step = SURGE_SPEED * dt * (wall.back ? -1 : 1);
     wall.t = wall.t + step / length;
-    if (wall.t >= 1) wall.t -= 1;
+    wall.t = ((wall.t % 1) + 1) % 1;
     const fr = frameAt(race.track, wall.t);
     wall.x = fr.p.x;
     wall.y = fr.p.y;
@@ -485,7 +573,8 @@ function stepItems(race, dt) {
       const dz = k.z - wall.z;
       const across = dx * fr.right.x + dz * fr.right.z;
       const along = dx * fr.tangent.x + dz * fr.tangent.z;
-      const inSlab = Math.abs(across) <= SURGE_HALF && Math.abs(along) <= SURGE_ALONG;
+      const surgeHalf = fr.width * 0.5;
+      const inSlab = Math.abs(across) <= surgeHalf && Math.abs(along) <= SURGE_ALONG;
       if (!inSlab && dx * dx + dz * dz > REACH * REACH) continue;
       const sign = Math.sign(across) || 1;
       const landed = onHitKart(race, k, {
@@ -497,6 +586,7 @@ function stepItems(race, dt) {
         nudge: { x: fr.right.x * sign * 4, z: fr.right.z * sign * 4 },
         fx: "surge",
         shake: 0.5,
+        by: wall.owner,
       });
       if (landed) wall.hit[k.id] = true;
     }
@@ -526,7 +616,7 @@ function stepItems(race, dt) {
         link.hauled = (link.hauled || 0) + step;
       }
       if ((tgt.stun || 0) < 0.35) {
-        onHitKart(race, tgt, { stun: 0.35, slow: 1.6, mul: 0.32, fx: "magnet", shake: 0.3 });
+        onHitKart(race, tgt, { stun: 0.35, slow: 1.6, mul: 0.32, fx: "magnet", shake: 0.3, by: link.owner });
       }
     }
     link.ax = owner.x;
@@ -563,7 +653,7 @@ function stepItems(race, dt) {
       juice(race, "meteor", 0.7);
       for (const kart of race.karts) {
         if (kart.finished) continue;
-        if (kart.id === chip.owner && chip.age < 0.2) continue;
+        if (kart.id === chip.owner) continue;
         const mdx = kart.x - chip.x;
         const mdz = kart.z - chip.z;
         if (mdx * mdx + mdz * mdz > METEOR_R * METEOR_R) continue;
@@ -576,6 +666,7 @@ function stepItems(race, dt) {
           iz: (mdz / d) * 8,
           fx: "meteor",
           shake: 0.6,
+          by: chip.owner,
         });
       }
     }
@@ -596,7 +687,7 @@ function stepItems(race, dt) {
       const across = dx * c - dz * s;
       const inPatch = Math.abs(across) <= SLICK_W && Math.abs(along) <= SLICK_L;
       if (!inPatch && dx * dx + dz * dz > REACH * REACH) continue;
-      if (!onHitKart(race, k, { slow: 1.6, mul: 0.3, fx: "slick", shake: 0.3 })) continue;
+      if (!onHitKart(race, k, { stun: 0.3, slow: 1.6, mul: 0.2, fx: "slick", shake: 0.3, by: patch.owner })) continue;
       patch.hit[k.id] = true;
     }
   }
@@ -752,6 +843,7 @@ export function testItems(race, fails) {
 
   clear();
   park(race, you, 0.7);
+  park(race, foe, you.t + 12 / length);
   arm("meteor");
   const chip = race.meteors[race.meteors.length - 1];
   if (!chip) fails.push("meteor drop");
@@ -766,6 +858,50 @@ export function testItems(race, fails) {
     for (let i = 0; i < 40; i++) stepItems(race, 1 / 60);
     if ((foe.hitTick || 0) <= metBefore || foe.stun < 1) fails.push("meteor hit");
     if (!race.craters.length) fails.push("crater");
+    if ((you.stun || 0) > 0.05) fails.push("meteor self " + (you.stun || 0).toFixed(2));
+  }
+
+  clear();
+  park(race, you, 0.74);
+  park(race, foe, you.t + 8 / length);
+  you.stun = 0;
+  you.stunCd = 0;
+  you.hitTick = you.hitTick || 0;
+  const selfBefore = you.hitTick;
+  arm("meteor");
+  const own = race.meteors[race.meteors.length - 1];
+  if (!own) fails.push("meteor own");
+  else {
+    you.x = own.tx;
+    you.z = own.tz;
+    you.y = own.ty;
+    foe.x = own.tx + 1.2;
+    foe.z = own.tz;
+    foe.stun = 0;
+    foe.stunCd = 0;
+    for (let i = 0; i < 40; i++) stepItems(race, 1 / 60);
+    if ((you.hitTick || 0) > selfBefore || (you.stun || 0) > 0.05) fails.push("meteor owner");
+    if ((foe.stun || 0) < 1) fails.push("meteor still");
+  }
+
+  clear();
+  park(race, you, 0.2);
+  for (const k of race.karts) {
+    if (k.id === you.id) continue;
+    k.finished = true;
+    k.x += 800;
+    k.z += 800;
+  }
+  for (const miss of ["pine", "magnet", "meteor"]) {
+    clear();
+    you.held = miss;
+    you.fireCd = 0;
+    you.stun = 0;
+    const fired = launchHeld(race, you);
+    if (fired || you.held !== miss || you.fireCd > 0.25) fails.push("refund " + miss + " " + fired);
+    if (miss === "pine" && race.shots.length) fails.push("pine spent");
+    if (miss === "meteor" && race.meteors.length) fails.push("meteor spent");
+    if (miss === "magnet" && race.tethers.length) fails.push("magnet spent");
   }
 
   clear();

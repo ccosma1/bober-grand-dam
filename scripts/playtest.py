@@ -7,7 +7,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "assets" / "ref"
 OUT.mkdir(parents=True, exist_ok=True)
-URL = "http://127.0.0.1:8771/?v=gd40"
+URL = "http://127.0.0.1:8791/?v=gd41"
 
 
 def shot(page, name):
@@ -338,6 +338,8 @@ def main():
         if left_d <= 0.05:
             fails.append("left not left " + str(left_d))
         for item in ("boost", "trap", "pine", "surge", "magnet", "buckler", "meteor", "slick"):
+            if item != "boost":
+                page.evaluate("() => window.__grand.draft(-14)")
             got = page.evaluate("(id) => { window.__grand.grant(id); return window.__grand.fireNow(); }", item)
             print("fx", item, got)
             if got != item:
@@ -350,7 +352,7 @@ def main():
             fails.append("hud mark " + page.locator("#held-mark").inner_text())
         if page.locator("#btn-fire").inner_text().strip() != "BOOST":
             fails.append("fire label " + page.locator("#btn-fire").inner_text())
-        page.evaluate("() => window.__grand.grant('pine')")
+        page.evaluate("() => { window.__grand.draft(-14); window.__grand.grant('pine'); }")
         page.click("#btn-fire")
         page.wait_for_timeout(120)
         if page.evaluate("() => window.__grand.snapshot().held"):

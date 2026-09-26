@@ -2,7 +2,7 @@
    Static parts merge by material. Nails and rivets are instanced.
    Player detail is the full mesh; CPU detail drops whiskers, tufts, and spokes. */
 
-import { mergeGeometries } from "../vendor/BufferGeometryUtils.js?v=gd40";
+import { mergeGeometries } from "../vendor/BufferGeometryUtils.js?v=gd41";
 
 const GEO = new Map();
 const BUILD = { lod: false, curve: 2 };
@@ -879,19 +879,27 @@ function flamePose(mesh, clusters) {
 
 function pearGeo(THREE) {
   return lathe(THREE, [
-    [0.05, 0], [0.18, 0.08], [0.34, 0.26], [0.44, 0.5], [0.42, 0.74],
-    [0.34, 0.96], [0.26, 1.12], [0.16, 1.26], [0.07, 1.34],
-  ], 24);
+    [0.04, 0], [0.16, 0.06], [0.3, 0.2], [0.4, 0.4], [0.48, 0.62],
+    [0.4, 0.84], [0.28, 1.02], [0.16, 1.18], [0.06, 1.28],
+  ], BUILD.lod ? 12 : 16);
 }
 
 function headGeo(THREE) {
   return lathe(THREE, [
-    [0.04, 0], [0.2, 0.06], [0.3, 0.18], [0.32, 0.34], [0.24, 0.48], [0.1, 0.56], [0.03, 0.6],
-  ], BUILD.lod ? 16 : 20);
+    [0.05, 0], [0.12, 0.03], [0.18, 0.1], [0.22, 0.2],
+    [0.2, 0.32], [0.14, 0.42], [0.07, 0.48], [0.02, 0.52],
+  ], BUILD.lod ? 10 : 14);
+}
+
+function muzzleGeo(THREE) {
+  return lathe(THREE, [
+    [0.012, 0], [0.05, 0.02], [0.09, 0.07], [0.11, 0.14],
+    [0.1, 0.24], [0.07, 0.34], [0.035, 0.4],
+  ], BUILD.lod ? 8 : 12);
 }
 
 function earGeo(THREE) {
-  return lathe(THREE, [[0.02, 0], [0.07, 0.02], [0.09, 0.07], [0.05, 0.12], [0.015, 0.15]], 8);
+  return lathe(THREE, [[0.02, 0], [0.09, 0.03], [0.11, 0.09], [0.06, 0.15], [0.02, 0.18]], BUILD.lod ? 6 : 8);
 }
 
 function addCrew(THREE, chassis, spec, mats, shadow) {
@@ -915,6 +923,26 @@ function addCrew(THREE, chassis, spec, mats, shadow) {
     const z = Math.sin(ang) * rad * spec.body[2];
     const tip = i % 3 === 0 ? 0xa06a3c : 0x8b5a2b;
     bodyParts.push(prep(THREE, card, tip, FUR, x, y, z, (rand() - 0.5) * 0.5, ang, (rand() - 0.5) * 0.8));
+  }
+  const shoulderBulb = lathe(THREE, [[0.02, 0], [0.09, 0.02], [0.11, 0.08], [0.04, 0.14]], BUILD.lod ? 6 : 8);
+  for (const side of [-1, 1]) {
+    bodyParts.push(prep(THREE, shoulderBulb, spec.fur || 0x6b4226, FUR, side * 0.34 * spec.body[0], 0.55, 0.02));
+    if (BUILD.lod && side > 0) continue;
+    for (let i = 0; i < (BUILD.lod ? 2 : 4); i++) {
+      const ang = -0.4 + i * 0.35;
+      bodyParts.push(prep(
+        THREE,
+        card,
+        i % 2 ? 0xa06a3c : 0xc4926a,
+        FUR,
+        side * (0.36 * spec.body[0] + Math.cos(ang) * 0.04),
+        0.58 + Math.sin(ang) * 0.06,
+        0.08,
+        ang,
+        side * 0.6,
+        side * 0.4
+      ));
+    }
   }
   const arm = lathe(THREE, [[0.025, 0], [0.07, 0.04], [0.085, 0.16], [0.07, 0.3], [0.055, 0.42]], 10);
   const pawBoard = board(THREE, 0.16, 0.11, 0.045, 0.02);
@@ -946,7 +974,7 @@ function addCrew(THREE, chassis, spec, mats, shadow) {
         FUR,
         p[0] + side * (c - 1.5) * 0.028,
         p[1] - 0.01,
-        p[2] + 0.07,
+        p[2] + 0.1,
         0.9,
         0,
         side * 0.15
@@ -988,48 +1016,69 @@ function addCrew(THREE, chassis, spec, mats, shadow) {
   const head = new THREE.Group();
   head.position.set(0, spec.neckY, spec.neckZ);
   const headParts = [];
-  headParts.push(prep(THREE, headGeo(THREE), spec.fur || 0x6b4226, FUR, 0, 0.05, 0, 0, 0, 0, spec.head[0], spec.head[1], spec.head[2]));
-  const muzzle = lathe(THREE, [[0.02, 0], [0.12, 0.02], [0.14, 0.08], [0.08, 0.14], [0.02, 0.16]], 12);
-  headParts.push(prep(THREE, muzzle, 0x8b5a2b, FUR, 0, 0.02, spec.head[2] * 0.42, -Math.PI / 2, 0, 0, spec.head[0] * 0.85, 0.7, spec.head[1] * 0.7));
+  const hx = spec.head[0];
+  const hy = spec.head[1];
+  const hz = spec.head[2];
+  headParts.push(prep(THREE, headGeo(THREE), spec.fur || 0x6b4226, FUR, 0, 0.02, -0.02, 0, 0, 0, hx, hy, hz));
+  headParts.push(prep(THREE, muzzleGeo(THREE), 0x8b5a2b, FUR, 0, -0.04, hz * 0.18, Math.PI / 2, 0, 0, hx * 0.95, 1.15, hy * 0.85));
+  const noseL = lathe(THREE, [[0.01, 0], [0.05, 0.012], [0.055, 0.04], [0.02, 0.07]], 8);
+  const snoutZ = hz * 0.62;
+  headParts.push(prep(THREE, noseL, 0x2a211c, NOSE, 0, -0.05, snoutZ, Math.PI / 2, 0, 0, 1.05, 0.7, 0.85));
+  const nostril = lathe(THREE, [[0.004, 0], [0.018, 0.004], [0.016, 0.012], [0.004, 0.018]], 6);
   for (const side of [-1, 1]) {
-    headParts.push(prep(THREE, earGeo(THREE), 0x3a2618, FUR, side * spec.head[0] * 0.32, spec.head[1] * 0.42, -0.02, 0.3, 0, side * 0.5, 1, 1, 0.45));
-    const cheek = lathe(THREE, [[0.02, 0], [0.08, 0.02], [0.09, 0.06], [0.03, 0.1]], 8);
-    headParts.push(prep(THREE, cheek, 0xa87a55, FUR, side * spec.head[0] * 0.22, -0.02, spec.head[2] * 0.28, 0, 0, side * 0.4, 1, 0.7, 0.8));
+    headParts.push(prep(THREE, nostril, 0x140e0c, NOSE, side * 0.028, -0.045, snoutZ + 0.04, Math.PI / 2, 0, side * 0.3, 1, 0.55, 0.8));
+    headParts.push(prep(THREE, earGeo(THREE), 0x3a2618, FUR, side * hx * 0.42, hy * 0.28, -0.04, 0.15, 0, side * 0.7, 1.05, 1.15, 0.55));
+    const cheek = lathe(THREE, [[0.02, 0], [0.11, 0.03], [0.13, 0.09], [0.04, 0.15]], BUILD.lod ? 6 : 8);
+    headParts.push(prep(THREE, cheek, 0xa87a55, FUR, side * hx * 0.28, -0.06, hz * 0.34, 0, 0, side * 0.35, 1.25, 0.9, 1));
+    const brow = lathe(THREE, [[0.015, 0], [0.07, 0.012], [0.05, 0.03], [0.012, 0.04]], 6);
+    headParts.push(prep(THREE, brow, 0x4a301c, FUR, side * hx * 0.2, hy * 0.16, hz * 0.4, 0.5, 0, side * 0.5, 1.3, 0.45, 0.7));
   }
-  const noseL = lathe(THREE, [[0.012, 0], [0.055, 0.012], [0.06, 0.04], [0.02, 0.07]], 8);
-  headParts.push(prep(THREE, noseL, 0xffffff, NOSE, 0, -0.02, spec.head[2] * 0.48, -Math.PI / 2, 0, 0, 0.85, 0.55, 0.7));
-  const bead = lathe(THREE, [[0.01, 0], [0.04, 0.012], [0.045, 0.04], [0.015, 0.065]], spec.eyeBig ? 10 : 8);
-  const irisL = lathe(THREE, [[0.004, 0], [0.022, 0.004], [0.02, 0.012], [0.004, 0.016]], 8);
+  const bead = lathe(THREE, [[0.012, 0], [0.055, 0.016], [0.06, 0.05], [0.02, 0.08]], spec.eyeBig ? 10 : 8);
+  const irisL = lathe(THREE, [[0.004, 0], [0.028, 0.005], [0.026, 0.016], [0.005, 0.022]], 8);
   for (const side of [-1, 1]) {
-    const ex = side * spec.head[0] * (spec.eyeBig ? 0.16 : 0.2);
-    const ey = spec.head[1] * 0.08;
-    const ez = spec.head[2] * 0.34;
+    const ex = side * hx * (spec.eyeBig ? 0.2 : 0.22);
+    const ey = hy * 0.06;
+    const ez = hz * 0.42;
     if (spec.eyeBig) {
-      headParts.push(prep(THREE, bead, 0xf7f4ee, EYE, ex, ey, ez, 0, 0, 0, 1.35, 1.55, 1));
-      headParts.push(prep(THREE, irisL, 0x6b3a1a, EYE, ex, ey, ez + 0.045, -Math.PI / 2, 0, 0, 1.1, 0.35, 1.1));
-      headParts.push(prep(THREE, irisL, 0x14110f, EYE, ex, ey, ez + 0.055, -Math.PI / 2, 0, 0, 0.45, 0.2, 0.45));
+      headParts.push(prep(THREE, bead, 0xf7f4ee, EYE, ex, ey, ez, 0, 0, 0, 1.55, 1.7, 1.05));
+      headParts.push(prep(THREE, irisL, 0x6b3a1a, EYE, ex, ey, ez + 0.055, Math.PI / 2, 0, 0, 1.25, 0.4, 1.25));
+      headParts.push(prep(THREE, irisL, 0x14110f, EYE, ex, ey, ez + 0.068, Math.PI / 2, 0, 0, 0.55, 0.22, 0.55));
     } else {
-      headParts.push(prep(THREE, bead, 0x14110f, EYE, ex, ey, ez, 0, 0, 0, 1, 1, 0.85));
+      headParts.push(prep(THREE, bead, 0xf4efe6, EYE, ex, ey, ez, 0, 0, 0, 1.15, 1.25, 0.9));
+      headParts.push(prep(THREE, irisL, 0x1a140f, EYE, ex, ey, ez + 0.05, Math.PI / 2, 0, 0, 0.85, 0.28, 0.85));
     }
-    const glint = new THREE.PlaneGeometry(0.016, 0.016);
-    headParts.push(prep(THREE, glint, 0xffffff, EYE, ex + 0.012, ey + 0.016, ez + (spec.eyeBig ? 0.07 : 0.05)));
+    const glint = new THREE.PlaneGeometry(spec.eyeBig ? 0.028 : 0.02, spec.eyeBig ? 0.028 : 0.02);
+    headParts.push(prep(THREE, glint, 0xffffff, EYE, ex + 0.016, ey + 0.02, ez + (spec.eyeBig ? 0.09 : 0.07)));
   }
   const tooth = chip(THREE, spec.toothW, spec.toothH, spec.toothD);
-  headParts.push(prep(THREE, tooth, spec.tooth, TEETH, -spec.toothW * 0.62, -0.02, spec.head[2] * 0.34, 0.35, 0, 0));
-  headParts.push(prep(THREE, tooth, spec.tooth, TEETH, spec.toothW * 0.62, -0.02, spec.head[2] * 0.34, 0.35, 0, 0));
+  const toothZ = snoutZ - 0.02;
+  const toothY = -0.12;
+  headParts.push(prep(THREE, tooth, spec.tooth, TEETH, -spec.toothW * 0.7, toothY, toothZ, 0.15, 0, 0));
+  headParts.push(prep(THREE, tooth, spec.tooth, TEETH, spec.toothW * 0.7, toothY, toothZ, 0.15, 0, 0));
   if (spec.tongue) {
     const tongue = chip(THREE, 0.08, 0.05, 0.016);
-    headParts.push(prep(THREE, tongue, 0xffffff, TONGUE, 0, -0.05, spec.head[2] * 0.3, 0.9, 0, 0));
+    headParts.push(prep(THREE, tongue, 0xffffff, TONGUE, 0, toothY - 0.02, toothZ - 0.04, 0.9, 0, 0));
+  }
+  const furCard = new THREE.PlaneGeometry(0.1, 0.16);
+  const tuftN = BUILD.lod ? 5 : 14;
+  for (let i = 0; i < tuftN; i++) {
+    const crown = i < tuftN * 0.45;
+    const side = i % 2 ? 1 : -1;
+    const ang = (i / tuftN) * 3.2 - 0.4;
+    const x = crown ? Math.sin(ang) * hx * 0.16 : side * hx * 0.3;
+    const y = crown ? hy * 0.34 : -0.02;
+    const z = crown ? -0.02 : hz * 0.28;
+    headParts.push(prep(THREE, furCard, i % 3 === 0 ? 0xc4926a : 0x8b5a2b, FUR, x, y, z, crown ? -0.6 : 0.2, ang, side * 0.5));
   }
   if (!BUILD.lod) {
     for (const side of [-1, 1]) {
-      for (let i = 0; i < 6; i++) {
-        const y = -0.02 + (i - 2.5) * 0.02;
+      for (let i = 0; i < 5; i++) {
+        const y = -0.06 + (i - 2) * 0.022;
         const whisk = tube(THREE, [
-          [side * spec.head[0] * 0.16, y, spec.head[2] * 0.42],
-          [side * spec.head[0] * 0.32, y + (i - 2) * 0.008, spec.head[2] * 0.46],
-          [side * spec.head[0] * 0.46, y + (i - 2.5) * 0.012, spec.head[2] * 0.4],
-        ], 0.004, 3, 4);
+          [side * hx * 0.22, y, snoutZ * 0.72],
+          [side * hx * 0.42, y + (i - 2) * 0.01, snoutZ * 0.9],
+          [side * hx * 0.62, y + (i - 2.2) * 0.016, snoutZ * 0.7],
+        ], 0.0045, 3, 4);
         headParts.push(prep(THREE, whisk, 0xe7d7c4, FUR));
       }
     }
@@ -1198,13 +1247,13 @@ function buildBober(THREE, mats, shadow) {
     seed: 81,
     seat: [0, 0.78, 0.02],
     body: [1.05, 1, 0.92],
-    head: [1.05, 1, 0.95],
+    head: [1.2, 1.14, 1.16],
     neckY: 0.95,
     neckZ: 0.08,
     tooth: 0xf08a24,
-    toothW: 0.055,
-    toothH: 0.12,
-    toothD: 0.035,
+    toothW: 0.07,
+    toothH: 0.16,
+    toothD: 0.04,
     scarfA: 0x3fa535,
     scarfB: 0x2e7d2a,
     scarfR: 0.045,
@@ -1212,7 +1261,7 @@ function buildBober(THREE, mats, shadow) {
     tailLen: 0.72,
     tailGap: 0.14,
     paws: [[-0.52, 0.28, 0.22], [0.52, 0.26, 0.18]],
-    tail: { x: 0.28, y: 0.22, z: -0.42, w: 0.42, l: 0.62, rx: -0.8, ry: 0.5 },
+    tail: { x: 0, y: 0.28, z: -0.62, w: 0.5, l: 0.72, rx: -1.05, ry: 0.12 },
     tufts: 42,
   }, mats, shadow);
   return pack(THREE, g, chassis, wheels, "bober", crew, mats);
@@ -1287,13 +1336,13 @@ function buildMuscle(THREE, mats, shadow) {
     seed: 82,
     seat: [0, 0.86, 0.04],
     body: [1.22, 0.96, 0.9],
-    head: [1.02, 0.96, 0.9],
+    head: [1.18, 1.1, 1.12],
     neckY: 0.9,
     neckZ: 0.1,
     tooth: 0xefe3c2,
-    toothW: 0.07,
-    toothH: 0.11,
-    toothD: 0.04,
+    toothW: 0.08,
+    toothH: 0.16,
+    toothD: 0.042,
     scarfA: 0xc4432a,
     scarfB: 0x9a301c,
     scarfR: 0.055,
@@ -1302,7 +1351,7 @@ function buildMuscle(THREE, mats, shadow) {
     tailLen: 0.58,
     tailGap: 0.16,
     paws: [[-0.62, 0.32, 0.2], [0.6, 0.3, 0.16]],
-    tail: { x: 0.2, y: 0.18, z: -0.35, w: 0.4, l: 0.5, rx: -0.7, ry: 0.35 },
+    tail: { x: 0, y: 0.24, z: -0.55, w: 0.48, l: 0.62, rx: -1.0, ry: 0.1 },
     tufts: 40,
   }, mats, shadow);
   const flameGeos = [];
@@ -1453,13 +1502,13 @@ function buildNib(THREE, mats, shadow) {
     seed: 84,
     seat: [0, 0.82, 0.12],
     body: [1.02, 0.98, 0.9],
-    head: [0.98, 0.94, 0.88],
+    head: [1.16, 1.1, 1.1],
     neckY: 0.9,
     neckZ: 0.1,
     tooth: 0xe8b84a,
-    toothW: 0.04,
-    toothH: 0.07,
-    toothD: 0.03,
+    toothW: 0.07,
+    toothH: 0.15,
+    toothD: 0.04,
     scarfA: 0xb53a2a,
     scarfB: 0x8a2a22,
     scarfR: 0.038,
@@ -1470,7 +1519,7 @@ function buildNib(THREE, mats, shadow) {
     harness: true,
     reins: true,
     paws: [[-0.22, 0.32, 0.42], [0.22, 0.32, 0.42]],
-    tail: { x: -0.15, y: 0.15, z: -0.4, w: 0.36, l: 0.48, rx: -0.6, ry: -0.2 },
+    tail: { x: 0, y: 0.22, z: -0.58, w: 0.46, l: 0.64, rx: -1.0, ry: 0.08 },
     tufts: 36,
   }, mats, shadow);
   const built = pack(THREE, g, chassis, wheels, "nib", crew, mats);
@@ -1549,13 +1598,13 @@ function buildTall(THREE, mats, shadow) {
     seed: 83,
     seat: [0, 0.95, 0.02],
     body: [0.82, 1.12, 0.72],
-    head: [1.15, 1.05, 1.05],
+    head: [1.28, 1.18, 1.2],
     neckY: 1.12,
     neckZ: 0.12,
     tooth: 0xf6ebd9,
-    toothW: 0.07,
-    toothH: 0.16,
-    toothD: 0.04,
+    toothW: 0.08,
+    toothH: 0.18,
+    toothD: 0.042,
     eyeBig: true,
     tongue: true,
     scarfA: 0xe88a1a,
@@ -1566,7 +1615,7 @@ function buildTall(THREE, mats, shadow) {
     tailLen: 0.7,
     tailGap: 0.1,
     paws: [[-0.28, 0.28, 0.62], [0.28, 0.28, 0.62]],
-    tail: { x: 0.42, y: 0.05, z: -1.05, w: 0.7, l: 0.95, rx: -1.15, ry: 0.7, rz: -0.35 },
+    tail: { x: 0.05, y: 0.12, z: -1.15, w: 0.72, l: 0.98, rx: -1.2, ry: 0.15, rz: -0.1 },
     tufts: 38,
   }, mats, shadow);
   return pack(THREE, g, chassis, wheels, "tall", crew, mats);

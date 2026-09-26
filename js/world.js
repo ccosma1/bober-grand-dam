@@ -1,5 +1,5 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd40";
-import { buildKart } from "./racers.js?v=gd40";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd41";
+import { buildKart } from "./racers.js?v=gd41";
 
 function canvasTex(THREE, draw, w, h, repeat) {
   const c = document.createElement("canvas");
@@ -1103,6 +1103,46 @@ export function createWorld(THREE, track) {
     return { ok: true, nose: { x: nose.x, z: nose.z } };
   }
 
+  let hitTex = null;
+  function ensureReact(view) {
+    if (view.stars) return;
+    view.stars = new THREE.Group();
+    const geo = new THREE.OctahedronGeometry(0.2);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffe14a });
+    for (let i = 0; i < 5; i++) {
+      const star = new THREE.Mesh(geo, mat);
+      star.userData.ang = (i / 5) * Math.PI * 2;
+      view.stars.add(star);
+    }
+    view.stars.visible = false;
+    view.group.add(view.stars);
+    if (!hitTex) {
+      const canvas = document.createElement("canvas");
+      canvas.width = 256;
+      canvas.height = 128;
+      const g = canvas.getContext("2d");
+      g.clearRect(0, 0, 256, 128);
+      g.font = "900 86px sans-serif";
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.lineJoin = "round";
+      g.lineWidth = 16;
+      g.strokeStyle = "#d01212";
+      g.strokeText("HIT!", 128, 68);
+      g.fillStyle = "#ffe14a";
+      g.fillText("HIT!", 128, 68);
+      hitTex = new THREE.CanvasTexture(canvas);
+      if (THREE.SRGBColorSpace) hitTex.colorSpace = THREE.SRGBColorSpace;
+      hitTex.needsUpdate = true;
+    }
+    const smat = new THREE.SpriteMaterial({ map: hitTex, transparent: true, depthTest: false });
+    view.hitMark = new THREE.Sprite(smat);
+    view.hitMark.scale.set(3, 1.5, 1);
+    view.hitMark.renderOrder = 999;
+    view.hitMark.visible = false;
+    view.group.add(view.hitMark);
+  }
+
   function poseCart(view, k, dt, race) {
     const speed = k.speed || 0;
     const nose = forward(k.yaw);
@@ -1110,8 +1150,7 @@ export function createWorld(THREE, track) {
     const steer = Math.max(-1, Math.min(1, k.steerSm || 0));
     const stunned = (k.stun || 0) > 0;
     const scale = view.group.scale.x || 1;
-    const kind = view.group.userData.kind;
-    const steerMax = kind === "nib" || kind === "tall" ? (25 * Math.PI) / 180 : (32 * Math.PI) / 180;
+    const steerMax = (30 * Math.PI) / 180;
     const steerAng = stunned ? Math.sin(race.time * 18) * 0.4 : steer * steerMax;
     for (const w of view.wheels || []) {
       const worldR = Math.max(0.12, w.radius * scale);
@@ -1141,7 +1180,10 @@ export function createWorld(THREE, track) {
       view.chassis.position.y = sus.y;
       view.chassis.rotation.x = sus.pitch;
       view.chassis.rotation.z = sus.roll;
-      view.chassis.rotation.y = Math.sin(race.time * (3.2 + speed * 0.08)) * Math.min(0.04, speed * 0.0012);
+      const yawTarget = steer * ((6 * Math.PI) / 180);
+      sus.yaw = (sus.yaw || 0) + (yawTarget - (sus.yaw || 0)) * rate;
+      const wobble = Math.sin(race.time * (3.2 + speed * 0.08)) * Math.min(0.04, speed * 0.0012);
+      view.chassis.rotation.y = sus.yaw + wobble;
       view.chassis.scale.set(1 + squash * 0.02, 1 - squash * 0.07, 1 + squash * 0.03);
     }
     if (view.driver) {
@@ -1151,9 +1193,9 @@ export function createWorld(THREE, track) {
       view.driver.position.y = baseY + Math.sin(race.time * 10 + speed) * Math.min(0.02, speed * 0.0008);
     }
     if (view.head) {
-      view.head.rotation.y = stunned ? Math.sin(race.time * 11) * 0.4 : steer * ((15 * Math.PI) / 180);
-      view.head.rotation.z = stunned ? Math.sin(race.time * 14) * 0.2 : 0;
-      view.head.rotation.x = stunned ? Math.sin(race.time * 9) * 0.1 : 0;
+      view.head.rotation.y = stunned ? Math.sin(race.time * 11) * 0.4 : steer * 1.05;
+      view.head.rotation.z = stunned ? Math.sin(race.time * 14) * 0.2 : steer * 0.08;
+      view.head.rotation.x = -0.42 + (stunned ? Math.sin(race.time * 9) * 0.1 : Math.abs(steer) * 0.16);
     }
     const brace = Math.min(1, Math.abs(steer) * 1.5 + (k.braking || 0));
     for (const arm of view.arms || []) {
@@ -1229,7 +1271,7 @@ export function createWorld(THREE, track) {
         right.normalize();
         view.group.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(right, roof, fwd));
       } else {
-        const visualYaw = k.yaw + k.slip * 0.35;
+        const visualYaw = k.yaw + k.slip * 0.35 + (k.spinVis || 0);
         const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), visualYaw);
         const along = Math.sin(k.yaw) * fr.tangent.x + Math.cos(k.yaw) * fr.tangent.z;
         const pitch = k.grounded
@@ -1267,21 +1309,25 @@ export function createWorld(THREE, track) {
         emitSpark(k.x - bf.x * 3.4, k.y + 0.2, k.z - bf.z * 3.4, false, "boost");
         emitSpark(k.x - bf.x * 4.2, k.y + 0.16, k.z - bf.z * 4.2, false, "boost");
       }
-      if (!view.hitShell) {
-        view.hitShell = new THREE.Mesh(
-          new THREE.SphereGeometry(1.45, 10, 8),
-          new THREE.MeshBasicMaterial({ color: 0xfff6d0, transparent: true, opacity: 0.62, depthWrite: false })
-        );
-        view.hitShell.position.y = 0.75;
-        view.hitShell.visible = false;
-        view.group.add(view.hitShell);
+      ensureReact(view);
+      const showStars = (k.dizzyT || 0) > 0;
+      view.stars.visible = showStars;
+      if (showStars) {
+        view.stars.rotation.y = race.time * 2.6;
+        view.stars.children.forEach((star, n) => {
+          const a = star.userData.ang + race.time * 2.2;
+          const bob = Math.sin(race.time * 6 + n) * 0.16;
+          star.position.set(Math.cos(a) * 0.8, 2.3 + bob, Math.sin(a) * 0.8);
+          star.rotation.y += dt * 5;
+          star.rotation.z += dt * 3.2;
+        });
       }
-      const flashing = (k.hitFlash || 0) > 0;
-      view.hitShell.visible = flashing;
-      if (flashing) {
-        view.hitShell.material.opacity = Math.min(0.78, k.hitFlash * 1.7);
-        emitSpark(k.x, k.y + 1.35, k.z, true, "hit");
-        emitSpark(k.x, k.y + 0.7, k.z, true, "hit");
+      const mark = k.hitMarkT || 0;
+      const showMark = mark > 0 && !!k.cpu;
+      view.hitMark.visible = showMark;
+      if (showMark) {
+        view.hitMark.position.set(0, 2.35 + (1 - mark) * 1.2, 0);
+        view.hitMark.material.opacity = Math.max(0, mark);
       }
       if ((k.splash || 0) > 0.4) {
         for (let n = 0; n < 3; n++) emitSpark(k.x + (n - 1) * 0.4, k.y + 0.15, k.z, false, "foam");
@@ -1367,8 +1413,8 @@ export function createWorld(THREE, track) {
         const side = aimLock.side || 3.4;
         const front = aimLock.front == null ? -1.1 : aimLock.front;
         camera.position.copy(p).addScaledVector(right, side).addScaledVector(fwd, front);
-        camera.position.y = p.y + 1.55;
-        camera.lookAt(p.x, p.y + 1.05, p.z);
+        camera.position.y = p.y + 1.95;
+        camera.lookAt(p.x, p.y + 1.45, p.z);
         if (Math.abs(camera.fov - 40) > 0.2) {
           camera.fov = 40;
           camera.updateProjectionMatrix();

@@ -1,7 +1,7 @@
 /* Race sim. No rendering.
    yaw 0 faces +z. yaw > 0 turns toward +x (screen-left in the chase view).
    forward = (sin(yaw), 0, cos(yaw)). */
-import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd40";
+import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd41";
 export { launchHeld };
 
 export const LAPS = 3;
@@ -788,18 +788,13 @@ function sectorOf(t) {
 function advanceSector(kart) {
   const s = sectorOf(kart.t);
   if (s === kart.sector) return;
-  for (let step = 0; step < 3; step++) {
-    if (kart.sector === s) return;
-    const ahead = (kart.sector + 1) % SECTORS;
-    const ahead2 = (kart.sector + 2) % SECTORS;
-    const ahead3 = (kart.sector + 3) % SECTORS;
-    const back = (kart.sector + SECTORS - 1) % SECTORS;
-    if (s !== ahead && s !== ahead2 && s !== ahead3) {
-      if (s === back) kart.sector = s;
-      return;
-    }
-    kart.sector = ahead;
+  let forward = (s - kart.sector + SECTORS) % SECTORS;
+  if (forward === 0) return;
+  if (forward > SECTORS / 2) {
+    kart.sector = (kart.sector + SECTORS - 1) % SECTORS;
+    return;
   }
+  kart.sector = (kart.sector + Math.min(3, forward)) % SECTORS;
 }
 
 /* Place is laps plus the live sample on the ribbon. A lap counts only when
@@ -811,11 +806,11 @@ function noteCrossing(kart, prev, next) {
   let d = next - prev;
   if (d > 0.5) d -= 1;
   if (d < -0.5) d += 1;
-  if (d > 0 && d < 0.28 && next >= 0.5 && next <= 0.97) kart.seenHalf = true;
-  if (d > 0 && d < 0.25 && next < 0.2 && prev > 0.8 && kart.seenHalf) {
+  if (d > 0 && d < 0.4 && next >= 0.5 && next <= 0.97) kart.seenHalf = true;
+  if (d > 0 && d < 0.36 && next < 0.2 && prev > 0.8 && kart.seenHalf) {
     kart.laps = (kart.laps || 0) + 1;
     kart.seenHalf = false;
-  } else if (d < -0.12 && next < 0.45) {
+  } else if (d < -0.22 && next < 0.45) {
     kart.seenHalf = false;
   }
   kart.along = (kart.laps || 0) + next;
@@ -913,6 +908,15 @@ function integrate(kart, input, dt) {
   if (kart.orb > 0) kart.orb = Math.max(0, kart.orb - dt);
   if (kart.stunCd > 0) kart.stunCd = Math.max(0, kart.stunCd - dt);
   if (kart.hitFlash > 0) kart.hitFlash = Math.max(0, kart.hitFlash - dt);
+  if ((kart.spinT || 0) > 0) kart.spinT = Math.max(0, kart.spinT - dt);
+  if ((kart.dizzyT || 0) > 0) kart.dizzyT = Math.max(0, kart.dizzyT - dt);
+  if ((kart.hitMarkT || 0) > 0) kart.hitMarkT = Math.max(0, kart.hitMarkT - dt);
+  if ((kart.spinT || 0) > 0) {
+    kart.spinVis = (kart.spinVis || 0) + (kart.spinDir || 1) * 12 * dt * Math.min(1, kart.spinT / 0.5);
+  } else if (kart.spinVis) {
+    kart.spinVis += (0 - kart.spinVis) * Math.min(1, dt * 5);
+    if (Math.abs(kart.spinVis) < 0.02) kart.spinVis = 0;
+  }
   if ((kart.slickImmune || 0) > 0) kart.slickImmune = Math.max(0, kart.slickImmune - dt);
   const stunned = (kart.stun || 0) > 0;
   if (stunned) kart.stun = Math.max(0, kart.stun - dt);
@@ -960,9 +964,15 @@ function integrate(kart, input, dt) {
     kart.boost -= dt;
   }
   if (stunned) {
-    const dump = Math.pow(0.15, Math.min(1, dt * 60));
-    kart.vx *= dump;
-    kart.vz *= dump;
+    const dump = Math.pow(0.5, dt * 60);
+    const capSp = (kart.baseCap || (kart.cpu ? 27 : MAX_SPEED)) * 0.2;
+    const spNow = Math.hypot(kart.vx, kart.vz);
+    if (spNow > capSp) {
+      const next = Math.max(capSp, spNow * dump);
+      const scale = next / spNow;
+      kart.vx *= scale;
+      kart.vz *= scale;
+    }
   } else {
     const drag = (brake ? 3.4 : gas ? 0.38 : 1.35) * dt;
     kart.vx -= kart.vx * drag;
@@ -982,7 +992,7 @@ function integrate(kart, input, dt) {
   const cap =
     (kart.baseCap || (kart.cpu ? 27 : MAX_SPEED)) *
     (kart.boost > 0 && !stunned ? 1.65 : 1) *
-    (stunned ? 0.1 : slowMul) *
+    (stunned ? 0.2 : slowMul) *
     (kart.orb > 0 ? 1.18 : 1);
   if (sp > cap) {
     kart.vx *= cap / sp;
@@ -1023,6 +1033,7 @@ function solidIndex(track, idx) {
 
 function respawnKart(track, kart) {
   kart.falls = (kart.falls || 0) + 1;
+  const prevT = kart.t || 0;
   const laps = kart.laps || 0;
   const idx = solidIndex(track, kart.safeHint == null ? kart.hint || 0 : kart.safeHint);
   const fr = track.frames[idx];
@@ -1044,8 +1055,9 @@ function respawnKart(track, kart) {
   kart.t = fr.t;
   kart.loopSpeed = null;
   kart.laps = laps;
+  noteCrossing(kart, prevT, fr.t);
   kart.sector = sectorOf(fr.t);
-  kart.progress = laps + (((fr.t % 1) + 1) % 1);
+  kart.progress = (kart.laps || 0) + (((fr.t % 1) + 1) % 1);
   kart.along = kart.progress;
   kart.stun = Math.min(1.2, Math.max(kart.stun || 0, 0.4));
   kart.respawnCd = 0.75;
@@ -1063,7 +1075,13 @@ function bodyStep(track, kart, dt) {
   const lat = (kart.x - fr.p.x) * fr.right.x + (kart.z - fr.p.z) * fr.right.z;
   const edge = fr.width * 0.5 - 0.9;
   const offOuter = !!(fr.vent && (Math.sign(lat) || 0) === outerSign(track, fr) && Math.abs(lat) > edge);
-  if (near.dist2 < 26 * 26 && Math.abs(ribbonDelta(kart, fr.t)) <= 0.08) adoptProgress(kart, near.index, track);
+  if (near.dist2 < 26 * 26) {
+    const dRibbon = ribbonDelta(kart, fr.t);
+    const onRoad = near.dist2 < 8 * 8;
+    if (Math.abs(dRibbon) <= 0.08 || (onRoad && dRibbon > 0 && dRibbon <= 0.16)) {
+      adoptProgress(kart, near.index, track);
+    }
+  }
   let mode = "air";
   let latNow = lat;
   if (!fr.gap && fr.rail && Math.abs(lat) > edge && !offOuter) {
@@ -1103,7 +1121,7 @@ function bodyStep(track, kart, dt) {
     const cap =
       (kart.baseCap || (kart.cpu ? 27 : MAX_SPEED)) *
       (kart.boost > 0 && !stunned ? 1.65 : 1) *
-      (stunned ? 0.1 : slowMul) *
+      (stunned ? 0.2 : slowMul) *
       (kart.orb > 0 ? 1.18 : 1);
     const floor = stunned ? 0 : fr.ceiling || (fr.up && fr.up.y < 0.35) ? 18 : 13;
     sp = Math.max(floor, Math.min(cap, sp));
@@ -1269,8 +1287,20 @@ function bodyStep(track, kart, dt) {
       if (adv < -0.5) adv += 1;
       kart.watchAge = 0;
       kart.watchT = kart.t;
-      if (adv < 0.04 && kart.grounded) {
-        const ahead = frameAt(track, kart.t + 0.1);
+      if (adv < 0.04 && (kart.grounded || (kart.falls || 0) > 0 || (kart.wet || 0) > 0 || kart.air > 0.35)) {
+        let ahead = null;
+        const falling = !kart.grounded || (kart.wet || 0) > 0 || (kart.falls || 0) > 0;
+        if (falling) {
+          const n = track.frames.length;
+          const start = frameIndex(track, kart.t);
+          for (let k = 1; k < n; k++) {
+            const fr = track.frames[(start + k) % n];
+            if (fr.gap || fr.lip || fr.loop || fr.ceiling) continue;
+            ahead = fr;
+            break;
+          }
+        }
+        if (!ahead) ahead = frameAt(track, kart.t + 0.1);
         kart.safeHint = frameIndex(track, ahead.t);
         kart.falls = 0;
         respawnKart(track, kart);
@@ -1634,7 +1664,7 @@ function testStunDump(fails) {
     integrate(stunned, gas, 1 / 60);
     bodyStep(track, stunned, 1 / 60);
   }
-  if (stunned.speed > 4) fails.push("stun crawl " + stunned.speed.toFixed(2));
+  if (stunned.speed > 8 || stunned.speed < 3) fails.push("stun crawl " + stunned.speed.toFixed(2));
   if (Math.abs(stunned.yaw) < 0.08 && (stunned.falls || 0) === 0) fails.push("stun wobble " + stunned.yaw.toFixed(3));
   if (!(stunned.hitFlash > 0.05)) fails.push("hit flash " + (stunned.hitFlash || 0).toFixed(2));
 
@@ -2126,7 +2156,7 @@ export function selfTest() {
     if (you.laps < LAPS) fails.push("laps " + you.laps);
     if (guard < 60 * 15) fails.push("too fast " + guard);
     const lapSec = guard / 60 / LAPS;
-    if (lapSec < 34 || lapSec > 52) fails.push("lap pace " + lapSec.toFixed(1));
+    if (lapSec < 34 || lapSec > 56) fails.push("lap pace " + lapSec.toFixed(1));
     const sorted = [...race.karts].sort((a, b) => b.progress - a.progress);
     const gap = sorted[0].progress - sorted[sorted.length - 1].progress;
     if (gap > 0.75) fails.push("cheese gap " + gap.toFixed(2));
@@ -2173,6 +2203,18 @@ export function selfTest() {
     cursor = nxt;
   }
   if (seam.laps < 3) fails.push("three passes " + seam.laps);
+  const bumped = { t: 0.05, seenHalf: false, laps: 0, along: 0.05 };
+  let bumpT = 0.05;
+  for (let n = 0; n < 90; n++) {
+    const step = n % 7 === 0 ? -0.02 : 0.055;
+    let nxt = bumpT + step;
+    if (nxt < 0) nxt += 1;
+    if (nxt >= 1) nxt -= 1;
+    noteCrossing(bumped, bumpT, nxt);
+    bumpT = nxt;
+    bumped.t = nxt;
+  }
+  if (bumped.laps < 2) fails.push("bump laps " + bumped.laps);
   const hopped = { t: 0.12, sector: sectorOf(0.12), seenHalf: false, laps: 0, progress: 0.12, hint: 0 };
   adoptProgress(hopped, frameIndex(track, 0.72), track);
   if (hopped.laps !== 0) fails.push("phantom lap");

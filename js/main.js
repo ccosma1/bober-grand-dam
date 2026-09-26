@@ -18,9 +18,9 @@ import {
   setDriver as chooseDriver,
   swapTrack,
   writeSave,
-} from "./sim.js?v=gd40";
-import { createWorld } from "./world.js?v=gd40";
-import { createSfx } from "./audio.js?v=gd40";
+} from "./sim.js?v=gd41";
+import { createWorld } from "./world.js?v=gd41";
+import { createSfx } from "./audio.js?v=gd41";
 
 const app = document.getElementById("app");
 const stage = document.getElementById("stage");
@@ -142,6 +142,7 @@ function cycleHold() {
   you.held = id;
   you.holdAge = 0;
   you.fireCd = 0;
+  if (id !== "boost" && window.__grand) window.__grand.draft(-14);
   return id;
 }
 
@@ -702,6 +703,12 @@ function hudTick() {
     heldBox.classList.toggle("ready", !!you.held && you.fireCd <= 0);
     heldBox.classList.toggle("got", (you.got || 0) > 0);
   }
+  const toast = document.getElementById("hit-toast");
+  if (toast) {
+    const show = (race.hitToastT || 0) > 0 && race.hitToast;
+    toast.textContent = show ? race.hitToast : "";
+    toast.classList.toggle("hidden", !show);
+  }
   const juice = document.getElementById("juice");
   if (juice && race.flash) {
     const kind = race.flash;
@@ -832,12 +839,19 @@ window.__grand = {
       sig: world.modelOf(you.id).sig,
       foes: race.karts.filter((k) => k.cpu).map((k) => ({
         id: k.id,
+        name: k.name,
         stun: k.stun || 0,
         slowT: k.slowT || 0,
         mul: k.speedMul || 1,
         flash: k.hitFlash || 0,
         speed: k.speed || 0,
+        spin: k.spinT || 0,
+        dizzy: k.dizzyT || 0,
+        mark: k.hitMarkT || 0,
       })),
+      toast: race.hitToast || "",
+      toastT: race.hitToastT || 0,
+      stun: you.stun || 0,
     };
   },
   setDriver(id) {
