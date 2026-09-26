@@ -18,9 +18,9 @@ import {
   setDriver as chooseDriver,
   swapTrack,
   writeSave,
-} from "./sim.js?v=gd42";
-import { createWorld } from "./world.js?v=gd42";
-import { createSfx } from "./audio.js?v=gd42";
+} from "./sim.js?v=gd43";
+import { createWorld } from "./world.js?v=gd43";
+import { createSfx } from "./audio.js?v=gd43";
 
 const app = document.getElementById("app");
 const stage = document.getElementById("stage");
@@ -148,15 +148,23 @@ function cycleHold() {
 }
 
 function beginFire(e) {
-  e.preventDefault();
+  if (e.cancelable) e.preventDefault();
+  const now = performance.now();
+  const el = e.currentTarget;
+  if (fireHold && now - fireHold.t < 280) {
+    el.classList.add(fireHold.empty ? "empty" : "on");
+    return;
+  }
   const you = humanOf(race);
-  fireHold = { t: performance.now(), empty: !(you && you.held), used: false };
+  const empty = !(you && you.held);
+  fireHold = { t: now, empty, used: false };
   firePulse = true;
-  e.currentTarget.classList.add("on");
+  el.classList.toggle("empty", empty);
+  el.classList.toggle("on", !empty);
 }
 
 function endFire(el) {
-  el.classList.remove("on");
+  el.classList.remove("on", "empty");
   fireHold = null;
 }
 
@@ -204,12 +212,24 @@ function stickUp() {
 }
 stick.addEventListener("pointerup", stickUp);
 stick.addEventListener("pointercancel", stickUp);
-document.getElementById("btn-fire").addEventListener("pointerdown", beginFire);
-document.getElementById("btn-fire").addEventListener("pointerup", () => {
-  endFire(document.getElementById("btn-fire"));
+const phoneFire = document.getElementById("btn-fire");
+phoneFire.addEventListener("pointerdown", beginFire);
+phoneFire.addEventListener("pointerup", () => {
+  endFire(phoneFire);
 });
-document.getElementById("btn-fire").addEventListener("pointercancel", () => {
-  endFire(document.getElementById("btn-fire"));
+phoneFire.addEventListener("pointercancel", () => {
+  endFire(phoneFire);
+});
+phoneFire.addEventListener("touchstart", (e) => {
+  e.preventDefault();
+  beginFire(e);
+}, { passive: false });
+phoneFire.addEventListener("touchend", (e) => {
+  e.preventDefault();
+  endFire(phoneFire);
+}, { passive: false });
+phoneFire.addEventListener("touchcancel", () => {
+  endFire(phoneFire);
 });
 
 function inRace() {

@@ -231,17 +231,26 @@ html, body {
   pointer-events: none;
 }
 #btn-fire {
+  position: relative;
+  z-index: 2;
   min-height: 132px;
   min-width: 84px;
   font-size: 22px;
   background: #1499a0;
   color: #f4e6c8;
   box-shadow: 0 4px 0 #0b4e54;
+  touch-action: none;
 }
 #btn-fire.armed {
   background: #f0a024;
   color: #102a33;
   box-shadow: 0 4px 0 #8a5a08;
+}
+#btn-fire.on { filter: brightness(1.45); }
+#btn-fire.empty {
+  background: #8d8882;
+  color: #1c1a17;
+  box-shadow: 0 4px 0 #4a463f;
 }
 .tracks { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; margin: 4px 0 8px; }
 .tracks .ghost { flex: 1 1 30%; min-height: 36px; font-size: 12px; padding: 4px 6px; }
@@ -339,8 +348,9 @@ button:focus-visible {
   font-size: 14px;
   font-weight: 800;
   letter-spacing: 0.06em;
-  color: #102a33;
-  background: #f0a024;
+  color: #f6f1e6;
+  background: #102a33;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   padding: 3px 7px;
   pointer-events: none;
 }

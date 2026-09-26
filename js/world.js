@@ -1,5 +1,5 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd42";
-import { buildKart } from "./racers.js?v=gd42";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd43";
+import { buildKart } from "./racers.js?v=gd43";
 
 function canvasTex(THREE, draw, w, h, repeat) {
   const c = document.createElement("canvas");
@@ -157,6 +157,81 @@ function mistTexture(THREE) {
   }, 128, 128, false);
 }
 
+function writeRoadNormals(THREE, geo, frames) {
+  const pos = geo.getAttribute("position");
+  const src = geo.getIndex().array;
+  const acc = new Float32Array(pos.count * 3);
+  for (let t = 0; t < src.length; t += 3) {
+    const a = src[t];
+    const b = src[t + 1];
+    const c = src[t + 2];
+    const ax = pos.getX(a);
+    const ay = pos.getY(a);
+    const az = pos.getZ(a);
+    const bx = pos.getX(b);
+    const by = pos.getY(b);
+    const bz = pos.getZ(b);
+    const cx = pos.getX(c);
+    const cy = pos.getY(c);
+    const cz = pos.getZ(c);
+    const abx = bx - ax;
+    const aby = by - ay;
+    const abz = bz - az;
+    const acx = cx - ax;
+    const acy = cy - ay;
+    const acz = cz - az;
+    let nx = aby * acz - abz * acy;
+    let ny = abz * acx - abx * acz;
+    let nz = abx * acy - aby * acx;
+    const fr = frames[Math.min(frames.length - 1, a >> 1)];
+    const loopDown = !!(fr && fr.loop && fr.up && fr.up.y < -0.05);
+    if (loopDown ? ny > 0 : ny < 0) {
+      nx = -nx;
+      ny = -ny;
+      nz = -nz;
+    }
+    acc[a * 3] += nx;
+    acc[a * 3 + 1] += ny;
+    acc[a * 3 + 2] += nz;
+    acc[b * 3] += nx;
+    acc[b * 3 + 1] += ny;
+    acc[b * 3 + 2] += nz;
+    acc[c * 3] += nx;
+    acc[c * 3 + 1] += ny;
+    acc[c * 3 + 2] += nz;
+  }
+  for (let i = 0; i < pos.count; i++) {
+    let x = acc[i * 3];
+    let y = acc[i * 3 + 1];
+    let z = acc[i * 3 + 2];
+    const mag = Math.hypot(x, y, z);
+    if (mag < 1e-8) {
+      const fr = frames[Math.min(frames.length - 1, i >> 1)];
+      const up = fr && fr.loop && fr.up ? fr.up : { x: 0, y: 1, z: 0 };
+      x = up.x;
+      y = up.y;
+      z = up.z;
+    } else {
+      x /= mag;
+      y /= mag;
+      z /= mag;
+    }
+    acc[i * 3] = x;
+    acc[i * 3 + 1] = y;
+    acc[i * 3 + 2] = z;
+  }
+  geo.setAttribute("normal", new THREE.BufferAttribute(acc, 3));
+}
+
+function liftDownNormals(geo) {
+  if (!geo.getAttribute("normal")) geo.computeVertexNormals();
+  const n = geo.getAttribute("normal");
+  for (let i = 0; i < n.count; i++) {
+    if (n.getY(i) < -0.25) n.setXYZ(i, -n.getX(i), -n.getY(i), -n.getZ(i));
+  }
+  n.needsUpdate = true;
+}
+
 function buildRoad(THREE, track, map) {
   const f = track.frames;
   const n = f.length;
@@ -198,29 +273,19 @@ function buildRoad(THREE, track, map) {
   geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
   geo.setIndex(idx);
-  geo.computeVertexNormals();
-  const ny = geo.getAttribute("normal").getY(0);
-  if (ny < 0) {
-    for (let k = 0; k < idx.length; k += 3) {
-      const tmp = idx[k];
-      idx[k] = idx[k + 1];
-      idx[k + 1] = tmp;
-    }
-    geo.setIndex(idx);
-    geo.computeVertexNormals();
-  }
+  writeRoadNormals(THREE, geo, f);
   map.wrapS = THREE.RepeatWrapping;
   const mat = new THREE.MeshPhysicalMaterial({
     map,
-    roughness: 0.34,
-    metalness: 0.12,
-    clearcoat: 0.72,
-    clearcoatRoughness: 0.22,
+    roughness: 0.56,
+    metalness: 0.06,
+    clearcoat: 0.14,
+    clearcoatRoughness: 0.64,
     side: THREE.DoubleSide,
   });
   const mesh = new THREE.Mesh(geo, mat);
-  mesh.receiveShadow = true;
-  mesh.castShadow = true;
+  mesh.receiveShadow = false;
+  mesh.castShadow = false;
 
   const skirtPos = [];
   const skirtIdx = [];
@@ -256,12 +321,13 @@ function buildRoad(THREE, track, map) {
   sg.setAttribute("position", new THREE.Float32BufferAttribute(skirtPos, 3));
   sg.setIndex(skirtIdx);
   sg.computeVertexNormals();
+  liftDownNormals(sg);
   const skirt = new THREE.Mesh(
     sg,
-    new THREE.MeshPhysicalMaterial({ color: 0x8d8170, roughness: 0.62, metalness: 0.08, clearcoat: 0.25 })
+    new THREE.MeshPhysicalMaterial({ color: 0x8d8170, roughness: 0.62, metalness: 0.08, clearcoat: 0.12, clearcoatRoughness: 0.6 })
   );
-  skirt.receiveShadow = true;
-  skirt.castShadow = true;
+  skirt.receiveShadow = false;
+  skirt.castShadow = false;
   const icy = track.theme === "frost";
   const rivetGeo = new THREE.SphereGeometry(0.16, 8, 6);
   const rivetMat = new THREE.MeshStandardMaterial({
@@ -323,19 +389,20 @@ function buildRoad(THREE, track, map) {
   curbGeo.setAttribute("position", new THREE.Float32BufferAttribute(curbPos, 3));
   curbGeo.setIndex(curbIdx);
   curbGeo.computeVertexNormals();
+  liftDownNormals(curbGeo);
   const curb = new THREE.Mesh(
     curbGeo,
     new THREE.MeshPhysicalMaterial({
       color: icy ? 0xd7eef8 : 0x6b3a24,
-      roughness: icy ? 0.16 : 0.42,
-      metalness: icy ? 0.2 : 0.14,
-      clearcoat: icy ? 0.9 : 0.48,
-      clearcoatRoughness: 0.14,
+      roughness: icy ? 0.42 : 0.52,
+      metalness: icy ? 0.08 : 0.08,
+      clearcoat: 0.12,
+      clearcoatRoughness: 0.6,
       side: THREE.DoubleSide,
     })
   );
-  curb.castShadow = true;
-  curb.receiveShadow = true;
+  curb.castShadow = false;
+  curb.receiveShadow = false;
 
   const linePos = [];
   const lineIdx = [];
@@ -359,17 +426,18 @@ function buildRoad(THREE, track, map) {
   lineGeo.setAttribute("position", new THREE.Float32BufferAttribute(linePos, 3));
   lineGeo.setIndex(lineIdx);
   lineGeo.computeVertexNormals();
+  liftDownNormals(lineGeo);
   const line = new THREE.Mesh(
     lineGeo,
     new THREE.MeshStandardMaterial({
       color: icy ? 0xe7f6ff : 0xf0a024,
       emissive: icy ? 0x8ecfff : 0xc98416,
-      emissiveIntensity: 0.55,
-      roughness: 0.32,
-      metalness: 0.08,
+      emissiveIntensity: 0.28,
+      roughness: 0.45,
+      metalness: 0.04,
     })
   );
-  line.receiveShadow = true;
+  line.receiveShadow = false;
 
   let chevCount = 0;
   for (const fr of f) if (fr.lip) chevCount += 1;
@@ -492,7 +560,7 @@ export function createWorld(THREE, track) {
   renderer.setClearColor(0xb7d7ee, 1);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.18;
+  renderer.toneMappingExposure = 1.05;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -507,23 +575,33 @@ export function createWorld(THREE, track) {
   const sky = new THREE.Mesh(new THREE.SphereGeometry(720, 24, 16), skyMaterial(THREE));
   scene.add(sky);
 
-  const hemi = new THREE.HemisphereLight(0xe7f6ff, 0x8fbf6a, 1.05);
+  const hemi = new THREE.HemisphereLight(0xe7f6ff, 0x8fbf6a, 0.9);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xfff1cc, 1.9);
-  sun.position.set(48, 62, 36);
+  const sun = new THREE.DirectionalLight(0xfff1cc, 1.22);
+  sun.position.set(22, 48, 16);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(1024, 1024);
-  sun.shadow.camera.near = 10;
-  sun.shadow.camera.far = 420;
-  sun.shadow.camera.left = -380;
-  sun.shadow.camera.right = 380;
-  sun.shadow.camera.top = 380;
-  sun.shadow.camera.bottom = -380;
-  sun.shadow.bias = -0.0004;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.camera.near = 2;
+  sun.shadow.camera.far = 130;
+  sun.shadow.camera.left = -32;
+  sun.shadow.camera.right = 32;
+  sun.shadow.camera.top = 32;
+  sun.shadow.camera.bottom = -32;
+  sun.shadow.bias = -0.0008;
+  sun.shadow.normalBias = 0.45;
   scene.add(sun);
-  const rim = new THREE.DirectionalLight(0xd2efff, 0.72);
+  scene.add(sun.target);
+  const rim = new THREE.DirectionalLight(0xd2efff, 0.4);
   rim.position.set(-60, 28, -40);
   scene.add(rim);
+  function clampLamps() {
+    scene.traverse((obj) => {
+      if (!obj.isPointLight && !obj.isSpotLight) return;
+      obj.intensity = Math.min(obj.intensity || 0, 1.1);
+      obj.distance = obj.distance > 0 ? Math.min(obj.distance, 16) : 16;
+      obj.decay = Math.max(2, obj.decay || 2);
+    });
+  }
 
   const woodMap = woodTexture(THREE);
   const concrete = concreteTexture(THREE);
@@ -859,6 +937,7 @@ export function createWorld(THREE, track) {
   let sparkCursor = 0;
 
   let aimLock = null;
+  let boostKick = 0;
   const look = new THREE.Vector3(0, 12, -10);
   const camGoal = new THREE.Vector3();
   const lookGoal = new THREE.Vector3();
@@ -929,31 +1008,45 @@ export function createWorld(THREE, track) {
     lo.group.visible = !hero;
     const view = { group: root, hi, lo, hiOn: hero, blob: hi.blob };
     activateKart(view, hero ? hi : lo);
+    const rearWheel = (view.wheels || []).find((w) => w.axle && !w.steer);
+    const axle = rearWheel ? rearWheel.axle : { x: 0, y: 0.4, z: -0.4, half: 0.75 };
     const trail = new THREE.Group();
-    trail.position.set(0, 0.18, -3.8);
     const ribMat = new THREE.MeshBasicMaterial({
       map: ribMap,
       color: 0xffc24a,
       transparent: true,
       opacity: 0,
       depthWrite: false,
+      blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide,
     });
-    const ribbon = new THREE.Mesh(new THREE.PlaneGeometry(1.85, 6.1), ribMat);
-    ribbon.rotation.x = -Math.PI / 2;
-    ribbon.renderOrder = 4;
-    const coreMat = ribMat.clone();
-    coreMat.color.setHex(0xfff1b0);
-    const core = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 6.1), coreMat);
-    core.rotation.x = -Math.PI / 2;
-    core.position.y = 0.05;
-    core.renderOrder = 5;
-    trail.add(ribbon, core);
+    const sheets = [];
+    const cores = [];
+    const span = axle.half || 0.7;
+    for (const side of [-1, 1]) {
+      const x = axle.x + side * span;
+      const z = axle.z - 3.2;
+      const sheet = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 6.1), ribMat.clone());
+      sheet.rotation.x = -Math.PI / 2;
+      sheet.position.set(x, 0.16, z);
+      sheet.renderOrder = 4;
+      const coreMat = ribMat.clone();
+      coreMat.color.setHex(0xfff1b0);
+      const core = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 6.1), coreMat);
+      core.rotation.x = -Math.PI / 2;
+      core.position.set(x, 0.2, z);
+      core.renderOrder = 5;
+      trail.add(sheet, core);
+      sheets.push(sheet);
+      cores.push(core);
+    }
     trail.visible = false;
     view.group.add(trail);
     view.ribbon = trail;
-    view.ribbonCore = core;
-    view.ribbonSheet = ribbon;
+    view.ribbonSheets = sheets;
+    view.ribbonCores = cores;
+    view.ribbonCore = cores[0];
+    view.ribbonSheet = sheets[0];
     const flareMat = new THREE.MeshBasicMaterial({
       color: 0xfff0a8,
       transparent: true,
@@ -1138,7 +1231,7 @@ export function createWorld(THREE, track) {
       w.spinPivot.rotation.x = w.spin;
       if (w.steer && w.yawPivot) {
         const cur = w.yawPivot.rotation.y;
-        w.yawPivot.rotation.y = cur + (steerAng - cur) * Math.min(1, dt * 12);
+        w.yawPivot.rotation.y = cur + (steerAng - cur) * 0.25;
       }
     }
     const sus = view.sus || (view.sus = { y: 0, pitch: 0, roll: 0, land: 0 });
@@ -1160,7 +1253,7 @@ export function createWorld(THREE, track) {
       view.chassis.position.y = sus.y;
       view.chassis.rotation.x = sus.pitch;
       view.chassis.rotation.z = sus.roll;
-      const yawTarget = steer * ((6 * Math.PI) / 180);
+      const yawTarget = steer * ((8 * Math.PI) / 180);
       sus.yaw = (sus.yaw || 0) + (yawTarget - (sus.yaw || 0)) * rate;
       const wobble = Math.sin(race.time * (3.2 + speed * 0.08)) * Math.min(0.04, speed * 0.0012);
       view.chassis.rotation.y = sus.yaw + wobble;
@@ -1207,8 +1300,8 @@ export function createWorld(THREE, track) {
     if (view.pose) view.pose(race.time, speed, boosting);
     if (view.ribbon) {
       view.ribbon.visible = boosting;
-      if (view.ribbonSheet) view.ribbonSheet.material.opacity = boosting ? 0.96 : 0;
-      if (view.ribbonCore) view.ribbonCore.material.opacity = boosting ? 1 : 0;
+      for (const sheet of view.ribbonSheets || []) sheet.material.opacity = boosting ? 0.96 : 0;
+      for (const core of view.ribbonCores || []) core.material.opacity = boosting ? 1 : 0;
     }
     if (view.flare) {
       view.flare.visible = boosting;
@@ -1248,6 +1341,8 @@ export function createWorld(THREE, track) {
     syncYard();
     spillMat.uniforms.uTime.value += dt;
     const you = race.karts.find((k) => !k.cpu) || race.karts[0];
+    sun.position.set(you.x + 22, you.y + 48, you.z + 16);
+    sun.target.position.set(you.x, you.y + 1.2, you.z);
     for (let i = 0; i < race.karts.length; i++) {
       const k = race.karts[i];
       const view = views[i];
@@ -1304,6 +1399,27 @@ export function createWorld(THREE, track) {
           emitSpark(k.x - noseF.x * 0.85 + rx * side, k.y + 0.12, k.z - noseF.z * 0.85 + rz * side, false, kind);
         }
       }
+      const boostingNow = (k.boost || 0) > 0.05;
+      if (boostingNow && !view.boostWas) {
+        const bf = forward(k.yaw);
+        const brx = Math.cos(k.yaw);
+        const brz = -Math.sin(k.yaw);
+        const rear = (view.wheels || []).find((w) => w.axle && !w.steer);
+        const half = rear && rear.axle.half ? rear.axle.half : 0.72;
+        const back = rear ? Math.max(0.3, -rear.axle.z) : 0.5;
+        for (const side of [-1, 1]) {
+          for (let n = 0; n < 9; n++) {
+            emitSpark(
+              k.x - bf.x * back + brx * half * side,
+              k.y + 0.22,
+              k.z - bf.z * back + brz * half * side,
+              true,
+              "boost"
+            );
+          }
+        }
+      }
+      view.boostWas = boostingNow;
       if (k.boost > 0.15) {
         const bf = forward(k.yaw);
         const brx = Math.cos(k.yaw);
@@ -1426,11 +1542,14 @@ export function createWorld(THREE, track) {
         }
       }
     }
-    const boostFov = you.boost > 0 ? 9 : 0;
-    const fov = (portrait ? 74 : 52) + boostFov;
-    if (Math.abs(camera.fov - fov) > 0.2) {
-      camera.fov = fov;
-      camera.updateProjectionMatrix();
+    if (!aimLock) {
+      const wantKick = you && you.boost > 0 ? 8 : 0;
+      boostKick += (wantKick - boostKick) * (1 - Math.exp(-Math.max(0.001, dt) * 4.5));
+      const fov = (portrait ? 74 : 52) + boostKick;
+      if (Math.abs(camera.fov - fov) > 0.02) {
+        camera.fov = fov;
+        camera.updateProjectionMatrix();
+      }
     }
     paintItems(race, dt);
     spray.children.forEach((card, i) => {
@@ -2109,12 +2228,13 @@ export function createWorld(THREE, track) {
       clover: { color: 0xe2c15a, rough: 0.42, metal: 0.08, coat: 0.4, curb: 0x2f6a34 },
       oasis: { color: 0xd7b07a, rough: 0.55, metal: 0.06, coat: 0.25, curb: 0xc47a3a },
       sky: { color: 0xf4e6c8, rough: 0.32, metal: 0.14, coat: 0.66, curb: 0x8aa4b8 },
-      dam: { color: 0xffffff, rough: 0.34, metal: 0.12, coat: 0.72, curb: 0x6b3a24 },
+      dam: { color: 0xc4b9a4, rough: 0.56, metal: 0.06, coat: 0.14, curb: 0x6b3a24 },
     };
     const look = roadLook[next.theme] || roadLook.dam;
-    road.mesh.material.roughness = look.rough;
-    road.mesh.material.metalness = look.metal;
-    road.mesh.material.clearcoat = look.coat;
+    road.mesh.material.roughness = Math.max(look.rough, 0.5);
+    road.mesh.material.metalness = Math.min(look.metal, 0.1);
+    road.mesh.material.clearcoat = Math.min(0.16, look.coat * 0.3);
+    road.mesh.material.clearcoatRoughness = 0.64;
     road.mesh.material.color.set(look.color);
     road.mesh.material.emissive.set(next.theme === "sky" ? 0x6a5030 : 0x000000);
     road.mesh.material.emissiveIntensity = next.theme === "sky" ? 0.28 : 0;
@@ -2172,7 +2292,7 @@ export function createWorld(THREE, track) {
         }
       }
     }
-    const groundTint = { dam: 0xffffff, frost: 0xffffff, clover: 0xc6e07a, oasis: 0xe7c98a, sky: 0xd7e6f2 };
+    const groundTint = { dam: 0xd7d2c6, frost: 0xe4eef4, clover: 0xc6e07a, oasis: 0xe7c98a, sky: 0xd7e6f2 };
     const fogTint = { dam: 0xf6e6c4, frost: 0xd7e8f4, clover: 0xcfe7a4, oasis: 0xf8e0b4, sky: 0xd7eefc };
     ground.material.map = frost || theme === "sky" ? snowMap : grassMap;
     ground.material.color.set(groundTint[theme] || 0xffffff);
@@ -2188,6 +2308,7 @@ export function createWorld(THREE, track) {
     if (damOn) placeSpray(next);
     fillExtra(next);
     buildYard(next);
+    clampLamps();
   }
 
   function modelOf(id) {
@@ -2247,5 +2368,6 @@ export function createWorld(THREE, track) {
     return { x: size.x, y: size.y, z: size.z, max: Math.max(size.x, size.y, size.z) };
   }
 
+  clampLamps();
   return { renderer, scene, camera, resize, update, frameCheck, views, setTrack, ready, modelOf, sightClear, motion, stats, aim, ribbonSpan };
 }

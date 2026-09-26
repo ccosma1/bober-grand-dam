@@ -2,7 +2,7 @@
    Static parts merge by material. Nails and rivets are instanced.
    Player detail is the full mesh; CPU detail drops whiskers, tufts, and spokes. */
 
-import { mergeGeometries } from "../vendor/BufferGeometryUtils.js?v=gd42";
+import { mergeGeometries } from "../vendor/BufferGeometryUtils.js?v=gd43";
 
 const GEO = new Map();
 const BUILD = { lod: false, curve: 2 };
@@ -729,6 +729,20 @@ function addAxle(THREE, parent, spec, mats, shadow) {
     lock.geo = merged;
   }
   parent.add(yaw);
+  if (spec.steer) {
+    const outer = spec.wheel.outer;
+    const fenderMat = new THREE.MeshStandardMaterial({ color: 0xd7c4a8, roughness: 0.42, metalness: 0.16 });
+    const sides = spec.half ? [-1, 1] : [1];
+    const plateGeo = board(THREE, outer * 1.45, 0.07, outer * 0.95, 0.02);
+    for (const side of sides) {
+      const plate = new THREE.Mesh(plateGeo, fenderMat);
+      plate.rotation.y = Math.PI / 2;
+      const x = spec.half ? side * (spec.half + outer * 0.05) : outer * 0.46;
+      plate.position.set(x, outer * 0.82, 0);
+      plate.castShadow = !!shadow;
+      yaw.add(plate);
+    }
+  }
   return {
     yawPivot: yaw,
     spinPivot: spin,
@@ -737,6 +751,7 @@ function addAxle(THREE, parent, spec, mats, shadow) {
     spin: 0,
     lock,
     mesh,
+    axle: { x: spec.x, y: spec.y, z: spec.z, half: spec.half || 0 },
   };
 }
 
@@ -1213,7 +1228,7 @@ function buildBober(THREE, mats, shadow) {
   }
   nails(THREE, chassis, spots.slice(0, BUILD.lod ? 24 : 40), 0x2a2622, false);
   const rearR = 0.48;
-  const frontR = rearR * 0.35;
+  const frontR = 0.4;
   const wheelOpt = (outer, tubeR, spokes, mode) => ({
     outer,
     ring: outer - tubeR,
@@ -1238,9 +1253,9 @@ function buildBober(THREE, mats, shadow) {
       wheel: wheelOpt(rearR, rearR * 0.2, 16, "tread"),
     }, mats, shadow),
     addAxle(THREE, g, {
-      x: 0.32, y: frontR, z: 0.92, half: 0, steer: true,
+      x: 0.82, y: frontR, z: 1.08, half: 0, steer: true,
       wheel: frontWheel,
-      fork: forkBits(THREE, { tube: frontR * 0.28, outer: frontR, strut: [-0.22, 0.42 - frontR, -0.55] }),
+      fork: forkBits(THREE, { tube: frontR * 0.22, outer: frontR, strut: [-0.5, 0.32, -0.7] }),
     }, mats, shadow),
   ];
   const crew = addCrew(THREE, chassis, {
@@ -1304,7 +1319,7 @@ function buildMuscle(THREE, mats, shadow) {
   for (let i = 0; i < 8; i++) spots.push([-0.45 + i * 0.13, 0.78, -0.72, 0, 0, -1, 1.1]);
   nails(THREE, chassis, spots.slice(0, BUILD.lod ? 60 : 100), 0xc8c2ba, false);
   const rearR = 0.5;
-  const frontR = rearR * 0.35;
+  const frontR = 0.38;
   const wheelOpt = (outer, tubeR, spokes, mode) => ({
     outer,
     ring: outer - tubeR,
@@ -1327,9 +1342,9 @@ function buildMuscle(THREE, mats, shadow) {
       wheel: wheelOpt(rearR, rearR * 0.24, 12, "knob"),
     }, mats, shadow),
     addAxle(THREE, g, {
-      x: 0.34, y: frontR, z: 0.98, half: 0, steer: true,
-      wheel: wheelOpt(frontR, frontR * 0.3, 8, "knob"),
-      fork: forkBits(THREE, { tube: frontR * 0.3, outer: frontR, strut: [-0.24, 0.48 - frontR, -0.58] }),
+      x: 0.6, y: frontR, z: 1.02, half: 0, steer: true,
+      wheel: wheelOpt(frontR, frontR * 0.28, 8, "knob"),
+      fork: forkBits(THREE, { tube: frontR * 0.24, outer: frontR, strut: [-0.52, 0.34, -0.72] }),
     }, mats, shadow),
   ];
   const crew = addCrew(THREE, chassis, {

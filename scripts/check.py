@@ -36,7 +36,7 @@ else:
         if need not in text:
             fails.append("splash missing " + need)
 
-for need in ("Cedar Sling", "Dam Loop", "Frost Ridge", "Crown Clover", "Oasis Leap", "Sky Loop 360", "Stick Trap", "Pinecone Barrage", "Dam Surge", "Lodge Magnet", "Bark Buckler", "Meteor Chip", "Resin Slick", "BOOST", "BOBER", "Bober", "Pip", "Mossback", "Reed", "btn-fire", "id=\"stick\"", "id=\"minimap\"", "btn-rematch", "gd42"):
+for need in ("Cedar Sling", "Dam Loop", "Frost Ridge", "Crown Clover", "Oasis Leap", "Sky Loop 360", "Stick Trap", "Pinecone Barrage", "Dam Surge", "Lodge Magnet", "Bark Buckler", "Meteor Chip", "Resin Slick", "BOOST", "BOBER", "Bober", "Pip", "Mossback", "Reed", "btn-fire", "id=\"stick\"", "id=\"minimap\"", "btn-rematch", "gd43"):
     if need not in html:
         fails.append("html missing " + need)
 if "58dvh" not in css:
