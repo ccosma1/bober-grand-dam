@@ -332,12 +332,16 @@ button:focus-visible {
 }
 #build-tag {
   position: absolute;
-  top: max(6px, env(safe-area-inset-top));
-  right: 8px;
-  z-index: 4;
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  color: rgba(215, 196, 168, 0.8);
+  top: auto;
+  bottom: max(10px, env(safe-area-inset-bottom));
+  right: 10px;
+  z-index: 6;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #102a33;
+  background: #f0a024;
+  padding: 3px 7px;
   pointer-events: none;
 }
 #hit-toast {

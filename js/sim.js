@@ -1,7 +1,7 @@
 /* Race sim. No rendering.
    yaw 0 faces +z. yaw > 0 turns toward +x (screen-left in the chase view).
    forward = (sin(yaw), 0, cos(yaw)). */
-import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd41";
+import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd42";
 export { launchHeld };
 
 export const LAPS = 3;
@@ -10,11 +10,17 @@ export const DNF_TIME = 420;
 const SECTORS = 8;
 
 export const ROSTER = [
-  { id: "bober", name: "BOBER", scarf: 0xe6a322, color: "#e6a322", lane: -0.36, style: "clean", handle: 1 },
-  { id: "muscle", name: "MUSCLE", scarf: 0xb6402a, color: "#b6402a", lane: 0.4, style: "clean", handle: 0.78 },
-  { id: "tall", name: "TALL", scarf: 0x7eb6d6, color: "#7eb6d6", lane: -0.22, style: "wide", handle: 1.08 },
-  { id: "nib", name: "NIB", scarf: 0x3e7a45, color: "#3e7a45", lane: 0.22, style: "spark", handle: 1.34 },
+  { id: "bober", name: "Bober", scarf: 0xe6a322, color: "#e6a322", lane: -0.36, style: "clean", handle: 1 },
+  { id: "muscle", name: "Mossback", scarf: 0xb6402a, color: "#b6402a", lane: 0.4, style: "clean", handle: 0.78 },
+  { id: "tall", name: "Reed", scarf: 0x7eb6d6, color: "#7eb6d6", lane: -0.22, style: "wide", handle: 1.08 },
+  { id: "nib", name: "Pip", scarf: 0x3e7a45, color: "#3e7a45", lane: 0.22, style: "spark", handle: 1.34 },
 ];
+
+export function lapsFor(track) {
+  const id = typeof track === "string" ? track : track && track.id;
+  if (id === "oasis" || id === "sky") return 3;
+  return 4;
+}
 
 /* Shorter bowls. Dam's west lip climbs into two airborne samples, then a low deck.
    Gap samples are not road. Frost keeps two side bridges and no jump. */
@@ -583,6 +589,405 @@ function roadClear(frames, x, z, extra) {
   return lat > half + extra;
 }
 
+const CUT_IN = 3.35;
+
+function hazardEnd(fr) {
+  return !fr || fr.gap || fr.lip || fr.deck || fr.loop || fr.ceiling || fr.bridge;
+}
+
+function cutBasis(a, b, mid) {
+  const vx = b.p.x - a.p.x;
+  const vz = b.p.z - a.p.z;
+  const vl = Math.hypot(vx, vz) || 1;
+  const nx = -vz / vl;
+  const nz = vx / vl;
+  const lat = (mid.p.x - a.p.x) * nx + (mid.p.z - a.p.z) * nz;
+  const s = lat >= 0 ? -1 : 1;
+  return { ix: nx * s, iz: nz * s };
+}
+
+function cutPoint(a, b, mid, u) {
+  const basis = cutBasis(a, b, mid);
+  return {
+    x: a.p.x + (b.p.x - a.p.x) * u + basis.ix * CUT_IN,
+    z: a.p.z + (b.p.z - a.p.z) * u + basis.iz * CUT_IN,
+    y: a.p.y + (b.p.y - a.p.y) * u,
+  };
+}
+
+function pathBlocked(track, a, b, mid) {
+  const frames = track.frames;
+  for (let s = 1; s < 8; s++) {
+    const u = s / 8;
+    const p = cutPoint(a, b, mid, u);
+    if (waterUnder(track, p.x, p.z)) return true;
+    for (let i = 0; i < frames.length; i += 2) {
+      const f = frames[i];
+      if (f.t >= a.t - 0.02 && f.t <= b.t + 0.02) {
+        if ((f.gap || f.lip || f.loop || f.ceiling) && Math.hypot(f.p.x - p.x, f.p.z - p.z) < 8 && Math.abs(f.p.y - p.y) < 6) {
+          return true;
+        }
+        continue;
+      }
+      const dx = f.p.x - p.x;
+      const dz = f.p.z - p.z;
+      const reach = f.width * 0.55 + 1.2;
+      if (dx * dx + dz * dz < reach * reach && Math.abs(f.p.y - p.y) < 3.4) return true;
+    }
+  }
+  return false;
+}
+
+function makeCut(track, a, b, mid, kind, arc, chord) {
+  const steps = 14;
+  const pts = [];
+  const deck = Math.max(a.p.y, b.p.y) + 2.2;
+  const climb = Math.max(deck - a.p.y, deck - b.p.y);
+  const ramp = Math.min(0.42, Math.max(0.16, climb / 28));
+  for (let s = 0; s <= steps; s++) {
+    const u = s / steps;
+    const p = cutPoint(a, b, mid, u);
+    let y = p.y + 0.1;
+    if (kind === "roof") {
+      if (u < ramp) y = p.y + (deck - p.y) * (u / ramp);
+      else if (u > 1 - ramp) y = p.y + (deck - p.y) * ((1 - u) / ramp);
+      else y = deck;
+    }
+    pts.push({ x: p.x, y, z: p.z, u });
+  }
+  return {
+    id: track.id + "-" + kind + "-" + Math.round(a.t * 1000),
+    kind,
+    tIn: a.t,
+    tOut: b.t,
+    save: arc - chord,
+    width: 6.2,
+    pts,
+    gate: 0.4,
+    gateHalf: 0.04,
+    broken: false,
+    brokenLap: -1,
+    shatter: 0,
+    bits: [],
+  };
+}
+
+function gatherCuts(track, minSave, minLat, maxSpan) {
+  const frames = track.frames;
+  const n = frames.length;
+  const found = [];
+  const spanCap = maxSpan || 0.32;
+  for (let i = 0; i < n; i += 2) {
+    const a = frames[i];
+    if (a.t < 0.1 || a.t > 0.78 || hazardEnd(a)) continue;
+    for (let j = i + 10; j < n; j += 2) {
+      const b = frames[j];
+      const span = b.t - a.t;
+      if (span < 0.06 || span > spanCap || b.t > 0.9 || hazardEnd(b)) continue;
+      let banned = false;
+      let arc = 0;
+      for (let k = i; k < j; k++) {
+        const f = frames[k];
+        const g = frames[k + 1];
+        if (f.loop || f.ceiling) banned = true;
+        arc += Math.hypot(g.p.x - f.p.x, g.p.z - f.p.z);
+      }
+      if (banned) continue;
+      const chord = Math.hypot(b.p.x - a.p.x, b.p.z - a.p.z);
+      const save = arc - chord;
+      if (save < minSave || save > 92) continue;
+      const mid = frames[(i + j) >> 1];
+      const vx = b.p.x - a.p.x;
+      const vz = b.p.z - a.p.z;
+      const vl = Math.hypot(vx, vz) || 1;
+      const lat = Math.abs((mid.p.x - a.p.x) * (-vz / vl) + (mid.p.z - a.p.z) * (vx / vl));
+      if (lat < minLat) continue;
+      if (pathBlocked(track, a, b, mid)) continue;
+      found.push({ a, b, mid, save, arc, chord, tIn: a.t, tOut: b.t });
+    }
+  }
+  found.sort((p, q) => q.save - p.save);
+  return found;
+}
+
+function placeCuts(track) {
+  let found = gatherCuts(track, 26, 4, 0.32);
+  if (found.length < 2) found = gatherCuts(track, 18, 3.2, 0.36);
+  let best = null;
+  const scorePair = (roof, fence, cap) => {
+    if (roof.tOut + 0.03 >= fence.tIn) return null;
+    if (roof.save > cap || fence.save > cap) return null;
+    return Math.min(roof.save, fence.save);
+  };
+  const search = (cap) => {
+    for (let i = 0; i < found.length; i++) {
+      for (let j = 0; j < found.length; j++) {
+        if (i === j) continue;
+        const score = scorePair(found[i], found[j], cap);
+        if (score == null) continue;
+        if (!best || score > best.score) best = { score, roof: found[i], fence: found[j] };
+      }
+    }
+  };
+  search(64);
+  if (!best) search(92);
+  const cuts = [];
+  if (best) {
+    cuts.push(makeCut(track, best.roof.a, best.roof.b, best.roof.mid, "roof", best.roof.arc, best.roof.chord));
+    cuts.push(makeCut(track, best.fence.a, best.fence.b, best.fence.mid, "fence", best.fence.arc, best.fence.chord));
+  }
+  track.cuts = cuts;
+}
+
+function camBlocked(frames, x, z, rad) {
+  for (let i = 0; i < frames.length; i += 3) {
+    const f = frames[i];
+    if (f.gap || f.loop) continue;
+    const cx = f.p.x - f.tangent.x * 11.2;
+    const cz = f.p.z - f.tangent.z * 11.2;
+    const dx = cx - x;
+    const dz = cz - z;
+    const reach = rad + 2.6;
+    if (dx * dx + dz * dz < reach * reach) return true;
+  }
+  return false;
+}
+
+function placeBuildings(track) {
+  const kinds = ["lodge", "sawmill", "cabin", "tower", "hut"];
+  const foot = { lodge: 3.1, sawmill: 3.4, cabin: 2.5, tower: 1.7, hut: 2.3 };
+  const frames = track.frames;
+  const buildings = [];
+  const place = (loose) => {
+    for (let i = 8; i < frames.length && buildings.length < 8; i++) {
+      if (!loose && i % 9 !== 0) continue;
+      if (loose && i % 4 !== 0) continue;
+      const fr = frames[i];
+      if (hazardEnd(fr) || fr.p.y > 18) continue;
+      const kind = kinds[buildings.length % kinds.length];
+      const r = foot[kind];
+      const side = outerSign(track, fr);
+      const dist = fr.width * 0.5 + (loose ? 20 : 16) + (i % 4);
+      const x = fr.p.x + fr.right.x * dist * side;
+      const z = fr.p.z + fr.right.z * dist * side;
+      if (!roadClear(frames, x, z, r + 1.4)) continue;
+      if (waterUnder(track, x, z)) continue;
+      if (camBlocked(frames, x, z, r)) continue;
+      if ((track.cuts || []).some((c) => c.pts.some((p) => Math.hypot(p.x - x, p.z - z) < r + c.width * 0.5 + 2))) continue;
+      if (buildings.some((b) => Math.hypot(b.x - x, b.z - z) < r + b.r + 8)) continue;
+      buildings.push({
+        kind,
+        x,
+        z,
+        y: fr.p.y,
+        yaw: Math.atan2(fr.p.x - x, fr.p.z - z),
+        r,
+      });
+    }
+  };
+  place(false);
+  if (buildings.length < 5) place(true);
+  track.buildings = buildings;
+  for (const b of buildings) track.solids.push({ x: b.x, z: b.z, r: b.r * 0.78 });
+}
+
+function sampleCut(cut, u) {
+  const pts = cut.pts;
+  const t = Math.max(0, Math.min(0.999, u));
+  const scaled = t * (pts.length - 1);
+  const i = Math.min(pts.length - 2, Math.floor(scaled));
+  const f = scaled - i;
+  const a = pts[i];
+  const b = pts[i + 1];
+  return {
+    x: a.x + (b.x - a.x) * f,
+    y: a.y + (b.y - a.y) * f,
+    z: a.z + (b.z - a.z) * f,
+  };
+}
+
+function projectCut(cut, x, z) {
+  let best = null;
+  const pts = cut.pts;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    const abx = b.x - a.x;
+    const abz = b.z - a.z;
+    const ab2 = abx * abx + abz * abz || 1;
+    let f = ((x - a.x) * abx + (z - a.z) * abz) / ab2;
+    if (f < 0) f = 0;
+    if (f > 1) f = 1;
+    const px = a.x + abx * f;
+    const pz = a.z + abz * f;
+    const dx = x - px;
+    const dz = z - pz;
+    const dist = Math.hypot(dx, dz);
+    const nx = -abz / Math.sqrt(ab2);
+    const nz = abx / Math.sqrt(ab2);
+    if (!best || dist < best.dist) {
+      best = {
+        dist,
+        u: (i + f) / (pts.length - 1),
+        x: px,
+        z: pz,
+        y: a.y + (b.y - a.y) * f,
+        nx,
+        nz,
+        side: Math.sign(dx * nx + dz * nz) || 1,
+      };
+    }
+  }
+  return best;
+}
+
+function advanceCutT(track, kart, cut, u) {
+  let span = cut.tOut - cut.tIn;
+  if (span < 0) span += 1;
+  if (span <= 0 || span > 0.45) return;
+  const target = (cut.tIn + span * Math.max(0, Math.min(1, u)) + 1) % 1;
+  let guard = 0;
+  while (guard < 6) {
+    const d = ribbonDelta(kart, target);
+    if (d <= 0.01) break;
+    const step = Math.min(0.028, d);
+    const next = (((kart.t + step) % 1) + 1) % 1;
+    noteCrossing(kart, kart.t, next);
+    kart.t = next;
+    kart.progress = (kart.laps || 0) + next;
+    kart.along = kart.progress;
+    guard += 1;
+  }
+  kart.hint = frameIndex(track, kart.t);
+}
+
+function shatterCut(cut, laps) {
+  if (cut.broken) return;
+  cut.broken = true;
+  cut.brokenLap = laps || 0;
+  cut.shatter = 0.55;
+  const gate = sampleCut(cut, cut.gate);
+  cut.bits = [];
+  for (let i = 0; i < 8; i++) {
+    const ang = (i / 8) * Math.PI * 2;
+    cut.bits.push({
+      x: gate.x,
+      y: gate.y + 0.7,
+      z: gate.z,
+      vx: Math.cos(ang) * (3.5 + (i % 3)),
+      vy: 2.5 + (i % 4),
+      vz: Math.sin(ang) * (3.5 + (i % 3)),
+      life: 0.55,
+      rot: ang,
+    });
+  }
+}
+
+function rideCut(track, kart, dt) {
+  let best = null;
+  for (const cut of track.cuts || []) {
+    const hit = projectCut(cut, kart.x, kart.z);
+    if (!hit || hit.dist > cut.width * 0.42) continue;
+    if (!best || hit.dist < best.hit.dist) best = { cut, hit };
+  }
+  if (!best) {
+    kart.onCut = "";
+    return false;
+  }
+  const cut = best.cut;
+  const hit = best.hit;
+  if (cut.kind === "fence" && !cut.broken && Math.abs(hit.u - cut.gate) < cut.gateHalf) {
+    const sp = Math.hypot(kart.vx, kart.vz);
+    if (sp >= 14) shatterCut(cut, kart.laps || 0);
+    else {
+      const back = sampleCut(cut, Math.max(0, cut.gate - cut.gateHalf - 0.04));
+      kart.x = back.x;
+      kart.y = back.y;
+      kart.z = back.z;
+      const dirx = hit.x - back.x;
+      const dirz = hit.z - back.z;
+      const dl = Math.hypot(dirx, dirz) || 1;
+      const vn = (kart.vx * dirx + kart.vz * dirz) / dl;
+      if (vn > 0) {
+        kart.vx -= (dirx / dl) * vn;
+        kart.vz -= (dirz / dl) * vn;
+      }
+      kart.grounded = true;
+      kart.vy = 0;
+      kart.onCut = cut.id;
+      kart.cutU = Math.max(0, cut.gate - cut.gateHalf - 0.04);
+      advanceCutT(track, kart, cut, kart.cutU);
+      return true;
+    }
+  }
+  const deck = hit.y;
+  const above = kart.y - deck;
+  if (above > 1.8) {
+    kart.onCut = "";
+    return false;
+  }
+  if (above > 0.5) {
+    kart.vy -= GRAVITY * dt;
+    kart.y += kart.vy * dt;
+    if (kart.y <= deck) {
+      kart.y = deck;
+      kart.vy = 0;
+      kart.grounded = true;
+    } else kart.grounded = false;
+  } else if (above >= -1.6) {
+    kart.y = deck;
+    kart.vy = 0;
+    kart.grounded = true;
+    kart.air = 0;
+    kart.wet = 0;
+    kart.off = 0;
+    kart.fallT = 0;
+  } else {
+    kart.onCut = "";
+    return false;
+  }
+  const rail = cut.width * 0.5 - 0.75;
+  if (hit.dist > rail) {
+    const push = hit.dist - rail;
+    kart.x -= hit.nx * hit.side * push;
+    kart.z -= hit.nz * hit.side * push;
+  }
+  kart.onCut = cut.id;
+  kart.cutU = hit.u;
+  advanceCutT(track, kart, cut, hit.u);
+  return true;
+}
+
+function stepCuts(track, dt) {
+  for (const cut of (track && track.cuts) || []) {
+    if (cut.shatter > 0) cut.shatter = Math.max(0, cut.shatter - dt);
+    for (const bit of cut.bits || []) {
+      bit.life -= dt;
+      bit.vy -= 16 * dt;
+      bit.x += bit.vx * dt;
+      bit.y += bit.vy * dt;
+      bit.z += bit.vz * dt;
+    }
+    if (cut.bits) cut.bits = cut.bits.filter((bit) => bit.life > 0);
+  }
+}
+
+function refreshFences(race) {
+  let minLap = Infinity;
+  for (const k of race.karts || []) {
+    if (!k.finished) minLap = Math.min(minLap, k.laps || 0);
+  }
+  if (!Number.isFinite(minLap)) return;
+  for (const cut of (race.track && race.track.cuts) || []) {
+    if (cut.kind === "fence" && cut.broken && minLap > (cut.brokenLap || 0)) {
+      cut.broken = false;
+      cut.brokenLap = -1;
+      cut.bits = [];
+      cut.shatter = 0;
+    }
+  }
+}
+
 function buildDress(track) {
   const frames = track.frames;
   const theme = track.theme;
@@ -637,21 +1042,6 @@ function buildDress(track) {
     }
   }
   if (theme === "dam") {
-    let nLodge = 0;
-    for (let i = 10; i < frames.length && nLodge < 4; i += 36) {
-      const fr = frames[i];
-      if (fr.bridge || fr.gap || fr.lip || fr.deck || fr.p.y > 7) continue;
-      const dx = track.cx - fr.p.x;
-      const dz = track.cz - fr.p.z;
-      const dl = Math.hypot(dx, dz) || 1;
-      const x = fr.p.x + (dx / dl) * (fr.width * 0.5 + 16);
-      const z = fr.p.z + (dz / dl) * (fr.width * 0.5 + 16);
-      if (Math.hypot(x - track.cx, z - track.cz) < 14) continue;
-      if (!roadClear(frames, x, z, 4)) continue;
-      lodges.push({ x, z, yaw: Math.atan2(dx, dz) });
-      solids.push({ x, z, r: 3.3 });
-      nLodge += 1;
-    }
     for (let i = 0; i < frames.length; i += 18) {
       const fr = frames[i];
       if (fr.gap || fr.bridge || fr.lip || fr.deck) continue;
@@ -667,6 +1057,8 @@ function buildDress(track) {
   track.rocks = rocks;
   track.lodges = lodges;
   track.solids = solids;
+  placeCuts(track);
+  placeBuildings(track);
 }
 
 function frameIndex(track, t) {
@@ -867,6 +1259,7 @@ export function createRace(track, driverId = "bober") {
     driver: ROSTER.some((r) => r.id === driverId) ? driverId : "bober",
     karts: [],
     track,
+    lapTarget: lapsFor(track),
   };
   race.karts = spawnKarts(track, race.driver);
   seedItems(race);
@@ -878,8 +1271,15 @@ export function resetRace(race) {
   race.countdown = 3;
   race.time = 0;
   race.places = [];
+  race.lapTarget = lapsFor(race.track);
   race.karts = spawnKarts(race.track, race.driver);
   seedItems(race);
+  for (const cut of (race.track && race.track.cuts) || []) {
+    cut.broken = false;
+    cut.brokenLap = -1;
+    cut.shatter = 0;
+    cut.bits = [];
+  }
 }
 
 export function setDriver(race, id) {
@@ -894,6 +1294,7 @@ export function setDriver(race, id) {
 
 export function swapTrack(race, id) {
   race.track = createTrack(id);
+  race.lapTarget = lapsFor(race.track);
   race.phase = "splash";
   race.countdown = 3;
   race.time = 0;
@@ -908,11 +1309,14 @@ function integrate(kart, input, dt) {
   if (kart.orb > 0) kart.orb = Math.max(0, kart.orb - dt);
   if (kart.stunCd > 0) kart.stunCd = Math.max(0, kart.stunCd - dt);
   if (kart.hitFlash > 0) kart.hitFlash = Math.max(0, kart.hitFlash - dt);
-  if ((kart.spinT || 0) > 0) kart.spinT = Math.max(0, kart.spinT - dt);
   if ((kart.dizzyT || 0) > 0) kart.dizzyT = Math.max(0, kart.dizzyT - dt);
   if ((kart.hitMarkT || 0) > 0) kart.hitMarkT = Math.max(0, kart.hitMarkT - dt);
   if ((kart.spinT || 0) > 0) {
-    kart.spinVis = (kart.spinVis || 0) + (kart.spinDir || 1) * 12 * dt * Math.min(1, kart.spinT / 0.5);
+    const dur = Math.max(0.2, kart.spinDur || 0.9);
+    const turns = kart.spinTurns || 2;
+    const rate = (turns * Math.PI * 2) / dur;
+    kart.spinVis = (kart.spinVis || 0) + (kart.spinDir || 1) * rate * dt;
+    kart.spinT = Math.max(0, kart.spinT - dt);
   } else if (kart.spinVis) {
     kart.spinVis += (0 - kart.spinVis) * Math.min(1, dt * 5);
     if (Math.abs(kart.spinVis) < 0.02) kart.spinVis = 0;
@@ -1075,15 +1479,17 @@ function bodyStep(track, kart, dt) {
   const lat = (kart.x - fr.p.x) * fr.right.x + (kart.z - fr.p.z) * fr.right.z;
   const edge = fr.width * 0.5 - 0.9;
   const offOuter = !!(fr.vent && (Math.sign(lat) || 0) === outerSign(track, fr) && Math.abs(lat) > edge);
-  if (near.dist2 < 26 * 26) {
+  const riding = rideCut(track, kart, dt);
+  if (!riding && near.dist2 < 26 * 26) {
     const dRibbon = ribbonDelta(kart, fr.t);
     const onRoad = near.dist2 < 8 * 8;
     if (Math.abs(dRibbon) <= 0.08 || (onRoad && dRibbon > 0 && dRibbon <= 0.16)) {
       adoptProgress(kart, near.index, track);
     }
   }
-  let mode = "air";
+  let mode = riding ? "road" : "air";
   let latNow = lat;
+  if (!riding) {
   if (!fr.gap && fr.rail && Math.abs(lat) > edge && !offOuter) {
     const sign = Math.sign(lat) || 1;
     const push = Math.abs(lat) - edge;
@@ -1250,7 +1656,8 @@ function bodyStep(track, kart, dt) {
     kart.wet = (kart.wet || 0) + dt;
     if (kart.wet > 0.22) respawnKart(track, kart);
   }
-  for (const s of track.solids || []) {
+  }
+  if (!riding) for (const s of track.solids || []) {
     const dx = kart.x - s.x;
     const dz = kart.z - s.z;
     const d = Math.hypot(dx, dz);
@@ -1265,12 +1672,12 @@ function bodyStep(track, kart, dt) {
       }
     }
   }
-  if (kart.loopSpeed == null && kart.grounded && (kart.speed < 7 || (fr.rail && kart.speed < 13))) {
+  if (!riding && kart.loopSpeed == null && kart.grounded && (kart.speed < 7 || (fr.rail && kart.speed < 13))) {
     const aim = Math.atan2(fr.tangent.x, fr.tangent.z);
     const rate = kart.speed < 7 ? 3.2 : 2.4;
     kart.yaw = wrapAngle(kart.yaw + wrapAngle(aim - kart.yaw) * Math.min(1, dt * rate));
   }
-  if (kart.grounded && kart.speed < 4.5 && mode === "road") {
+  if (!riding && kart.grounded && kart.speed < 4.5 && mode === "road") {
     kart.creep = (kart.creep || 0) + dt;
     if (kart.creep > 0.7) {
       kart.vx += fr.tangent.x * 22 * dt;
@@ -1279,7 +1686,7 @@ function bodyStep(track, kart, dt) {
   } else kart.creep = 0;
   kart.speed = kart.loopSpeed != null ? kart.loopSpeed : Math.hypot(kart.vx, kart.vz);
   const guidedTheme = track.theme === "clover" || track.theme === "oasis" || track.theme === "sky";
-  if (guidedTheme && (kart.respawnCd || 0) <= 0 && kart.loopSpeed == null) {
+  if (!riding && guidedTheme && (kart.respawnCd || 0) <= 0 && kart.loopSpeed == null) {
     kart.watchAge = (kart.watchAge || 0) + dt;
     if (kart.watchT == null) kart.watchT = kart.t;
     if (kart.watchAge > 3) {
@@ -1381,8 +1788,9 @@ function tuneCaps(race) {
 
 function finishIfNeeded(race) {
   if (race.time < 8) return;
+  const need = race.lapTarget || lapsFor(race.track);
   const done = race.karts
-    .filter((k) => !k.finished && k.laps >= LAPS)
+    .filter((k) => !k.finished && k.laps >= need)
     .sort((a, b) => b.progress - a.progress);
   for (const k of done) markFinished(race, k, true);
   const you = humanOf(race);
@@ -1391,7 +1799,7 @@ function finishIfNeeded(race) {
     const rest = race.karts
       .filter((k) => !k.finished)
       .sort((a, b) => b.progress - a.progress);
-    for (const k of rest) markFinished(race, k, k.laps >= LAPS);
+    for (const k of rest) markFinished(race, k, k.laps >= need);
     race.phase = "podium";
   }
 }
@@ -1425,6 +1833,8 @@ export function stepRace(race, inputs, dt) {
   separate(race.karts);
   for (const kart of race.karts) bodyStep(race.track, kart, step);
   stepItems(race, step);
+  stepCuts(race.track, step);
+  refreshFences(race);
   finishIfNeeded(race);
 }
 
@@ -1432,6 +1842,21 @@ export function adviceFor(race, id) {
   const kart = race.karts.find((k) => k.id === id);
   const track = race.track;
   const here0 = track.frames[kart.hint] || frameAt(track, kart.t);
+  if (kart.onCut) {
+    const cut = (track.cuts || []).find((c) => c.id === kart.onCut);
+    if (cut) {
+      const p = sampleCut(cut, Math.min(0.98, (kart.cutU || 0) + 0.1));
+      const desired = Math.atan2(p.x - kart.x, p.z - kart.z);
+      const err = wrapAngle(desired - kart.yaw);
+      return {
+        steer: Math.max(-1, Math.min(1, err / 0.4)),
+        gas: 1,
+        drift: false,
+        brake: false,
+        fire: false,
+      };
+    }
+  }
   if (kart.grounded && here0.loop) {
     return { steer: 0, gas: 1, drift: false, brake: false, fire: false };
   }
@@ -1488,6 +1913,19 @@ export function adviceFor(race, id) {
     if (best) {
       tx = best.bx;
       tz = best.bz;
+    }
+  }
+  if (!here0.loop) {
+    for (const cut of track.cuts || []) {
+      if (cut.kind === "fence" && !cut.broken && (kart.speed || 0) < 16) continue;
+      let gap = cut.tIn - (((kart.t % 1) + 1) % 1);
+      if (gap < -0.5) gap += 1;
+      if (gap > 0.5) gap -= 1;
+      if (gap < 0.004 || gap > 0.03) continue;
+      const mouth = cut.pts[1] || cut.pts[0];
+      tx = mouth.x;
+      tz = mouth.z;
+      break;
     }
   }
   let desired = Math.atan2(tx - kart.x, tz - kart.z);
@@ -1593,8 +2031,9 @@ export function livePlace(race, id) {
   return sorted.findIndex((k) => k.id === id) + 1;
 }
 
-export function lapOf(kart) {
-  return Math.min(LAPS, (kart.laps || 0) + 1);
+export function lapOf(kart, race) {
+  const cap = race && race.lapTarget ? race.lapTarget : LAPS;
+  return Math.min(cap, (kart.laps || 0) + 1);
 }
 
 export function loadSave() {
@@ -1900,10 +2339,13 @@ function finishSim(track, fails, label, seconds) {
     const inputs = {};
     for (const k of race.karts) inputs[k.id] = adviceFor(race, k.id);
     stepRace(race, inputs, 1 / 60);
-    for (const k of race.karts) hud.add(lapOf(k));
+    for (const k of race.karts) hud.add(lapOf(k, race));
     guard++;
   }
-  if (!hud.has(1) || !hud.has(2) || !hud.has(3)) fails.push(label + " hud " + [...hud].join(","));
+  const needLaps = lapsFor(track);
+  if (!hud.has(1) || !hud.has(2) || !hud.has(3) || (needLaps >= 4 && !hud.has(4))) {
+    fails.push(label + " hud " + [...hud].join(","));
+  }
   if (race.phase !== "podium") {
     fails.push(
       label +
@@ -1928,7 +2370,7 @@ function finishSim(track, fails, label, seconds) {
     );
     return;
   }
-  const lapSec = guard / 60 / LAPS;
+  const lapSec = guard / 60 / needLaps;
   const slow = seconds ? 90 : 55;
   const fast = seconds ? 28 : 30;
   if (lapSec < fast || lapSec > slow) fails.push(label + " lap " + lapSec.toFixed(1));
@@ -1983,7 +2425,7 @@ function testClover(fails) {
     if (top.y < 8) fails.push("clover dropped " + top.y.toFixed(1));
     if (bot.y > 6) fails.push("clover climbed " + bot.y.toFixed(1));
   }
-  finishSim(track, fails, "clover");
+  finishSim(track, fails, "clover", 420);
 }
 
 function testLeap(track, fails, label) {
@@ -2097,8 +2539,83 @@ function testSky(fails) {
   finishSim(track, fails, "sky", 420);
 }
 
+function testSpin(fails) {
+  const kart = {
+    x: 0, y: 0, z: 0, yaw: 0, vx: 0, vz: 0, speed: 0,
+    spark: 0, drifting: false, boost: 0, boostPow: 0, steerHold: 0, slip: 0,
+    fireCd: 0, invuln: 0, orb: 0, stunCd: 0, hitFlash: 0,
+    spinT: 0.9, spinDur: 0.9, spinTurns: 2, spinDir: 1, spinVis: 0,
+    dizzyT: 0, hitMarkT: 0, stun: 0, slowT: 0, speedMul: 1, steerSm: 0,
+  };
+  for (let i = 0; i < 54; i++) integrate(kart, { steer: 0, gas: 0, drift: false }, 1 / 60);
+  const turns = Math.abs(kart.spinVis) / (Math.PI * 2);
+  if (turns < 1.85 || turns > 2.15) fails.push("spin turns " + turns.toFixed(2));
+}
+
+function driveCut(track, cut, speed, startU, gas) {
+  const u0 = startU == null ? 0 : startU;
+  const p0 = sampleCut(cut, u0);
+  const p1 = sampleCut(cut, Math.min(0.98, u0 + 0.08));
+  const kart = loneKart(track, frameAt(track, cut.tIn), speed);
+  kart.x = p0.x;
+  kart.y = p0.y + 0.15;
+  kart.z = p0.z;
+  kart.yaw = Math.atan2(p1.x - p0.x, p1.z - p0.z);
+  const nose = forward(kart.yaw);
+  kart.vx = nose.x * speed;
+  kart.vz = nose.z * speed;
+  kart.speed = speed;
+  kart.t = cut.tIn;
+  kart.laps = 0;
+  kart.seenHalf = false;
+  kart.hint = frameIndex(track, cut.tIn);
+  let hi = kart.y;
+  const throttle = gas == null ? 1 : gas;
+  for (let i = 0; i < 520; i++) {
+    integrate(kart, { steer: 0, gas: throttle, drift: false }, 1 / 60);
+    bodyStep(track, kart, 1 / 60);
+    if (kart.y > hi) hi = kart.y;
+    if ((kart.cutU || 0) > 0.9) break;
+  }
+  return { kart, hi, y0: p0.y };
+}
+
+function testShortcuts(fails) {
+  for (const id of ["dam", "frost", "clover", "oasis", "sky"]) {
+    const track = id === "dam" ? createTrack() : createTrack(id);
+    if (lapsFor(track) !== (id === "oasis" || id === "sky" ? 3 : 4)) fails.push(id + " laps " + lapsFor(track));
+    const roofs = (track.cuts || []).filter((c) => c.kind === "roof");
+    const fences = (track.cuts || []).filter((c) => c.kind === "fence");
+    if (!roofs.length || !fences.length) fails.push(id + " cuts " + roofs.length + "/" + fences.length);
+    const kinds = new Set((track.buildings || []).map((b) => b.kind));
+    for (const kind of ["lodge", "sawmill", "cabin", "tower", "hut"]) {
+      if (!kinds.has(kind)) fails.push(id + " yard " + kind);
+    }
+    for (const cut of track.cuts || []) {
+      if (cut.save < 18 || cut.save > 96) fails.push(id + " " + cut.kind + " save " + cut.save.toFixed(1));
+    }
+    if (id !== "dam" || !roofs.length || !fences.length) continue;
+    const roof = driveCut(track, roofs[0], 22, 0, 1);
+    if (roof.hi < roof.y0 + 1.5) fails.push("roof height " + roof.hi.toFixed(2));
+    if ((roof.kart.falls || 0) > 0) fails.push("roof fall");
+    if ((roof.kart.laps || 0) !== 0) fails.push("roof lap " + roof.kart.laps);
+    let adv = roof.kart.t - roofs[0].tIn;
+    if (adv < -0.5) adv += 1;
+    if (adv < 0.03) fails.push("roof t " + adv.toFixed(3));
+    const fence = fences[0];
+    driveCut(track, fence, 22, Math.max(0, fence.gate - 0.12), 1);
+    if (!fence.broken) fails.push("fence shut");
+    fence.broken = false;
+    fence.bits = [];
+    driveCut(track, fence, 6, Math.max(0, fence.gate - 0.08), 0);
+    if (fence.broken) fails.push("fence slow break");
+  }
+}
+
 export function selfTest() {
   const fails = [];
+  testSpin(fails);
+  testShortcuts(fails);
   const track = createTrack();
   if (track.length < 700 || track.length > 1300) fails.push("length " + track.length.toFixed(1));
   const pinch = hardPinch(track.frames);
@@ -2129,7 +2646,7 @@ export function selfTest() {
   let fires = 0;
   const lapSeen = new Set();
   const watched = humanOf(race);
-  while (race.phase !== "podium" && guard < 60 * 360) {
+  while (race.phase !== "podium" && guard < 60 * 480) {
     const inputs = {};
     for (const k of race.karts) {
       const adv = adviceFor(race, k.id);
@@ -2137,14 +2654,16 @@ export function selfTest() {
       inputs[k.id] = adv;
     }
     stepRace(race, inputs, 1 / 60);
-    lapSeen.add(lapOf(watched));
+    lapSeen.add(lapOf(watched, race));
     if (guard > 60 * 10 && guard % 45 === 0) {
       const sorted = [...race.karts].sort((a, b) => b.progress - a.progress);
       contend = sorted[0].progress - sorted[1].progress;
     }
     guard++;
   }
-  if (!lapSeen.has(1) || !lapSeen.has(2) || !lapSeen.has(3)) fails.push("lap hud " + [...lapSeen].join(","));
+  if (!lapSeen.has(1) || !lapSeen.has(2) || !lapSeen.has(3) || !lapSeen.has(4)) {
+    fails.push("lap hud " + [...lapSeen].join(","));
+  }
   if (race.phase !== "podium") {
     fails.push(
       "no podium " +
@@ -2153,9 +2672,9 @@ export function selfTest() {
   } else {
     const you = humanOf(race);
     if (!you.finished || you.place < 1 || you.place > 4) fails.push("place " + you.place);
-    if (you.laps < LAPS) fails.push("laps " + you.laps);
+    if (you.laps < lapsFor(track)) fails.push("laps " + you.laps);
     if (guard < 60 * 15) fails.push("too fast " + guard);
-    const lapSec = guard / 60 / LAPS;
+    const lapSec = guard / 60 / lapsFor(track);
     if (lapSec < 34 || lapSec > 56) fails.push("lap pace " + lapSec.toFixed(1));
     const sorted = [...race.karts].sort((a, b) => b.progress - a.progress);
     const gap = sorted[0].progress - sorted[sorted.length - 1].progress;

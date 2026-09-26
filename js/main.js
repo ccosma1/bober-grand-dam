@@ -1,6 +1,6 @@
 import * as THREE from "../vendor/three.module.js";
 import {
-  LAPS,
+  lapsFor,
   adviceFor,
   createRace,
   createTrack,
@@ -18,9 +18,9 @@ import {
   setDriver as chooseDriver,
   swapTrack,
   writeSave,
-} from "./sim.js?v=gd41";
-import { createWorld } from "./world.js?v=gd41";
-import { createSfx } from "./audio.js?v=gd41";
+} from "./sim.js?v=gd42";
+import { createWorld } from "./world.js?v=gd42";
+import { createSfx } from "./audio.js?v=gd42";
 
 const app = document.getElementById("app");
 const stage = document.getElementById("stage");
@@ -58,6 +58,7 @@ let lastTick = performance.now();
 let ceilSeen = 4;
 let hinted = false;
 let hitSeen = 0;
+let buzzSeen = 0;
 const held = { left: false, right: false, gas: false, brake: false, drift: false };
 const joy = { active: false, steer: 0, gas: false, brake: false };
 
@@ -470,27 +471,27 @@ const EXHIBITS = {
   "dam-loop": {
     src: "assets/history/dam-loop.jpg?v=gd12",
     title: "Dam Loop",
-    cap: "The crest road, the bank, the spillway. Three laps. The line is the crest.",
+    cap: "The crest road, the bank, the spillway. Four laps. The line is the crest.",
   },
   "frost-ridge": {
     src: "assets/history/frost-ridge.jpg?v=gd12",
     title: "Frost Ridge",
-    cap: "Ice, banks, and two narrow bridges. Same three laps. Same four racers.",
+    cap: "Ice, banks, and two narrow bridges. Four laps. Same four racers.",
   },
   "crown-clover": {
     src: "assets/museum/crown-clover.jpg?v=gd21",
     title: "Crown Clover",
-    cap: "A figure-eight. One pass is a bridge over the cross. Tight apexes, three laps.",
+    cap: "A figure-eight. One pass is a bridge over the cross. Tight apexes, four laps.",
   },
   "oasis-leap": {
     src: "assets/museum/oasis-leap.jpg?v=gd21",
     title: "Oasis Leap",
-    cap: "Two ramps. You leave the lip, arc, and land on the deck. The pools under the holes are real.",
+    cap: "Two ramps. You leave the lip, arc, and land on the deck. The pools under the holes are real. Three laps.",
   },
   "sky-loop": {
     src: "assets/museum/sky-loop.jpg?v=gd21",
     title: "Sky Loop 360",
-    cap: "A full loop overhead. Carry speed or you fall. The camera stays upright.",
+    cap: "A full loop overhead. Carry speed or you fall. The camera stays upright. Three laps.",
   },
   "sling-kart": {
     src: "assets/history/crest-drift.jpg?v=gd12",
@@ -520,7 +521,7 @@ const EXHIBITS = {
   magnet: {
     src: "assets/museum/twig.jpg?v=gd21",
     title: "Lodge Magnet",
-    cap: "Latches the nearest racer ahead and hauls them back.",
+    cap: "Latches the nearest racer, ahead or behind, and hauls them in.",
   },
   buckler: {
     src: "assets/museum/wall.jpg?v=gd21",
@@ -540,22 +541,22 @@ const EXHIBITS = {
   bober: {
     src: "assets/museum/bober.jpg?v=gd12",
     title: "Bober",
-    cap: "Chunky lodge beaver in the classic cedar cart. Amber scarf.",
+    cap: "Bober keeps the lodge lamp lit and still takes the cedar cart up the spillway at dusk. He knows every plank by the sound it makes when the dam is loud. When the crest bell rings, Bober is already on the bank.",
   },
   muscle: {
     src: "assets/museum/muscle.jpg?v=gd21",
-    title: "Muscle",
-    cap: "Bulky beaver in a heavy armored hauler. Big rear wheels.",
+    title: "Mossback",
+    cap: "Mossback has old shoulders, an iron cart, and a red scarf that never quite dries. He hauls timber all week, then races for the fun of shoving the pack along the bank. The lodge keeps the widest bowl of stew warm for him.",
   },
   tall: {
     src: "assets/museum/tall.jpg?v=gd21",
-    title: "Tall Handsome",
-    cap: "Tall lean beaver in a long sleek speed cart.",
+    title: "Reed",
+    cap: "Reed is tall and quiet, with a scarf the color of late cedar. He built the long coach to carry the lodge mail, then found it liked the bank. He waves once at the finish, and he means it.",
   },
   nib: {
     src: "assets/museum/nib.jpg?v=gd12",
-    title: "Nib",
-    cap: "Small scrappy beaver on a light scrap cart.",
+    title: "Pip",
+    cap: "Pip is the smallest beaver in the lodge and the quickest hands on a scrap cart. The lanterns get patched before dawn, and Pip still beats the mill bell to the line. Nobody stays mad for long when Pip grins.",
   },
 };
 
@@ -686,7 +687,7 @@ function paintMinimap() {
 function hudTick() {
   const you = humanOf(race);
   document.getElementById("hud-place").textContent = livePlace(race, you.id) + "/" + race.karts.length;
-  document.getElementById("hud-lap").textContent = "LAP " + lapOf(you) + "/" + LAPS;
+  document.getElementById("hud-lap").textContent = "LAP " + lapOf(you, race) + "/" + (race.lapTarget || lapsFor(race.track));
   document.getElementById("hud-time").textContent = fmt(race.time);
   const fireBtn = document.getElementById("btn-fire");
   const deskFire = document.getElementById("desk-fire");
@@ -782,6 +783,10 @@ function frame(now) {
   } else {
     hitSeen = hitNow;
   }
+  if ((race.buzz || 0) !== buzzSeen) {
+    buzzSeen = race.buzz || 0;
+    sfx.buzz();
+  }
   if (race.phase === "podium") showPodium();
   else podiumEl.classList.add("hidden");
   const you = humanOf(race);
@@ -803,6 +808,59 @@ world.ready.then(() => {
   startBtn.focus();
 });
 const check = world.frameCheck();
+
+function seatKart(kart, cut, u, speed) {
+  const pts = cut.pts;
+  const scaled = Math.max(0, Math.min(0.999, u)) * (pts.length - 1);
+  const i = Math.min(pts.length - 2, Math.floor(scaled));
+  const f = scaled - i;
+  const a = pts[i];
+  const b = pts[i + 1];
+  kart.x = a.x + (b.x - a.x) * f;
+  kart.y = a.y + (b.y - a.y) * f + 0.12;
+  kart.z = a.z + (b.z - a.z) * f;
+  kart.yaw = Math.atan2(b.x - a.x, b.z - a.z);
+  const sp = speed == null ? 22 : speed;
+  kart.vx = Math.sin(kart.yaw) * sp;
+  kart.vz = Math.cos(kart.yaw) * sp;
+  kart.vy = 0;
+  kart.speed = sp;
+  kart.t = cut.tIn;
+  kart.laps = 0;
+  kart.seenHalf = false;
+  kart.progress = cut.tIn;
+  kart.along = cut.tIn;
+  kart.finished = false;
+  kart.grounded = true;
+  kart.stun = 0;
+  kart.stunCd = 0;
+  kart.spinT = 0;
+  kart.spinVis = 0;
+  kart.dizzyT = 0;
+  kart.hitMarkT = 0;
+  kart.slowT = 0;
+  kart.speedMul = 1;
+  kart.falls = 0;
+  kart.onCut = "";
+  kart.air = 0;
+  kart.wet = 0;
+  kart.off = 0;
+  return kart.y;
+}
+
+function parkFoes() {
+  for (const foe of race.karts) {
+    if (!foe.cpu) continue;
+    foe.finished = true;
+    foe.x = 5000;
+    foe.z = 5000;
+    foe.y = 40;
+    foe.vx = 0;
+    foe.vz = 0;
+    foe.vy = 0;
+  }
+}
+
 window.__grand = {
   snapshot() {
     const you = humanOf(race);
@@ -812,10 +870,11 @@ window.__grand = {
       time: race.time,
       countdown: race.countdown,
       driver: you.id,
-      lap: lapOf(you),
+      lap: lapOf(you, race),
       place: you.place || livePlace(race, you.id),
       progress: you.progress,
       laps: you.laps,
+      onCut: you.onCut || "",
       speed: you.speed,
       spark: you.spark,
       boost: you.boost,
@@ -829,7 +888,7 @@ window.__grand = {
       held: you.held || "",
       lastFx: race.lastFx || "",
       track: race.track.id,
-      lapTarget: LAPS,
+      lapTarget: race.lapTarget || lapsFor(race.track),
       advice: adviceFor(race, you.id),
       stageH: stageBox.height,
       viewH: window.innerHeight,
@@ -912,6 +971,137 @@ window.__grand = {
       length: race.track && race.track.length,
     };
   },
+  plant(kind) {
+    const you = humanOf(race);
+    const foe = race.karts.find((k) => k.cpu);
+    if (!you || !foe) return "";
+    const len = Math.max(80, race.track.length || 1000);
+    foe.finished = false;
+    foe.stun = 0;
+    foe.stunCd = 0;
+    foe.spinT = 0;
+    foe.spinVis = 0;
+    foe.dizzyT = 0;
+    foe.hitMarkT = 0;
+    foe.slowT = 0;
+    foe.speedMul = 1;
+    foe.buckler = 0;
+    foe.hitFlash = 0;
+    foe.grounded = true;
+    if (kind === "buckler") {
+      const sx = Math.cos(you.yaw);
+      const sz = -Math.sin(you.yaw);
+      foe.x = you.x + sx * 2;
+      foe.z = you.z + sz * 2;
+      foe.y = you.y;
+      foe.yaw = you.yaw;
+      foe.t = you.t;
+      foe.vx = 0;
+      foe.vz = 0;
+      foe.speed = 0;
+      return foe.id;
+    }
+    const back = kind === "slick" ? 4.5 : 3;
+    const fr = frameAt(race.track, you.t - back / len);
+    const sp = 8;
+    foe.x = fr.p.x;
+    foe.z = fr.p.z;
+    foe.y = fr.p.y;
+    foe.yaw = Math.atan2(fr.tangent.x, fr.tangent.z);
+    foe.t = fr.t;
+    foe.vx = fr.tangent.x * sp;
+    foe.vz = fr.tangent.z * sp;
+    foe.speed = sp;
+    return foe.id;
+  },
+  exile(on) {
+    for (const k of race.karts) {
+      if (!k.cpu) continue;
+      if (on) {
+        k._ex = { x: k.x, z: k.z, y: k.y, t: k.t, finished: !!k.finished };
+        k.finished = true;
+        k.x += 800;
+        k.z += 800;
+      } else if (k._ex) {
+        k.x = k._ex.x;
+        k.z = k._ex.z;
+        k.y = k._ex.y;
+        k.t = k._ex.t;
+        k.finished = k._ex.finished;
+        k._ex = null;
+      }
+    }
+  },
+  seatCut(kind) {
+    const you = humanOf(race);
+    const cut = (race.track.cuts || []).find((c) => c.kind === kind);
+    if (!you || !cut) return { ok: false };
+    cut.broken = false;
+    cut.bits = [];
+    cut.shatter = 0;
+    const u = kind === "fence" ? Math.max(0, cut.gate - 0.12) : 0.02;
+    const y = seatKart(you, cut, u, 22);
+    return { ok: true, y, id: cut.id };
+  },
+  cutBroken(kind) {
+    const cut = (race.track.cuts || []).find((c) => c.kind === kind);
+    return !!(cut && cut.broken);
+  },
+  rewind() {
+    resetRace(race);
+    race.phase = "race";
+    race.time = 12;
+    race.countdown = 0;
+  },
+  probeCuts() {
+    const fails = [];
+    const trackId = race.track.id;
+    const drive = (kind) => {
+      const you = humanOf(race);
+      const cut = (race.track.cuts || []).find((c) => c.kind === kind);
+      if (!cut) {
+        fails.push(race.track.id + " no " + kind);
+        return;
+      }
+      cut.broken = false;
+      cut.bits = [];
+      const u = kind === "fence" ? Math.max(0, cut.gate - 0.1) : 0;
+      const y0 = seatKart(you, cut, u, 22);
+      const t0 = you.t;
+      parkFoes();
+      let hi = you.y;
+      const frames = kind === "roof" ? 520 : 220;
+      for (let n = 0; n < frames; n++) {
+        stepRace(race, { [you.id]: { steer: 0, gas: 1, drift: false, brake: false, fire: false } }, 1 / 60);
+        parkFoes();
+        if (you.y > hi) hi = you.y;
+        if (kind === "fence" && cut.broken) break;
+        if (kind === "roof" && (you.cutU || 0) > 0.55) break;
+      }
+      if (kind === "roof" && hi < y0 + 1.2) fails.push(race.track.id + " roof " + hi.toFixed(2) + "/" + y0.toFixed(2));
+      if (kind === "fence" && !cut.broken) fails.push(race.track.id + " fence shut");
+      if ((you.laps || 0) !== 0) fails.push(race.track.id + " " + kind + " lap " + you.laps);
+      let adv = you.t - t0;
+      if (adv < -0.5) adv += 1;
+      if (adv < 0.02) fails.push(race.track.id + " " + kind + " t " + adv.toFixed(3));
+    };
+    for (const id of ["dam", "frost", "clover", "oasis", "sky"]) {
+      swapTrack(race, id);
+      world.setTrack(race.track);
+      race.phase = "race";
+      race.time = 20;
+      race.countdown = 0;
+      const kinds = new Set((race.track.buildings || []).map((b) => b.kind));
+      for (const kind of ["lodge", "sawmill", "cabin", "tower", "hut"]) {
+        if (!kinds.has(kind)) fails.push(id + " yard " + kind);
+      }
+      drive("roof");
+      drive("fence");
+    }
+    swapTrack(race, trackId);
+    world.setTrack(race.track);
+    return { ok: fails.length === 0, fails };
+  },
   draft(gap) {
     const you = humanOf(race);
     const foe = race.karts.find((k) => k.cpu && !k.finished);
@@ -919,14 +1109,16 @@ window.__grand = {
     const dist = gap == null ? 6 : gap;
     const len = Math.max(80, race.track.length || 1000);
     const fr = frameAt(race.track, you.t - dist / len);
-    foe.x = fr.p.x + fr.right.x * 0.4;
-    foe.z = fr.p.z + fr.right.z * 0.4;
+    const cap = foe.baseCap || 29;
+    const sp = cap * 0.6;
+    foe.x = fr.p.x;
+    foe.z = fr.p.z;
     foe.y = fr.p.y;
     foe.yaw = Math.atan2(fr.tangent.x, fr.tangent.z);
     foe.t = fr.t;
-    foe.vx = fr.tangent.x * 18;
-    foe.vz = fr.tangent.z * 18;
-    foe.speed = 18;
+    foe.vx = fr.tangent.x * sp;
+    foe.vz = fr.tangent.z * sp;
+    foe.speed = sp;
     foe.stun = 0;
     foe.stunCd = 0;
     foe.buckler = 0;
@@ -934,6 +1126,10 @@ window.__grand = {
     foe.slowT = 0;
     foe.speedMul = 1;
     foe.hitFlash = 0;
+    foe.spinT = 0;
+    foe.spinVis = 0;
+    foe.dizzyT = 0;
+    foe.hitMarkT = 0;
     foe.finished = false;
     return foe.id;
   },

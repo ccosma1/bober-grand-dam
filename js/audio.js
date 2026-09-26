@@ -37,6 +37,12 @@ export function createSfx() {
     hit() {
       try { tone(128, 0.08, "square", 0.07); } catch (e) { /* ignore */ }
     },
+    buzz() {
+      try {
+        tone(96, 0.07, "square", 0.06);
+        setTimeout(() => tone(70, 0.09, "square", 0.05), 80);
+      } catch (e) { /* ignore */ }
+    },
     finish() {
       try {
         tone(523, 0.12, "square", 0.05);

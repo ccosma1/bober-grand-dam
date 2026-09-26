@@ -1,5 +1,5 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd41";
-import { buildKart } from "./racers.js?v=gd41";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd42";
+import { buildKart } from "./racers.js?v=gd42";
 
 function canvasTex(THREE, draw, w, h, repeat) {
   const c = document.createElement("canvas");
@@ -686,27 +686,7 @@ export function createWorld(THREE, track) {
   const roofMat = new THREE.MeshStandardMaterial({ color: 0x6a3a28, roughness: 0.75 });
   const chimneyMat = new THREE.MeshStandardMaterial({ color: 0x8a8074, roughness: 0.7 });
   const windowMat = new THREE.MeshStandardMaterial({ color: 0xf0a024, emissive: 0xc98416, emissiveIntensity: 0.7 });
-  for (const lodge of track.lodges || []) {
-    const hut = new THREE.Mesh(new THREE.BoxGeometry(6.2, 3.6, 5.2), lodgeMat);
-    hut.position.set(lodge.x, 1.8, lodge.z);
-    hut.rotation.y = lodge.yaw;
-    hut.castShadow = true;
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(4.4, 2.2, 4), roofMat);
-    roof.position.set(lodge.x, 4.4, lodge.z);
-    roof.rotation.y = lodge.yaw;
-    const fx = Math.sin(lodge.yaw);
-    const fz = Math.cos(lodge.yaw);
-    const door = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.8, 0.14), new THREE.MeshStandardMaterial({ color: 0xf4e6c8 }));
-    door.position.set(lodge.x + fx * 2.6, 1.0, lodge.z + fz * 2.6);
-    door.rotation.y = lodge.yaw;
-    const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.3, 1.3, 6), chimneyMat);
-    stack.position.set(lodge.x - fx * 1.4, 4.6, lodge.z - fz * 1.4);
-    const glow = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.55, 0.1), windowMat);
-    glow.position.set(lodge.x + fx * 2.62, 2.2, lodge.z + fz * 2.62);
-    glow.rotation.y = lodge.yaw;
-    scene.add(hut, roof, door, stack, glow);
-    foliage.push(hut, roof, door, stack, glow);
-  }
+  const doorMat = new THREE.MeshStandardMaterial({ color: 0xf4e6c8, roughness: 0.6 });
 
   const crowdScarf = new THREE.MeshStandardMaterial({ color: 0xe6a322, roughness: 0.5 });
   const crowdFur = new THREE.MeshStandardMaterial({ color: 0x8d5a32, roughness: 0.75 });
@@ -1239,8 +1219,33 @@ export function createWorld(THREE, track) {
     }
   }
 
+  function syncYard() {
+    if (!yard) return;
+    const cuts = (liveTrack && liveTrack.cuts) || [];
+    for (let i = yard.children.length - 1; i >= 0; i--) {
+      const child = yard.children[i];
+      if (child.userData && child.userData.bit) {
+        yard.remove(child);
+        if (child.geometry) child.geometry.dispose();
+      } else if (child.userData && child.userData.cutId) {
+        const cut = cuts.find((c) => c.id === child.userData.cutId);
+        child.visible = !(cut && cut.broken);
+      }
+    }
+    for (const cut of cuts) {
+      for (const bit of cut.bits || []) {
+        const plank = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.12, 0.22), roofMat);
+        plank.position.set(bit.x, bit.y, bit.z);
+        plank.rotation.set(bit.rot || 0, bit.life * 6, bit.rot || 0);
+        plank.userData.bit = true;
+        yard.add(plank);
+      }
+    }
+  }
+
   function update(race, dt, portrait) {
     waterMat.uniforms.uTime.value += dt;
+    syncYard();
     spillMat.uniforms.uTime.value += dt;
     const you = race.karts.find((k) => !k.cpu) || race.karts[0];
     for (let i = 0; i < race.karts.length; i++) {
@@ -1635,7 +1640,7 @@ export function createWorld(THREE, track) {
     }
     for (const k of race.karts || []) {
       if ((k.buckler || 0) <= 0) continue;
-      const aura = addMesh(ringGeo, starMat, k.x, k.y + 0.9, k.z, 5.9);
+      const aura = addMesh(ringGeo, starMat, k.x, k.y + 0.9, k.z, (k.buckFlash || 0) > 0.05 ? 3.7 : 2.9);
       aura.rotation.x = -Math.PI / 2;
     }
     for (const wall of race.walls || []) {
@@ -1812,6 +1817,163 @@ export function createWorld(THREE, track) {
 
   let frostDress = null;
   let extraDress = null;
+  let yard = null;
+
+  function deckStrip(pts, half) {
+    const geo = new THREE.BufferGeometry();
+    const pos = [];
+    const nrm = [];
+    const uv = [];
+    const idx = [];
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      const n = pts[Math.min(pts.length - 1, i + 1)];
+      const prev = pts[Math.max(0, i - 1)];
+      const dx = (i === pts.length - 1 ? p.x - prev.x : n.x - p.x);
+      const dz = (i === pts.length - 1 ? p.z - prev.z : n.z - p.z);
+      const len = Math.hypot(dx, dz) || 1;
+      const rx = (-dz / len) * half;
+      const rz = (dx / len) * half;
+      pos.push(p.x + rx, p.y + 0.06, p.z + rz, p.x - rx, p.y + 0.06, p.z - rz);
+      nrm.push(0, 1, 0, 0, 1, 0);
+      uv.push(0, i * 0.2, 1, i * 0.2);
+      if (i < pts.length - 1) {
+        const v = i * 2;
+        idx.push(v, v + 1, v + 2, v + 1, v + 3, v + 2);
+      }
+    }
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute("normal", new THREE.Float32BufferAttribute(nrm, 3));
+    geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+    geo.setIndex(idx);
+    return geo;
+  }
+
+  function postAt(x, y, z, h) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, h, 6), lodgeMat);
+    post.position.set(x, y + h * 0.5, z);
+    post.castShadow = true;
+    return post;
+  }
+
+  function lodgeGroup(kind) {
+    const g = new THREE.Group();
+    if (kind === "tower") {
+      for (const sx of [-0.7, 0.7]) {
+        for (const sz of [-0.7, 0.7]) g.add(postAt(sx, 0, sz, 2.4));
+      }
+      const tank = new THREE.Mesh(new THREE.LatheGeometry([
+        new THREE.Vector2(0.15, 2.2),
+        new THREE.Vector2(0.85, 2.5),
+        new THREE.Vector2(1.05, 3.4),
+        new THREE.Vector2(0.72, 4.3),
+        new THREE.Vector2(0.2, 4.6),
+      ], 8), chimneyMat);
+      g.add(tank);
+      const cap = new THREE.Mesh(new THREE.ConeGeometry(0.7, 0.8, 8), roofMat);
+      cap.position.y = 5;
+      g.add(cap);
+      return g;
+    }
+    if (kind === "sawmill") {
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 4.2, 6), lodgeMat);
+      beam.rotation.z = 0.7;
+      beam.position.y = 1.6;
+      const beamB = beam.clone();
+      beamB.rotation.z = -0.7;
+      g.add(beam, beamB);
+      const wheel = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.1, 6, 12), chimneyMat);
+      wheel.position.set(1.6, 1.2, 0);
+      g.add(wheel);
+      for (let i = 0; i < 3; i++) {
+        const log = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 2.4, 6), lodgeMat);
+        log.rotation.z = Math.PI / 2;
+        log.position.set(-0.2, 0.28 + i * 0.4, 0.8);
+        g.add(log);
+      }
+      const cap = new THREE.Mesh(new THREE.ConeGeometry(2.4, 1.3, 4), roofMat);
+      cap.position.y = 3.1;
+      g.add(cap);
+      return g;
+    }
+    const ring = kind === "cabin" ? 6 : kind === "hut" ? 8 : 4;
+    const rad = kind === "hut" ? 1.5 : kind === "cabin" ? 1.7 : 2.2;
+    const h = kind === "hut" ? 2.1 : 2.8;
+    for (let i = 0; i < ring; i++) {
+      const a = (i / ring) * Math.PI * 2;
+      g.add(postAt(Math.cos(a) * rad, 0, Math.sin(a) * rad, h));
+    }
+    if (kind === "lodge") {
+      for (const z of [-rad, rad]) {
+        const girt = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, rad * 2, 5), lodgeMat);
+        girt.rotation.z = Math.PI / 2;
+        girt.position.set(0, h * 0.72, z);
+        g.add(girt);
+      }
+    }
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(rad + 0.45, kind === "hut" ? 1.2 : 1.6, Math.max(6, ring)), roofMat);
+    cap.position.y = h + 0.55;
+    g.add(cap);
+    const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 1.1, 6), chimneyMat);
+    stack.position.set(rad * 0.4, h + 1.3, -rad * 0.3);
+    g.add(stack);
+    const door = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 1.3), doorMat);
+    door.position.set(0, 0.7, rad + 0.05);
+    g.add(door);
+    const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.45, 0.4), windowMat);
+    glow.position.set(0.9, h * 0.62, rad + 0.06);
+    g.add(glow);
+    return g;
+  }
+
+  function buildYard(next) {
+    if (!yard) {
+      yard = new THREE.Group();
+      scene.add(yard);
+    }
+    clearGroup(yard);
+    const deckMat = new THREE.MeshStandardMaterial({ map: woodMap, roughness: 0.62, side: THREE.DoubleSide });
+    for (const b of next.buildings || []) {
+      const g = lodgeGroup(b.kind);
+      g.position.set(b.x, b.y, b.z);
+      g.rotation.y = b.yaw || 0;
+      yard.add(g);
+    }
+    for (const cut of next.cuts || []) {
+      const deck = new THREE.Mesh(deckStrip(cut.pts, cut.width * 0.5), deckMat);
+      deck.castShadow = true;
+      yard.add(deck);
+      for (let i = 0; i < cut.pts.length; i += 2) {
+        const p = cut.pts[i];
+        const q = cut.pts[Math.min(cut.pts.length - 1, i + 1)];
+        const dx = q.x - p.x;
+        const dz = q.z - p.z;
+        const len = Math.hypot(dx, dz) || 1;
+        const rx = -dz / len;
+        const rz = dx / len;
+        const half = cut.width * 0.5;
+        yard.add(postAt(p.x + rx * half, p.y, p.z + rz * half, 0.9));
+        yard.add(postAt(p.x - rx * half, p.y, p.z - rz * half, 0.9));
+      }
+      if (cut.kind !== "fence") continue;
+      const gate = cut.pts[Math.round(cut.gate * (cut.pts.length - 1))] || cut.pts[0];
+      const fence = new THREE.Group();
+      fence.userData.cutId = cut.id;
+      fence.position.set(gate.x, gate.y, gate.z);
+      const ahead = cut.pts[Math.min(cut.pts.length - 1, Math.round(cut.gate * (cut.pts.length - 1)) + 1)] || gate;
+      fence.rotation.y = Math.atan2(ahead.x - gate.x, ahead.z - gate.z);
+      for (const x of [-2.2, 2.2]) fence.add(postAt(x, 0, 0, 1.5));
+      for (const y of [0.45, 0.9, 1.3]) {
+        const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 4.2, 5), lodgeMat);
+        rail.rotation.z = Math.PI / 2;
+        rail.position.y = y;
+        fence.add(rail);
+      }
+      yard.add(fence);
+    }
+  }
+
+  buildYard(track);
   const cloverLeaf = new THREE.MeshStandardMaterial({ color: 0x3e8a44, roughness: 0.75 });
   const cloverGold = new THREE.MeshStandardMaterial({ color: 0xe2c15a, roughness: 0.45, metalness: 0.2 });
   const palmTrunk = new THREE.MeshStandardMaterial({ color: 0x8a5a32, roughness: 0.85 });
@@ -2025,6 +2187,7 @@ export function createWorld(THREE, track) {
     spray.visible = damOn;
     if (damOn) placeSpray(next);
     fillExtra(next);
+    buildYard(next);
   }
 
   function modelOf(id) {

@@ -10,7 +10,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png" />
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="css/game.css?v=gd41" />
+  <link rel="stylesheet" href="css/game.css?v=gd42" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Bober Grand Dam" />
   <meta property="og:description" content="Race the bank. Boost the dam. First to the crest wins. Fan game by a holder." />
@@ -52,14 +52,14 @@
     </div>
 
     <section id="splash">
-      <span id="build-tag">gd41</span>
+      <span id="build-tag">gd42</span>
       <img class="hero" src="assets/splash.jpg?v=gd1" alt="" />
       <div class="top">
         <h1>BOBER<br>GRAND DAM</h1>
       </div>
       <div class="band">
         <p class="mission">Race the bank. Boost the dam. First to the crest wins.</p>
-        <p class="scope">Local race. Three laps. You and three racers.</p>
+        <p class="scope">Local race. You and three racers. Dam, Frost, and Crown are four laps. Oasis and Sky are three.</p>
         <p class="fan">Fan game by a holder. Unofficial — not the project team.</p>
         <div id="menu-track">
           <p class="mission">Pick a track</p>
@@ -79,10 +79,10 @@
         <div id="menu-beaver" class="hidden">
           <p class="mission">Pick a beaver</p>
           <div class="roster" id="roster-pick">
-            <button class="who on" type="button" data-driver="bober"><img src="assets/museum/bober.jpg?v=gd12" alt="" /><span>BOBER</span></button>
-            <button class="who" type="button" data-driver="muscle"><img src="assets/museum/muscle.jpg?v=gd21" alt="" /><span>MUSCLE</span></button>
-            <button class="who" type="button" data-driver="tall"><img src="assets/museum/tall.jpg?v=gd21" alt="" /><span>TALL</span></button>
-            <button class="who" type="button" data-driver="nib"><img src="assets/museum/nib.jpg?v=gd12" alt="" /><span>NIB</span></button>
+            <button class="who on" type="button" data-driver="bober"><img src="assets/museum/bober.jpg?v=gd12" alt="" /><span>Bober</span></button>
+            <button class="who" type="button" data-driver="muscle"><img src="assets/museum/muscle.jpg?v=gd21" alt="" /><span>Mossback</span></button>
+            <button class="who" type="button" data-driver="tall"><img src="assets/museum/tall.jpg?v=gd21" alt="" /><span>Reed</span></button>
+            <button class="who" type="button" data-driver="nib"><img src="assets/museum/nib.jpg?v=gd12" alt="" /><span>Pip</span></button>
           </div>
           <button class="play" id="btn-start" type="button">LOADING</button>
           <button class="ghost" id="btn-beaver-back" type="button">BACK</button>
@@ -106,23 +106,23 @@
       <h2>MUSEUM</h2>
       <button class="exh" type="button" data-exhibit="dam-loop">
         <img src="assets/history/dam-loop.jpg?v=gd12" alt="" />
-        <span><strong>Dam Loop</strong>The crest road, the bank, the spillway. Three laps.</span>
+        <span><strong>Dam Loop</strong>The crest road, the bank, the spillway. Four laps.</span>
       </button>
       <button class="exh" type="button" data-exhibit="frost-ridge">
         <img src="assets/history/frost-ridge.jpg?v=gd12" alt="" />
-        <span><strong>Frost Ridge</strong>Ice, banks, and two narrow bridges.</span>
+        <span><strong>Frost Ridge</strong>Ice, banks, and two narrow bridges. Four laps.</span>
       </button>
       <button class="exh" type="button" data-exhibit="crown-clover">
         <img src="assets/museum/crown-clover.jpg?v=gd21" alt="" />
-        <span><strong>Crown Clover</strong>A twisted eight with a bridge over the cross.</span>
+        <span><strong>Crown Clover</strong>A twisted eight with a bridge over the cross. Four laps.</span>
       </button>
       <button class="exh" type="button" data-exhibit="oasis-leap">
         <img src="assets/museum/oasis-leap.jpg?v=gd21" alt="" />
-        <span><strong>Oasis Leap</strong>Two ramps. Arc, then land. The pools are real.</span>
+        <span><strong>Oasis Leap</strong>Two ramps. Arc, then land. The pools are real. Three laps.</span>
       </button>
       <button class="exh" type="button" data-exhibit="sky-loop">
         <img src="assets/museum/sky-loop.jpg?v=gd21" alt="" />
-        <span><strong>Sky Loop 360</strong>A full loop overhead. Keep your speed.</span>
+        <span><strong>Sky Loop 360</strong>A full loop overhead. Keep your speed. Three laps.</span>
       </button>
       <button class="exh" type="button" data-exhibit="sling-kart">
         <img src="assets/history/crest-drift.jpg?v=gd12" alt="" />
@@ -130,19 +130,19 @@
       </button>
       <button class="exh" type="button" data-exhibit="bober">
         <img src="assets/museum/bober.jpg?v=gd12" alt="" />
-        <span><strong>Bober</strong>Chunky lodge beaver. Classic cedar cart.</span>
+        <span><strong>Bober</strong>Bober keeps the lodge lamp lit and still takes the cedar cart up the spillway at dusk. He knows every plank by the sound it makes when the dam is loud. When the crest bell rings, Bober is already on the bank.</span>
       </button>
       <button class="exh" type="button" data-exhibit="nib">
         <img src="assets/museum/nib.jpg?v=gd12" alt="" />
-        <span><strong>Nib</strong>Small scrappy beaver. Light scrap cart.</span>
+        <span><strong>Pip</strong>Pip is the smallest beaver in the lodge and the quickest hands on a scrap cart. The lanterns get patched before dawn, and Pip still beats the mill bell to the line. Nobody stays mad for long when Pip grins.</span>
       </button>
       <button class="exh" type="button" data-exhibit="muscle">
         <img src="assets/museum/muscle.jpg?v=gd21" alt="" />
-        <span><strong>Muscle</strong>Bulky beaver. Heavy armored hauler.</span>
+        <span><strong>Mossback</strong>Mossback has old shoulders, an iron cart, and a red scarf that never quite dries. He hauls timber all week, then races for the fun of shoving the pack along the bank. The lodge keeps the widest bowl of stew warm for him.</span>
       </button>
       <button class="exh" type="button" data-exhibit="tall">
         <img src="assets/museum/tall.jpg?v=gd21" alt="" />
-        <span><strong>Tall Handsome</strong>Lean beaver. Long sleek speed cart.</span>
+        <span><strong>Reed</strong>Reed is tall and quiet, with a scarf the color of late cedar. He built the long coach to carry the lodge mail, then found it liked the bank. He waves once at the finish, and he means it.</span>
       </button>
       <button class="exh" type="button" data-exhibit="boost">
         <img src="assets/museum/star.jpg?v=gd21" alt="" />
@@ -198,6 +198,6 @@
       <button class="ghost" id="btn-splash" type="button">SPLASH</button>
     </section>
   </div>
-  <script type="module" src="js/main.js?v=gd41"></script>
+  <script type="module" src="js/main.js?v=gd42"></script>
 </body>
 </html>

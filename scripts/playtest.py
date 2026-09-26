@@ -1,5 +1,6 @@
 """Phone, landscape, and desktop gates. Finishes one Dam Loop to the podium."""
 import sys
+import time
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -7,7 +8,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "assets" / "ref"
 OUT.mkdir(parents=True, exist_ok=True)
-URL = "http://127.0.0.1:8791/?v=gd41"
+URL = "http://127.0.0.1:8791/?v=gd42"
 
 
 def shot(page, name):
@@ -100,6 +101,14 @@ def museum_round(page, w, h):
     if "Cedar Sling" not in page.locator("#exhibit-title").inner_text():
         raise AssertionError("sling detail")
     assert_inside(box(page, "#btn-exhibit-close"), w, h, "close", 40)
+    page.click("#btn-exhibit-close")
+    page.wait_for_selector("#exhibit", state="hidden")
+    page.click("[data-exhibit=nib]")
+    page.wait_for_selector("#exhibit", state="visible")
+    if page.locator("#exhibit-title").inner_text().strip() != "Pip":
+        raise AssertionError("pip card")
+    if "smallest beaver" not in page.locator("#exhibit-cap").inner_text():
+        raise AssertionError("pip story")
     page.click("#btn-exhibit-close")
     page.wait_for_selector("#exhibit", state="hidden")
     page.click("[data-exhibit=pine]")
@@ -205,8 +214,9 @@ def nudge_stick(page, fx, fy, ms=450):
 def main():
     fails = []
     with sync_playwright() as p:
-        browser = p.chromium.launch(channel="chrome", headless=True)
+        browser = p.chromium.launch(channel="chrome", headless=True, args=["--disable-http-cache"])
         page = browser.new_page(viewport={"width": 390, "height": 844})
+        page.set_default_timeout(180000)
         page.on("pageerror", lambda err: print("PAGEERROR", err))
         page.on("console", lambda msg: print("CONSOLE", msg.type, msg.text) if msg.type in ("error", "warning") else None)
         page.goto(URL, wait_until="networkidle")
@@ -222,6 +232,11 @@ def main():
         for need in ("grand dam", "race the bank", "boost the dam", "first to the crest", "fan game by a holder"):
             if need not in low:
                 fails.append("copy " + need)
+        tag = page.locator("#build-tag").inner_text().strip()
+        tag_px = page.evaluate("() => parseFloat(getComputedStyle(document.getElementById('build-tag')).fontSize)")
+        print("TAG", tag, tag_px)
+        if tag != "gd42" or tag_px < 12:
+            fails.append("build tag " + tag + " " + str(tag_px))
         shot(page, "splash-390.png")
         hero = box(page, "#splash img.hero")
         if hero["height"] > 844 * 0.82 or hero["height"] < 844 * 0.45:
@@ -239,6 +254,10 @@ def main():
         print("SELF", report)
         if not report["ok"]:
             fails.append("selfTest " + ",".join(report["fails"]))
+        cuts = page.evaluate("() => window.__grand.probeCuts()")
+        print("CUTS", cuts)
+        if not cuts["ok"]:
+            fails.append("cuts " + ",".join(cuts["fails"]))
         frame = page.evaluate("() => window.__grand.frameCheck()")
         print("FRAME", frame)
         if not frame["ok"]:
@@ -248,7 +267,7 @@ def main():
         print("DRIVER", picked["driver"], picked["names"], picked["colors"])
         if picked["driver"] != "nib":
             fails.append("driver " + str(picked["driver"]))
-        if sorted(picked["names"]) != ["BOBER", "MUSCLE", "NIB", "TALL"]:
+        if sorted(picked["names"]) != ["Bober", "Mossback", "Pip", "Reed"]:
             fails.append("names " + str(picked["names"]))
         if len(set(picked["colors"])) != 4:
             fails.append("colors " + str(picked["colors"]))
@@ -338,12 +357,69 @@ def main():
         if left_d <= 0.05:
             fails.append("left not left " + str(left_d))
         for item in ("boost", "trap", "pine", "surge", "magnet", "buckler", "meteor", "slick"):
-            if item != "boost":
+            if item in ("trap", "slick", "buckler"):
+                page.evaluate("(k) => window.__grand.plant(k)", item)
+            elif item != "boost":
                 page.evaluate("() => window.__grand.draft(-14)")
             got = page.evaluate("(id) => { window.__grand.grant(id); return window.__grand.fireNow(); }", item)
             print("fx", item, got)
             if got != item:
                 fails.append("fx " + item + " " + str(got))
+                continue
+            if item == "boost":
+                continue
+            page.wait_for_timeout(750 if item in ("pine", "surge", "meteor") else 400)
+            hit = page.evaluate(
+                """() => {
+                  const s = window.__grand.snapshot();
+                  const foe = (s.foes || []).find((f) => f.spin > 0.05 || f.dizzy > 0.05 || f.mark > 0.05);
+                  return { toast: s.toast, foe: !!foe };
+                }"""
+            )
+            print("HIT", item, hit)
+            if not hit["foe"] or not str(hit["toast"]).startswith("HIT "):
+                fails.append("react " + item + " " + str(hit))
+        page.evaluate("() => window.__grand.exile(true)")
+        for item in ("pine", "surge", "magnet", "meteor"):
+            miss = page.evaluate(
+                """(id) => {
+                  window.__grand.grant(id);
+                  const fired = window.__grand.fireNow();
+                  const s = window.__grand.snapshot();
+                  return { fired, held: s.held, toast: s.toast };
+                }""",
+                item,
+            )
+            print("MISS", item, miss)
+            if miss["fired"] or miss["held"] != item or miss["toast"] != "NO TARGET":
+                fails.append("miss " + item + " " + str(miss))
+        page.evaluate("() => window.__grand.exile(false)")
+        seated = page.evaluate("() => window.__grand.seatCut('roof')")
+        page.evaluate("() => window.__grand.setInput({steer:0,gas:1,drift:false,brake:false,fire:false})")
+        climbed = seated.get("y", 0)
+        saw_roof = False
+        roof_deadline = time.time() + 7
+        while time.time() < roof_deadline:
+            page.wait_for_timeout(200)
+            sample = page.evaluate("() => { const s = window.__grand.snapshot(); return { y: s.y, cut: s.onCut || '' }; }")
+            if sample["y"] > climbed:
+                climbed = sample["y"]
+            if "roof" in sample["cut"]:
+                saw_roof = True
+            if saw_roof and climbed >= seated.get("y", 0) + 1.2:
+                break
+        print("ROOF", seated, round(climbed, 2), saw_roof)
+        if not seated.get("ok") or not saw_roof or climbed < seated.get("y", 0) + 1.2:
+            fails.append("visible roof %s -> %s on %s" % (seated.get("y"), round(climbed, 2), saw_roof))
+        shot(page, "roof-dam.png")
+        page.evaluate("() => window.__grand.seatCut('fence')")
+        page.wait_for_timeout(1000)
+        broke = page.evaluate("() => window.__grand.cutBroken('fence')")
+        print("FENCE", broke)
+        if not broke:
+            fails.append("visible fence")
+        shot(page, "fence-dam.png")
+        page.evaluate("() => { window.__grand.setInput(null); window.__grand.rewind(); }")
         page.evaluate("() => window.__grand.grant('boost')")
         page.wait_for_timeout(80)
         if page.locator("#held-name").inner_text().strip() != "BOOST":
@@ -370,23 +446,23 @@ def main():
         shot(page, "race-390.png")
         try:
             page._laps = set()
-            key_race(page, 400)
+            key_race(page, 480)
         except Exception as exc:
             fails.append("keyboard race " + str(exc))
-        if not ({1, 2, 3} <= set(getattr(page, "_laps", set()))):
+        if not ({1, 2, 3, 4} <= set(getattr(page, "_laps", set()))):
             fails.append("lap hud " + str(sorted(getattr(page, "_laps", []))))
-        page.wait_for_function("() => window.__grand.snapshot().phase === 'podium'", timeout=5000)
+        page.wait_for_function("() => window.__grand.snapshot().phase === 'podium'", timeout=8000)
         pod = page.evaluate("() => window.__grand.snapshot()")
-        print("PODIUM", pod["place"], round(pod["time"], 2), pod["progress"])
+        print("PODIUM", pod["place"], round(pod["time"], 2), pod["laps"], pod["lapTarget"])
         if pod["place"] < 1 or pod["place"] > 4:
             fails.append("place")
-        if pod["time"] < 15 or pod["laps"] < 3:
-            fails.append("short race %s laps %s" % (pod["time"], pod["laps"]))
+        if pod["time"] < 15 or pod["laps"] < 4 or pod.get("lapTarget") != 4:
+            fails.append("short race %s laps %s target %s" % (pod["time"], pod["laps"], pod.get("lapTarget")))
         assert_inside(box(page, "#btn-rematch"), 390, 844, "rematch", 44)
         assert_inside(box(page, "#btn-splash"), 390, 844, "splash-back", 40)
         you_row = page.locator("#podium-list li.me").inner_text()
         print("YOU ROW", you_row)
-        if "NIB" not in you_row:
+        if "Pip" not in you_row:
             fails.append("podium you " + you_row)
         shot(page, "podium-390.png")
         page.click("#btn-splash")
@@ -399,12 +475,18 @@ def main():
         print("FROST", fr["track"], round(fr["progress"], 3), fr["laps"])
         if fr["track"] != "frost" or fr["phase"] != "race" or fr["laps"] != 0:
             fails.append("frost start " + str(fr["track"]) + " " + str(fr["laps"]))
+        page._laps = set()
         page.evaluate("() => window.__grand.setAuto(true)")
-        page.wait_for_function("() => window.__grand.snapshot().phase === 'podium'", timeout=400000)
+        frost_deadline = time.time() + 480
         fr2 = snap(page)
-        print("FROST PODIUM", fr2["place"], round(fr2["time"], 2), fr2["laps"])
-        if fr2["laps"] < 3 or fr2["time"] < 15:
-            fails.append("frost short")
+        while time.time() < frost_deadline and fr2["phase"] != "podium":
+            page._laps.add(fr2["lap"])
+            page.wait_for_timeout(80)
+            fr2 = snap(page)
+        page._laps.add(fr2["lap"])
+        print("FROST PODIUM", fr2["place"], round(fr2["time"], 2), fr2["laps"], sorted(page._laps))
+        if fr2["phase"] != "podium" or fr2["laps"] < 4 or fr2["time"] < 15 or not ({1, 2, 3, 4} <= page._laps):
+            fails.append("frost short %s laps %s hud %s" % (fr2["phase"], fr2["laps"], sorted(page._laps)))
         page.click("#btn-splash")
         page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")
         for tid in ("clover", "oasis", "sky"):
@@ -417,7 +499,22 @@ def main():
             if st["track"] != tid or st["phase"] != "race" or st["laps"] != 0:
                 fails.append("start " + tid + " " + str(st["track"]) + " " + str(st["laps"]))
             shot(page, "race-%s.png" % tid)
-            page.click("#btn-quit")
+            if tid == "oasis":
+                page._laps = set()
+                page.evaluate("() => window.__grand.setAuto(true)")
+                oasis_deadline = time.time() + 420
+                fin = snap(page)
+                while time.time() < oasis_deadline and fin["phase"] != "podium":
+                    page._laps.add(fin["lap"])
+                    page.wait_for_timeout(80)
+                    fin = snap(page)
+                page._laps.add(fin["lap"])
+                print("OASIS PODIUM", fin["place"], round(fin["time"], 2), fin["laps"], sorted(page._laps))
+                if fin["phase"] != "podium" or fin["laps"] < 3 or fin.get("lapTarget") != 3 or not ({1, 2, 3} <= page._laps):
+                    fails.append("oasis short %s laps %s target %s hud %s" % (fin["phase"], fin["laps"], fin.get("lapTarget"), sorted(page._laps)))
+                page.click("#btn-splash")
+            else:
+                page.click("#btn-quit")
             page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")
         page.locator("#btn-museum").focus()
         page.keyboard.press("Enter")
