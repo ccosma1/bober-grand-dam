@@ -1,11 +1,12 @@
 /* Painted carts. Nose is local +z, rear marker is local -z.
    Static parts merge by material. Nails and rivets are instanced.
-   Player detail is the full mesh; CPU detail drops whiskers, tufts, and spokes. */
+   Player detail is the full mesh; CPU detail drops whiskers, nubs, highlights, and fur clumps. */
 
-import { mergeGeometries } from "../vendor/BufferGeometryUtils.js?v=gd44";
+import { mergeGeometries } from "../vendor/BufferGeometryUtils.js?v=gd45";
 
 const GEO = new Map();
 const BUILD = { lod: false, curve: 2 };
+const MADE = [];
 const SIG = { bober: 91, muscle: 92, tall: 93, nib: 94 };
 
 const WOOD = [0, 0.16, 1, 1];
@@ -453,15 +454,28 @@ function regionUV(geo, u0, v0, u1, v1) {
   }
 }
 
-function prep(THREE, src, color, region, x, y, z, rx, ry, rz, sx, sy, sz) {
+function stamp(g) {
+  if (g && g.type) MADE.push(g.type);
+  return g;
+}
+
+function prep(THREE, src, color, region, x, y, z, rx, ry, rz, sx, sy, sz, quat) {
   const g = src.index ? src.toNonIndexed() : src.clone();
-  const o = new THREE.Object3D();
-  o.position.set(x || 0, y || 0, z || 0);
-  o.rotation.set(rx || 0, ry || 0, rz || 0);
   const fx = sx || 1;
-  o.scale.set(fx, sy == null ? fx : sy, sz == null ? fx : sz);
-  o.updateMatrix();
-  g.applyMatrix4(o.matrix);
+  const syv = sy == null ? fx : sy;
+  const szv = sz == null ? fx : sz;
+  const m = new THREE.Matrix4();
+  if (quat) {
+    m.compose(new THREE.Vector3(x || 0, y || 0, z || 0), quat, new THREE.Vector3(fx, syv, szv));
+  } else {
+    const o = new THREE.Object3D();
+    o.position.set(x || 0, y || 0, z || 0);
+    o.rotation.set(rx || 0, ry || 0, rz || 0);
+    o.scale.set(fx, syv, szv);
+    o.updateMatrix();
+    m.copy(o.matrix);
+  }
+  g.applyMatrix4(m);
   g.computeVertexNormals();
   if (!g.attributes.uv) {
     g.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
@@ -536,7 +550,7 @@ function chip(THREE, w, h, d) {
     g.translate(0, 0, -Math.max(d, 0.012) / 2);
     GEO.set(key, g);
   }
-  return g;
+  return stamp(g);
 }
 
 function board(THREE, w, h, d, bevel) {
@@ -556,7 +570,7 @@ function board(THREE, w, h, d, bevel) {
     g.translate(0, 0, -d / 2);
     GEO.set(key, g);
   }
-  return g;
+  return stamp(g);
 }
 
 function lBracket(THREE, a, b, t) {
@@ -584,7 +598,7 @@ function lBracket(THREE, a, b, t) {
     g.translate(-t, -t, -t / 2);
     GEO.set(key, g);
   }
-  return g;
+  return stamp(g);
 }
 
 function lathe(THREE, pts, segs) {
@@ -594,17 +608,17 @@ function lathe(THREE, pts, segs) {
     g = new THREE.LatheGeometry(pts.map((p) => new THREE.Vector2(p[0], p[1])), segs);
     GEO.set(key, g);
   }
-  return g;
+  return stamp(g);
 }
 
 function tube(THREE, points, radius, tubular, radial) {
   const curve = new THREE.CatmullRomCurve3(points.map((p) => new THREE.Vector3(p[0], p[1], p[2])));
-  return new THREE.TubeGeometry(curve, tubular, radius, radial, false);
+  return stamp(new THREE.TubeGeometry(curve, tubular, radius, radial, false));
 }
 
 function lineTube(THREE, a, b, radius, radial) {
   const curve = new THREE.LineCurve3(new THREE.Vector3(a[0], a[1], a[2]), new THREE.Vector3(b[0], b[1], b[2]));
-  return new THREE.TubeGeometry(curve, 1, radius, radial || 4, false);
+  return stamp(new THREE.TubeGeometry(curve, 1, radius, radial || 4, false));
 }
 
 function rivetGeo(THREE) {
@@ -670,11 +684,11 @@ function displaceTire(geo, mode, knobs) {
 function wheelParts(THREE, opt, side, xOff) {
   const parts = [];
   const cap = side < 0 ? -1 : 1;
-  const tire = new THREE.TorusGeometry(opt.ring, opt.tube, opt.radial, opt.tubular);
+  const tire = stamp(new THREE.TorusGeometry(opt.ring, opt.tube, opt.radial, opt.tubular));
   displaceTire(tire, opt.mode, opt.knobs || 10);
   parts.push(prep(THREE, tire, opt.tireColor || 0xffffff, opt.tireUV, xOff, 0, 0, 0, Math.PI / 2, 0));
   if (opt.band) {
-    const band = new THREE.TorusGeometry(opt.ring + opt.tube * 0.82, opt.tube * 0.28, 4, opt.tubular);
+    const band = stamp(new THREE.TorusGeometry(opt.ring + opt.tube * 0.82, opt.tube * 0.28, 4, opt.tubular));
     displaceTire(band, "tread", 8);
     parts.push(prep(THREE, band, 0xffffff, WIRON, xOff, 0, 0, 0, Math.PI / 2, 0));
   }
@@ -729,20 +743,6 @@ function addAxle(THREE, parent, spec, mats, shadow) {
     lock.geo = merged;
   }
   parent.add(yaw);
-  if (spec.steer) {
-    const outer = spec.wheel.outer;
-    const fenderMat = new THREE.MeshStandardMaterial({ color: 0xd7c4a8, roughness: 0.42, metalness: 0.16 });
-    const sides = spec.half ? [-1, 1] : [1];
-    const plateGeo = board(THREE, outer * 1.45, 0.07, outer * 0.95, 0.02);
-    for (const side of sides) {
-      const plate = new THREE.Mesh(plateGeo, fenderMat);
-      plate.rotation.y = Math.PI / 2;
-      const x = spec.half ? side * (spec.half + outer * 0.05) : outer * 0.46;
-      plate.position.set(x, outer * 0.82, 0);
-      plate.castShadow = !!shadow;
-      yaw.add(plate);
-    }
-  }
   return {
     yawPivot: yaw,
     spinPivot: spin,
@@ -892,263 +892,524 @@ function flamePose(mesh, clusters) {
   };
 }
 
-function pearGeo(THREE) {
-  return lathe(THREE, [
-    [0.04, 0], [0.16, 0.06], [0.3, 0.2], [0.4, 0.4], [0.48, 0.62],
-    [0.4, 0.84], [0.28, 1.02], [0.16, 1.18], [0.06, 1.28],
-  ], BUILD.lod ? 12 : 16);
+const DIAL = {
+  bober: { R: 0.34, S: [1, 0.95, 1], H: 0.8, B: 0.34, e: 0.26, K: 1, earY: 1, O: 0.4, arm: [0.075, 0.065], elbow: 0.08, tail: [0.46, 0.78], fur: 1, crown: 1 },
+  nib: { R: 0.3, S: [1.05, 1, 1], H: 0.6, B: 0.28, e: 0.28, K: 1.25, earY: 1, O: 0.4, arm: [0.075, 0.065], elbow: 0.08, tail: [0.36, 0.58], fur: 1, crown: 1.4 },
+  muscle: { R: 0.34, S: [1.14, 0.92, 1.05], H: 0.82, B: 0.46, e: 0.22, K: 0.8, earY: 1, O: 0.55, arm: [0.1, 0.09], elbow: 0.08, tail: [0.54, 0.8], fur: 1.3, crown: 1.3 },
+  tall: { R: 0.31, S: [0.94, 1.1, 1], H: 1.05, B: 0.26, e: 0.32, K: 1, earY: 1.3, O: 0.4, arm: [0.055, 0.05], elbow: 0.14, tail: [0.4, 0.95], fur: 0.8, crown: 0.8 },
+};
+
+let TAIL_TEX = null;
+
+function tailTexture(THREE) {
+  if (TAIL_TEX) return TAIL_TEX;
+  const canvas = canvasOf(128, (g, s) => {
+    g.fillStyle = "#3B2A20";
+    g.fillRect(0, 0, s, s);
+    g.strokeStyle = "#5A4030";
+    g.lineWidth = 2;
+    const cols = 8;
+    const rows = 12;
+    for (let i = 0; i <= cols; i++) {
+      g.beginPath();
+      g.moveTo((i / cols) * s, 0);
+      g.lineTo((i / cols) * s, s);
+      g.stroke();
+    }
+    for (let j = 0; j <= rows; j++) {
+      g.beginPath();
+      g.moveTo(0, (j / rows) * s);
+      g.lineTo(s, (j / rows) * s);
+      g.stroke();
+    }
+    g.beginPath();
+    for (let k = -cols; k <= rows + cols; k++) {
+      g.moveTo(0, (k / rows) * s);
+      g.lineTo(s, (k / rows) * s + s);
+      g.moveTo(0, (k / rows) * s);
+      g.lineTo(s, (k / rows) * s - s);
+    }
+    g.stroke();
+  });
+  TAIL_TEX = texOf(THREE, canvas, true);
+  TAIL_TEX.wrapS = THREE.RepeatWrapping;
+  TAIL_TEX.wrapT = THREE.RepeatWrapping;
+  return TAIL_TEX;
 }
 
-function headGeo(THREE) {
-  return lathe(THREE, [
-    [0.05, 0], [0.12, 0.03], [0.18, 0.1], [0.22, 0.2],
-    [0.2, 0.32], [0.14, 0.42], [0.07, 0.48], [0.02, 0.52],
-  ], BUILD.lod ? 10 : 14);
+function furTrio(THREE, spec) {
+  const main = new THREE.Color(spec.fur == null ? 0x6b4226 : spec.fur);
+  const dark = main.clone().multiplyScalar(0.62);
+  const light = main.clone().lerp(new THREE.Color(0xf4e6c3), 0.45);
+  return { main, dark, light };
 }
 
-function muzzleGeo(THREE) {
-  return lathe(THREE, [
-    [0.012, 0], [0.05, 0.02], [0.09, 0.07], [0.11, 0.14],
-    [0.1, 0.24], [0.07, 0.34], [0.035, 0.4],
-  ], BUILD.lod ? 8 : 12);
+function nPos(THREE, x, y, z, k, R, S) {
+  const l = Math.hypot(x, y, z) || 1;
+  return new THREE.Vector3((k * R * x * S[0]) / l, (k * R * y * S[1]) / l, (k * R * z * S[2]) / l);
 }
 
-function earGeo(THREE) {
-  return lathe(THREE, [[0.02, 0], [0.09, 0.03], [0.11, 0.09], [0.06, 0.15], [0.02, 0.18]], BUILD.lod ? 6 : 8);
+function aimAxis(THREE, axis, x, y, z) {
+  const l = Math.hypot(x, y, z) || 1;
+  return new THREE.Quaternion().setFromUnitVectors(axis, new THREE.Vector3(x / l, y / l, z / l));
+}
+
+function extrude(THREE, shape, depth, bevel) {
+  const d = Math.max(depth, 0.008);
+  const g = new THREE.ExtrudeGeometry(shape, {
+    depth: d,
+    bevelEnabled: true,
+    bevelThickness: Math.min(0.01, d * 0.35),
+    bevelSize: Math.max(0.004, bevel),
+    bevelSegments: 1,
+    curveSegments: 1,
+    steps: 1,
+  });
+  g.translate(0, 0, -d / 2);
+  return stamp(g);
+}
+
+function withCore(THREE, geo, R) {
+  const core = lathe(THREE, [
+    [0.001, 0],
+    [0.018 * R, 0.003 * R],
+    [0.014 * R, 0.01 * R],
+    [0.001, 0.016 * R],
+  ], 3);
+  const c = core.index ? core.toNonIndexed() : core.clone();
+  c.translate(0, 0.15 * R, 0.2 * R);
+  if (!c.attributes.uv) {
+    c.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(c.attributes.position.count * 2), 2));
+  }
+  const col = new Float32Array(c.attributes.position.count * 3);
+  const src = geo.attributes.color;
+  for (let i = 0; i < c.attributes.position.count; i++) {
+    col[i * 3] = src ? src.getX(0) : 1;
+    col[i * 3 + 1] = src ? src.getY(0) : 1;
+    col[i * 3 + 2] = src ? src.getZ(0) : 1;
+  }
+  c.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  if (geo.attributes.normal) geo.deleteAttribute("normal");
+  if (c.attributes.normal) c.deleteAttribute("normal");
+  const merged = mergeGeometries([geo, c], false);
+  if (!merged) return geo;
+  merged.computeVertexNormals();
+  return merged;
+}
+
+function measureRim(THREE, chassis) {
+  chassis.updateMatrixWorld(true);
+  let minZ = Infinity;
+  const ys = [];
+  const zs = [];
+  chassis.traverse((o) => {
+    if (!o.isMesh || o.isInstancedMesh || !o.geometry || !o.geometry.attributes || !o.geometry.attributes.position) return;
+    const pos = o.geometry.attributes.position;
+    const v = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      if (v.z < minZ) minZ = v.z;
+      ys.push(v.y);
+      zs.push(v.z);
+    }
+  });
+  if (!isFinite(minZ)) return { y: 1, z: -0.7 };
+  let top = -Infinity;
+  for (let i = 0; i < ys.length; i++) {
+    if (zs[i] <= minZ + 0.05 && ys[i] > top) top = ys[i];
+  }
+  if (!isFinite(top)) top = 1;
+  return { y: top, z: minZ };
+}
+
+function crescent(THREE, w, h) {
+  const s = new THREE.Shape();
+  s.moveTo(-w / 2, 0);
+  s.quadraticCurveTo(0, h * 2.4, w / 2, 0);
+  s.quadraticCurveTo(0, h * 0.55, -w / 2, 0);
+  return s;
+}
+
+function paddleShape(THREE, W, L) {
+  const s = new THREE.Shape();
+  const hw0 = 0.18 * W;
+  const hw1 = 0.5 * W;
+  const y1 = 0.55 * L;
+  s.moveTo(-hw0, 0);
+  s.lineTo(-hw1, y1);
+  s.quadraticCurveTo(-hw1 * 0.15, L, 0, L);
+  s.quadraticCurveTo(hw1 * 0.15, L, hw1, y1);
+  s.lineTo(hw0, 0);
+  s.closePath();
+  return s;
 }
 
 function addCrew(THREE, chassis, spec, mats, shadow) {
+  const who = spec.who || "bober";
+  const dial = DIAL[who] || DIAL.bober;
+  const R = dial.R;
+  const S = dial.S;
+  const H = dial.H;
+  const B = dial.B;
+  const E = dial.e * R;
+  const fur = furTrio(THREE, spec);
+  const lod = BUILD.lod;
+  const seg = (hi, lo) => (lod ? lo : hi);
+  const parts = {};
   const driver = new THREE.Group();
   driver.position.set(spec.seat[0], spec.seat[1], spec.seat[2]);
   driver.userData.baseY = spec.seat[1];
-  const bodyParts = [];
-  const fur = 0xffffff;
-  bodyParts.push(prep(THREE, pearGeo(THREE), spec.fur || 0x6b4226, FUR, 0, -0.42, 0, 0, 0, 0, spec.body[0], spec.body[1], spec.body[2]));
-  const belly = lathe(THREE, [[0.02, 0], [0.16, 0.04], [0.2, 0.16], [0.1, 0.26], [0.02, 0.3]], 12);
-  bodyParts.push(prep(THREE, belly, 0x5a3820, FUR, 0, -0.05, spec.body[2] * 0.28, 0.4, 0, 0, spec.body[0] * 0.7, 0.7, 0.55));
-  const rand = rng(spec.seed);
-  const tufts = BUILD.lod ? 16 : spec.tufts || 40;
-  const card = new THREE.PlaneGeometry(0.07, 0.11);
-  for (let i = 0; i < tufts; i++) {
-    const y = -0.2 + rand() * 1.15;
-    const ang = rand() * 6.28;
-    const chest = y > 0.2 && y < 0.85;
-    const rad = 0.16 + (chest ? 0.12 : 0.05) + rand() * 0.04;
-    const x = Math.cos(ang) * rad * spec.body[0];
-    const z = Math.sin(ang) * rad * spec.body[2];
-    const tip = i % 3 === 0 ? 0xa06a3c : 0x8b5a2b;
-    bodyParts.push(prep(THREE, card, tip, FUR, x, y, z, (rand() - 0.5) * 0.5, ang, (rand() - 0.5) * 0.8));
-  }
-  const shoulderBulb = lathe(THREE, [[0.02, 0], [0.09, 0.02], [0.11, 0.08], [0.04, 0.14]], BUILD.lod ? 6 : 8);
+  const head = new THREE.Group();
+  const torsoTop = 1.04 * H;
+  head.position.set(0, torsoTop + R * S[1] - dial.O * R, 0.06);
+  head.rotation.x = 0.08;
+
+  const put = (parent, name, geo) => {
+    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial());
+    mesh.name = name;
+    mesh.visible = false;
+    mesh.userData.artProbe = true;
+    parent.add(mesh);
+    parts[name] = mesh;
+  };
+  const yup = new THREE.Vector3(0, 1, 0);
+  const zup = new THREE.Vector3(0, 0, 1);
+
+  const skullPts = [
+    [0.02, -0.92], [0.45, -0.86], [0.8, -0.6], [0.98, -0.2], [1, 0.1],
+    [0.93, 0.45], [0.72, 0.78], [0.4, 0.96], [0.02, 1],
+  ].map(([r, y]) => [r * R, (y - 0.04) * R]);
+  const skull = new THREE.Mesh(prep(THREE, lathe(THREE, skullPts, seg(16, 10)), fur.main, FUR), mats.fur);
+  skull.scale.set(S[0], S[1], S[2]);
+  skull.name = "skull";
+  skull.castShadow = !!shadow;
+  head.add(skull);
+
+  const furHead = [];
+  const furBody = [];
+  const noseParts = [];
+  const faceParts = [];
+  const pushFur = (list, parent, name, geo) => {
+    list.push(geo);
+    if (name) put(parent, name, geo.clone());
+  };
+
+  const muzzlePts = [
+    [0.02, 0], [0.42, 0.06], [0.58, 0.25], [0.58, 0.5], [0.5, 0.7], [0.32, 0.85], [0.02, 0.9],
+  ].map(([r, h]) => [r * R, h * R]);
+  pushFur(furHead, head, "muzzle", prep(
+    THREE, lathe(THREE, muzzlePts, seg(14, 8)), fur.light, FUR,
+    0, -0.28 * R, 0.4 * R, Math.PI / 2, 0, 0, 1.15, 0.85, 1
+  ));
+
+  const nosePts = [[0.02, 0], [0.18, 0.03], [0.2, 0.1], [0.1, 0.16], [0.01, 0.18]].map(([r, h]) => [r * R, h * R]);
+  const noseGeo = withCore(THREE, prep(
+    THREE, lathe(THREE, nosePts, seg(5, 4)), 0x2a211c, null,
+    0, -0.08 * R, 1.16 * R, Math.PI / 2, 0, 0, 1.3, 0.8, 0.8
+  ), R);
+  noseParts.push(noseGeo);
+  put(head, "nose", noseGeo.clone());
+  const dot = [[0.001, 0], [0.035 * R, 0.004 * R], [0.03 * R, 0.012 * R], [0.001, 0.016 * R]];
   for (const side of [-1, 1]) {
-    bodyParts.push(prep(THREE, shoulderBulb, spec.fur || 0x6b4226, FUR, side * 0.34 * spec.body[0], 0.55, 0.02));
-    if (BUILD.lod && side > 0) continue;
-    for (let i = 0; i < (BUILD.lod ? 2 : 4); i++) {
-      const ang = -0.4 + i * 0.35;
-      bodyParts.push(prep(
-        THREE,
-        card,
-        i % 2 ? 0xa06a3c : 0xc4926a,
-        FUR,
-        side * (0.36 * spec.body[0] + Math.cos(ang) * 0.04),
-        0.58 + Math.sin(ang) * 0.06,
-        0.08,
-        ang,
-        side * 0.6,
-        side * 0.4
+    const g = withCore(THREE, prep(
+      THREE, lathe(THREE, dot, seg(5, 4)), 0x140e0c, null,
+      side * 0.07 * R, -0.06 * R, 1.33 * R, Math.PI / 2, 0, 0, 1, 1, 1
+    ), R);
+    noseParts.push(g);
+    put(head, side < 0 ? "nostrilL" : "nostrilR", g.clone());
+  }
+
+  const toothW = 0.18 * R;
+  const toothH = 0.4 * R;
+  const toothD = 0.07 * R;
+  const toothY = -0.6 * R - toothH / 2;
+  const toothZ = 1.055 * R;
+  for (const side of [-1, 1]) {
+    const g = withCore(THREE, prep(
+      THREE, extrude(THREE, rr(THREE, toothW, toothH, 0.02 * R), toothD, 0.02 * R), spec.tooth, null,
+      side * 0.1 * R, toothY, toothZ
+    ), R);
+    faceParts.push(g);
+    put(head, side < 0 ? "toothL" : "toothR", g.clone());
+  }
+  faceParts.push(prep(
+    THREE, extrude(THREE, rr(THREE, 0.02 * R, toothH, 0.008 * R), toothD, 0.006 * R), 0x3a2a20, null,
+    0, toothY, toothZ
+  ));
+
+  const dome = [[0, 0], [1, 0], [0.95, 0.3], [0.7, 0.62], [0.35, 0.8], [0.01, 0.84]].map(([r, h]) => [r * E, h * E]);
+  const irisCol = who === "tall" ? 0x3a2a6a : 0x6b3a1a;
+  for (const side of [-1, 1]) {
+    const raw = [side * 0.38, 0.22, 0.9];
+    const q = aimAxis(THREE, yup, raw[0], raw[1], raw[2]);
+    const base = nPos(THREE, raw[0], raw[1], raw[2], 0.9, R, S);
+    const white = prep(THREE, lathe(THREE, dome, seg(5, 4)), 0xf7f4ee, null, base.x, base.y, base.z, 0, 0, 0, 1, 1, 1, q);
+    faceParts.push(white);
+    put(head, side < 0 ? "eyeWhiteL" : "eyeWhiteR", white.clone());
+    const irisAt = nPos(THREE, raw[0], raw[1], raw[2], 1.08, R, S);
+    const iris = withCore(THREE, prep(
+      THREE, lathe(THREE, [[0.001, 0], [0.58 * E, 0.002], [0.2 * E, 0.008], [0.001, 0.012]], seg(4, 3)),
+      irisCol, null, irisAt.x, irisAt.y, irisAt.z, 0, 0, 0, 1, 1, 1, q.clone()
+    ), R);
+    faceParts.push(iris);
+    put(head, side < 0 ? "irisL" : "irisR", iris.clone());
+    const pupilAt = nPos(THREE, raw[0], raw[1], raw[2], 1.1, R, S);
+    const pupil = withCore(THREE, prep(
+      THREE, lathe(THREE, [[0.001, 0], [0.3 * E, 0.002], [0.1 * E, 0.006], [0.001, 0.01]], seg(5, 4)),
+      0x14110f, null, pupilAt.x, pupilAt.y, pupilAt.z, 0, 0, 0, 1, 1, 1, q.clone()
+    ), R);
+    faceParts.push(pupil);
+    put(head, side < 0 ? "pupilL" : "pupilR", pupil.clone());
+    if (!lod) {
+      const hi = pupilAt.clone();
+      hi.y += 0.25 * E;
+      hi.x += side * 0.2 * E;
+      faceParts.push(prep(
+        THREE, lathe(THREE, [[0.001, 0], [0.1 * E, 0.002], [0.001, 0.008]], 5),
+        0xffffff, null, hi.x, hi.y, hi.z, 0, 0, 0, 1, 1, 1, q.clone()
       ));
     }
   }
-  const arm = lathe(THREE, [[0.025, 0], [0.07, 0.04], [0.085, 0.16], [0.07, 0.3], [0.055, 0.42]], 10);
-  const pawBoard = board(THREE, 0.16, 0.11, 0.045, 0.02);
-  const claw = chip(THREE, 0.03, 0.055, 0.016);
+
+  for (const side of [-1, 1]) {
+    const raw = [side * 0.36, 0.52, 0.78];
+    const q = aimAxis(THREE, zup, raw[0], raw[1], raw[2]);
+    if (who === "muscle") q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -side * 0.25));
+    const at = nPos(THREE, raw[0], raw[1], raw[2], 0.98, R, S);
+    const thick = who === "muscle" ? 1.4 : 1;
+    const brow = prep(
+      THREE, extrude(THREE, crescent(THREE, 0.24 * R, 0.07 * R * thick), 0.04 * R, 0.008 * R), fur.dark, FUR,
+      at.x, at.y, at.z, 0, 0, 0, 1, 1, 1, q
+    );
+    pushFur(furHead, head, side < 0 ? "browL" : "browR", brow);
+  }
+
+  const earPts = [[0.02, 0], [0.16, 0.03], [0.2, 0.1], [0.17, 0.18], [0.06, 0.22]].map(([r, h]) => [r * R, h * R]);
+  for (const side of [-1, 1]) {
+    const raw = [side * 0.67, 0.73, -0.11];
+    const q = aimAxis(THREE, yup, raw[0], raw[1], raw[2]);
+    const at = nPos(THREE, raw[0], raw[1], raw[2], 0.9, R, S);
+    const ear = prep(
+      THREE, lathe(THREE, earPts, seg(5, 4)), fur.dark, FUR,
+      at.x, at.y, at.z, 0, 0, 0, dial.K, dial.K * dial.earY, dial.K * 0.55, q
+    );
+    pushFur(furHead, head, side < 0 ? "earL" : "earR", ear);
+    const inn = nPos(THREE, raw[0], raw[1], raw[2], 0.97, R, S);
+    pushFur(furHead, head, null, prep(
+      THREE, lathe(THREE, [[0.001, 0], [0.12 * R, 0.002], [0.001, 0.01]], seg(6, 4)), 0xc98a6a, FUR,
+      inn.x, inn.y, inn.z, 0, 0, 0, 1, 1, 1, q.clone()
+    ));
+  }
+
+  const cheekPts = [[0.02, 0], [0.26, 0.05], [0.3, 0.16], [0.12, 0.26], [0.01, 0.28]].map(([r, h]) => [r * R, h * R]);
+  for (const side of [-1, 1]) {
+    pushFur(furHead, head, side < 0 ? "cheekL" : "cheekR", prep(
+      THREE, lathe(THREE, cheekPts, seg(5, 4)), fur.light, FUR,
+      side * 0.45 * R, -0.3 * R, 0.62 * R, 0, 0, side * 0.35, 1.2, 0.9, 1
+    ));
+  }
+
+  if (!lod) {
+    for (const side of [-1, 1]) {
+      const ds = [-0.07, 0, 0.07];
+      ds.forEach((d, i) => {
+        const root = [side * 0.62 * R, -0.28 * R, 0.85 * R];
+        const mid = [side * 0.95 * R, (-0.3 + d) * R, 0.95 * R];
+        const tip = [side * 1.25 * R, (-0.32 + 1.5 * d) * R, 0.92 * R];
+        const g = withCore(THREE, prep(THREE, tube(THREE, [root, mid, tip], 0.012, 3, 3), 0xe8dcc4, null), R);
+        faceParts.push(g);
+        put(head, (side < 0 ? "whiskerL" : "whiskerR") + i, g.clone());
+      });
+    }
+  }
+
+  const clumpPts = [[0.06, 0], [0.07, 0.04], [0.05, 0.1], [0.025, 0.16], [0.003, 0.2]];
+  const tilt = 0.6108652381980153;
+  const placeClump = (parent, list, name, x, y, z, mul, color) => {
+    const sink = 0.08 * mul;
+    pushFur(list, parent, name, prep(
+      THREE, lathe(THREE, clumpPts, 6), color, FUR,
+      x, y - Math.cos(tilt) * sink, z - Math.sin(tilt) * sink,
+      tilt, 0, 0, mul, mul, mul
+    ));
+  };
+  if (!lod) {
+    const crowns = [[0, 1, -0.1], [-0.25, 0.95, -0.2], [0.25, 0.95, -0.2]];
+    crowns.forEach((n, i) => {
+      const p = nPos(THREE, n[0], n[1], n[2], 0.95, R, S);
+      placeClump(head, furHead, "crown" + i, p.x, p.y, p.z, dial.crown, fur.dark);
+    });
+    for (const side of [-1, 1]) {
+      const nape = nPos(THREE, side * 0.2, -0.2, -0.95, 0.95, R, S);
+      placeClump(head, furHead, side < 0 ? "napeL" : "napeR", nape.x, nape.y, nape.z, dial.fur, fur.dark);
+      const ch = nPos(THREE, side * 0.85, -0.35, 0.35, 0.95, R, S);
+      placeClump(head, furHead, side < 0 ? "cheekFurL" : "cheekFurR", ch.x, ch.y, ch.z, dial.fur, fur.dark);
+    }
+    placeClump(driver, furBody, null, -0.75 * B, 0.78 * H, -0.1 * B, dial.fur, fur.dark);
+    placeClump(driver, furBody, null, 0.75 * B, 0.78 * H, -0.1 * B, dial.fur, fur.dark);
+    placeClump(driver, furBody, null, 0, 0.72 * H, 0.8 * B, dial.fur, fur.light);
+  }
+
+  let torsoProfile = [
+    [0.05, -0.04], [0.7, 0], [0.95, 0.12], [1, 0.3], [0.93, 0.5],
+    [0.78, 0.68], [0.62, 0.82], [0.48, 0.92], [0.4, 1], [0.02, 1.04],
+  ];
+  if (who === "muscle") {
+    torsoProfile = torsoProfile.slice();
+    torsoProfile[5] = [0.92, 0.68];
+    torsoProfile[6] = [0.85, 0.82];
+    torsoProfile[7] = [0.6, 0.92];
+  }
+  const torsoSrc = lathe(THREE, torsoProfile.map(([r, y]) => [r * B, y * H]), seg(16, 10));
+  const torsoRaw = torsoSrc.index ? torsoSrc.toNonIndexed() : torsoSrc.clone();
+  const tp = torsoRaw.attributes.position;
+  for (let i = 0; i < tp.count; i++) {
+    const y = tp.getY(i);
+    const z = tp.getZ(i);
+    if (z > 0 && y > 0.1 * H && y < 0.6 * H) {
+      tp.setZ(i, z + 0.18 * B * Math.sin(Math.PI * ((y / H - 0.1) / 0.5)));
+    }
+  }
+  tp.needsUpdate = true;
+  const torsoGeo = prep(THREE, torsoRaw, fur.main, FUR, 0, 0, 0, 0, 0, 0, 1, 1, 0.85);
+  pushFur(furBody, driver, "torso", torsoGeo);
+  const capR = 0.62 * B;
+  pushFur(furBody, driver, null, prep(
+    THREE, lathe(THREE, [
+      [0.02 * capR, 0], [capR, 0.04 * capR], [0.7 * capR, 0.22 * capR], [0.2 * capR, 0.4 * capR], [0.02 * capR, 0.46 * capR],
+    ], seg(5, 4)), fur.light, FUR,
+    0, 0.3 * H, 0.95 * B, Math.PI / 2, 0, 0
+  ));
+  const footPts = [[0.02, 0], [0.1, 0.02], [0.12, 0.06], [0.04, 0.09]];
+  for (const side of [-1, 1]) {
+    pushFur(furBody, driver, null, prep(
+      THREE, lathe(THREE, footPts, seg(4, 3)), fur.dark, FUR,
+      side * 0.55 * B, 0.02, 0.5 * B, 0, 0, 0, 1, 1, 1.8
+    ));
+  }
+
   spec.paws.forEach((p, pi) => {
     const side = p[0] < 0 ? -1 : 1;
-    const shoulder = [side * 0.28 * spec.body[0], 0.48, 0.02];
-    const dir = [p[0] - shoulder[0], p[1] - shoulder[1], p[2] - shoulder[2]];
-    const len = Math.hypot(dir[0], dir[1], dir[2]) || 1;
-    const q = new THREE.Quaternion().setFromUnitVectors(
-      new THREE.Vector3(0, 1, 0),
-      new THREE.Vector3(dir[0] / len, dir[1] / len, dir[2] / len)
+    const shoulder = [side * 0.62 * B, 0.8 * H, 0];
+    const elbow = [side * (B + dial.elbow), 0.52 * H, 0.2];
+    pushFur(furBody, driver, null, prep(THREE, tube(THREE, [shoulder, elbow], dial.arm[0], 8, 6), fur.dark, FUR));
+    const fore = prep(THREE, tube(THREE, [elbow, p], dial.arm[1], 8, 6), fur.dark, FUR);
+    pushFur(furBody, driver, side < 0 ? "armForeL" : "armForeR", fore);
+    const paw = prep(
+      THREE, lathe(THREE, [[0.02, 0], [0.08, 0.02], [0.09, 0.07], [0.05, 0.11], [0.01, 0.12]], seg(6, 5)),
+      fur.dark, FUR, p[0], p[1], p[2]
     );
-    const o = new THREE.Object3D();
-    o.position.set(shoulder[0], shoulder[1], shoulder[2]);
-    o.quaternion.copy(q);
-    o.scale.set(1, len / 0.42, 1);
-    o.updateMatrix();
-    const ag = prep(THREE, arm, 0x6b4226, FUR);
-    ag.applyMatrix4(o.matrix);
-    ag.computeVertexNormals();
-    bodyParts.push(ag);
-    bodyParts.push(prep(THREE, pawBoard, 0x6b4226, FUR, p[0], p[1], p[2], Math.PI / 2, 0, side * 0.2));
-    for (let c = 0; c < 4; c++) {
-      bodyParts.push(prep(
-        THREE,
-        claw,
-        0x2b1d14,
-        FUR,
-        p[0] + side * (c - 1.5) * 0.028,
-        p[1] - 0.01,
-        p[2] + 0.1,
-        0.9,
-        0,
-        side * 0.15
-      ));
-    }
-    if (spec.reins && !BUILD.lod) {
-      const rein = tube(THREE, [
-        [p[0], p[1] + 0.02, p[2] + 0.04],
-        [side * 0.18, p[1] - 0.05, p[2] + 0.28],
-        [side * 0.1, -0.05, 0.85],
-      ], 0.012, 6, 4);
-      bodyParts.push(prep(THREE, rein, 0xffffff, LEATHER));
-    }
-  });
-  if (spec.harness && !BUILD.lod) {
-    bodyParts.push(prep(THREE, board(THREE, 0.55, 0.06, 0.04, 0.02), 0xffffff, LEATHER, 0, 0.42, 0.22, 0.3, 0, 0));
-    for (const side of [-1, 1]) {
-      bodyParts.push(prep(THREE, board(THREE, 0.05, 0.42, 0.035, 0.02), 0xffffff, LEATHER, side * 0.16, 0.28, 0.12, 0.15, 0, side * -0.2));
-    }
-  }
-  const tailStart = countVerts(bodyParts);
-  const tailShape = rr(THREE, spec.tail.w, spec.tail.l, 0.04);
-  const tailEx = new THREE.ExtrudeGeometry(tailShape, {
-    depth: 0.035,
-    bevelEnabled: true,
-    bevelThickness: 0.008,
-    bevelSize: 0.02,
-    bevelSegments: 2,
-    curveSegments: BUILD.curve,
-    steps: 1,
-  });
-  tailEx.translate(0, -spec.tail.l * 0.35, -0.017);
-  bendPaddle(tailEx, 0.65);
-  const tailG = prep(THREE, tailEx, 0xffffff, SCALES, spec.tail.x, spec.tail.y, spec.tail.z, spec.tail.rx || -0.5, spec.tail.ry || 0.4, spec.tail.rz || 0);
-  bodyParts.push(tailG);
-  const bodyMesh = solidMesh(THREE, bodyParts, mats.fur, shadow, "body");
-  driver.add(bodyMesh);
-
-  const head = new THREE.Group();
-  head.position.set(0, spec.neckY, spec.neckZ);
-  const headParts = [];
-  const hx = spec.head[0];
-  const hy = spec.head[1];
-  const hz = spec.head[2];
-  headParts.push(prep(THREE, headGeo(THREE), spec.fur || 0x6b4226, FUR, 0, 0.02, -0.02, 0, 0, 0, hx, hy, hz));
-  headParts.push(prep(THREE, muzzleGeo(THREE), 0x8b5a2b, FUR, 0, -0.04, hz * 0.18, Math.PI / 2, 0, 0, hx * 0.95, 1.15, hy * 0.85));
-  const noseL = lathe(THREE, [[0.01, 0], [0.05, 0.012], [0.055, 0.04], [0.02, 0.07]], 8);
-  const snoutZ = hz * 0.62;
-  headParts.push(prep(THREE, noseL, 0x2a211c, NOSE, 0, -0.05, snoutZ, Math.PI / 2, 0, 0, 1.05, 0.7, 0.85));
-  const nostril = lathe(THREE, [[0.004, 0], [0.018, 0.004], [0.016, 0.012], [0.004, 0.018]], 6);
-  for (const side of [-1, 1]) {
-    headParts.push(prep(THREE, nostril, 0x140e0c, NOSE, side * 0.028, -0.045, snoutZ + 0.04, Math.PI / 2, 0, side * 0.3, 1, 0.55, 0.8));
-    headParts.push(prep(THREE, earGeo(THREE), 0x3a2618, FUR, side * hx * 0.42, hy * 0.28, -0.04, 0.15, 0, side * 0.7, 1.05, 1.15, 0.55));
-    const cheek = lathe(THREE, [[0.02, 0], [0.11, 0.03], [0.13, 0.09], [0.04, 0.15]], BUILD.lod ? 6 : 8);
-    headParts.push(prep(THREE, cheek, 0xa87a55, FUR, side * hx * 0.28, -0.06, hz * 0.34, 0, 0, side * 0.35, 1.25, 0.9, 1));
-    const brow = lathe(THREE, [[0.015, 0], [0.07, 0.012], [0.05, 0.03], [0.012, 0.04]], 6);
-    headParts.push(prep(THREE, brow, 0x4a301c, FUR, side * hx * 0.2, hy * 0.16, hz * 0.4, 0.5, 0, side * 0.5, 1.3, 0.45, 0.7));
-  }
-  const bead = lathe(THREE, [[0.012, 0], [0.055, 0.016], [0.06, 0.05], [0.02, 0.08]], spec.eyeBig ? 10 : 8);
-  const irisL = lathe(THREE, [[0.004, 0], [0.028, 0.005], [0.026, 0.016], [0.005, 0.022]], 8);
-  for (const side of [-1, 1]) {
-    const ex = side * hx * (spec.eyeBig ? 0.2 : 0.22);
-    const ey = hy * 0.06;
-    const ez = hz * 0.42;
-    if (spec.eyeBig) {
-      headParts.push(prep(THREE, bead, 0xf7f4ee, EYE, ex, ey, ez, 0, 0, 0, 1.55, 1.7, 1.05));
-      headParts.push(prep(THREE, irisL, 0x6b3a1a, EYE, ex, ey, ez + 0.055, Math.PI / 2, 0, 0, 1.25, 0.4, 1.25));
-      headParts.push(prep(THREE, irisL, 0x14110f, EYE, ex, ey, ez + 0.068, Math.PI / 2, 0, 0, 0.55, 0.22, 0.55));
-    } else {
-      headParts.push(prep(THREE, bead, 0xf4efe6, EYE, ex, ey, ez, 0, 0, 0, 1.15, 1.25, 0.9));
-      headParts.push(prep(THREE, irisL, 0x1a140f, EYE, ex, ey, ez + 0.05, Math.PI / 2, 0, 0, 0.85, 0.28, 0.85));
-    }
-    const glint = new THREE.PlaneGeometry(spec.eyeBig ? 0.028 : 0.02, spec.eyeBig ? 0.028 : 0.02);
-    headParts.push(prep(THREE, glint, 0xffffff, EYE, ex + 0.016, ey + 0.02, ez + (spec.eyeBig ? 0.09 : 0.07)));
-  }
-  const tooth = chip(THREE, spec.toothW, spec.toothH, spec.toothD);
-  const toothZ = snoutZ - 0.02;
-  const toothY = -0.12;
-  headParts.push(prep(THREE, tooth, spec.tooth, TEETH, -spec.toothW * 0.7, toothY, toothZ, 0.15, 0, 0));
-  headParts.push(prep(THREE, tooth, spec.tooth, TEETH, spec.toothW * 0.7, toothY, toothZ, 0.15, 0, 0));
-  if (spec.tongue) {
-    const tongue = chip(THREE, 0.08, 0.05, 0.016);
-    headParts.push(prep(THREE, tongue, 0xffffff, TONGUE, 0, toothY - 0.02, toothZ - 0.04, 0.9, 0, 0));
-  }
-  const furCard = new THREE.PlaneGeometry(0.1, 0.16);
-  const tuftN = BUILD.lod ? 5 : 14;
-  for (let i = 0; i < tuftN; i++) {
-    const crown = i < tuftN * 0.45;
-    const side = i % 2 ? 1 : -1;
-    const ang = (i / tuftN) * 3.2 - 0.4;
-    const x = crown ? Math.sin(ang) * hx * 0.16 : side * hx * 0.3;
-    const y = crown ? hy * 0.34 : -0.02;
-    const z = crown ? -0.02 : hz * 0.28;
-    headParts.push(prep(THREE, furCard, i % 3 === 0 ? 0xc4926a : 0x8b5a2b, FUR, x, y, z, crown ? -0.6 : 0.2, ang, side * 0.5));
-  }
-  if (!BUILD.lod) {
-    for (const side of [-1, 1]) {
-      for (let i = 0; i < 5; i++) {
-        const y = -0.06 + (i - 2) * 0.022;
-        const whisk = tube(THREE, [
-          [side * hx * 0.22, y, snoutZ * 0.72],
-          [side * hx * 0.42, y + (i - 2) * 0.01, snoutZ * 0.9],
-          [side * hx * 0.62, y + (i - 2.2) * 0.016, snoutZ * 0.7],
-        ], 0.0045, 3, 4);
-        headParts.push(prep(THREE, whisk, 0xe7d7c4, FUR));
+    pushFur(furBody, driver, side < 0 ? "pawL" : "pawR", paw);
+    if (!lod) {
+      for (let f = 0; f < 3; f++) {
+        pushFur(furBody, driver, null, prep(
+          THREE, extrude(THREE, rr(THREE, 0.034, 0.05, 0.01), 0.018, 0.006), fur.dark, FUR,
+          p[0] + side * (f - 1) * 0.028, p[1] + 0.012, p[2] + 0.06, 1.15, 0, side * 0.15
+        ));
       }
     }
-  }
-  const headMesh = solidMesh(THREE, headParts, mats.fur, shadow, "head");
-  head.add(headMesh);
+    if (spec.reins) {
+      pushFur(furBody, driver, null, prep(THREE, tube(THREE, [
+        [p[0], p[1] + 0.02, p[2] + 0.02],
+        [side * 0.1, p[1] + 0.02, p[2] + 0.28],
+        [side * 0.05, 0.06, 0.72],
+      ], 0.012, lod ? 3 : 4, 3), 0x6a4030, FUR));
+    }
+  });
+
+  const bodyMesh = solidMesh(THREE, furBody, mats.fur, shadow, "body");
+  if (bodyMesh) driver.add(bodyMesh);
+  const headFur = solidMesh(THREE, furHead, mats.fur, shadow, "head-fur");
+  if (headFur) head.add(headFur);
+  const noseMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.25, metalness: 0.04 });
+  const noseMesh = solidMesh(THREE, noseParts, noseMat, shadow, "nose");
+  if (noseMesh) head.add(noseMesh);
+  const faceMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0 });
+  const faceMesh = solidMesh(THREE, faceParts, faceMat, shadow, "face");
+  if (faceMesh) head.add(faceMesh);
   driver.add(head);
 
   const scarfParts = [];
-  const collar = tube(THREE, [
-    [0.16, spec.neckY - 0.02, 0.02],
-    [0, spec.neckY + 0.02, 0.12],
-    [-0.16, spec.neckY - 0.02, 0.02],
-    [0, spec.neckY - 0.06, -0.08],
-    [0.16, spec.neckY - 0.02, 0.02],
-  ], spec.scarfR, 10, 5);
-  scarfParts.push(prep(THREE, collar, spec.scarfA, null));
+  const ringY = torsoTop - 0.1 * H;
+  const ringR = 0.48 * B + 0.03;
+  const ringN = lod ? 6 : 8;
+  const ring = [];
+  for (let i = 0; i <= ringN; i++) {
+    const a = (i / ringN) * Math.PI * 2;
+    ring.push([Math.cos(a) * ringR, ringY, Math.sin(a) * ringR]);
+  }
+  scarfParts.push(prep(THREE, tube(THREE, ring, spec.scarfR, ringN, 3), spec.scarfA, null));
   if (spec.knot) {
-    const knot = lathe(THREE, [[0.02, 0], [0.07, 0.02], [0.06, 0.08], [0.02, 0.1]], 8);
-    scarfParts.push(prep(THREE, knot, spec.scarfA, null, 0, spec.neckY - 0.08, 0.12, Math.PI / 2, 0, 0));
+    scarfParts.push(prep(
+      THREE, lathe(THREE, [[0.02, 0], [0.07, 0.02], [0.06, 0.08], [0.02, 0.1]], seg(8, 6)),
+      spec.scarfA, null, 0, ringY - 0.02, ringR, Math.PI / 2, 0, 0
+    ));
   }
   for (let t = 0; t < spec.tails; t++) {
     const spread = (t - (spec.tails - 1) / 2) * spec.tailGap;
     const len = spec.tailLen * (spec.tatter && t === 0 ? 0.62 : 1);
-    const tailTube = tube(THREE, [
-      [spread * 0.3, spec.neckY - 0.08, -0.02],
-      [spread, spec.neckY - 0.16, -len * 0.45],
-      [spread * 1.15, spec.neckY - 0.22, -len],
-    ], spec.scarfR * (spec.chunky ? 1.25 : 0.85), 6, 5);
-    const col = t % 2 ? spec.scarfB : spec.scarfA;
-    scarfParts.push(prep(THREE, tailTube, col, null));
-    const fringeN = BUILD.lod ? 2 : 4;
-    for (let f = 0; f < fringeN; f++) {
-      const fr = tube(THREE, [
-        [spread * 1.15 + (f - 1.5) * 0.03, spec.neckY - 0.22, -len],
-        [spread * 1.2 + (f - 1.5) * 0.04, spec.neckY - 0.3, -len - 0.12],
-      ], spec.scarfR * 0.35, 2, 3);
-      scarfParts.push(prep(THREE, fr, spec.scarfB, null));
-    }
+    const thick = spec.scarfR * (spec.chunky ? 1.25 : 0.85);
+    scarfParts.push(prep(THREE, tube(THREE, [
+      [spread * 0.3, ringY, -ringR],
+      [spread, ringY - 0.08, -ringR - len * 0.45],
+      [spread * 1.15, ringY - 0.16, -ringR - len],
+    ], thick, lod ? 2 : 3, 3), t % 2 ? spec.scarfB : spec.scarfA, null));
   }
   const scarfMesh = solidMesh(THREE, scarfParts, mats.knit, false, "scarf");
   driver.add(scarfMesh);
+
+  const rim = measureRim(THREE, chassis);
+  const W = dial.tail[0];
+  const L = dial.tail[1];
+  let rootY = rim.y - spec.seat[1] + 0.03;
+  const zFormula = -0.85 * B;
+  const zRim = rim.z - spec.seat[2] + 0.02;
+  const rootZ = Math.min(zFormula, zRim);
+  const tailGeo = extrude(THREE, paddleShape(THREE, W, L), 0.05, 0.015);
+  const spin = new THREE.Matrix4().makeRotationX(-Math.PI / 2 + 0.12);
+  tailGeo.applyMatrix4(spin);
+  tailGeo.computeVertexNormals();
+  const tpos = tailGeo.attributes.position;
+  let minLocal = Infinity;
+  for (let i = 0; i < tpos.count; i++) minLocal = Math.min(minLocal, tpos.getY(i));
+  const worldDip = (spec.seat[1] + rootY + minLocal) * 1.2;
+  if (worldDip < 0.25) rootY += (0.25 - worldDip) / 1.2 + 0.01;
+  const tailMat = new THREE.MeshStandardMaterial({ map: tailTexture(THREE), roughness: 0.84, metalness: 0 });
+  const tailMesh = new THREE.Mesh(tailGeo, tailMat);
+  tailMesh.name = "tail";
+  tailMesh.position.set(0, rootY, rootZ);
+  tailMesh.castShadow = !!shadow;
+  driver.add(tailMesh);
+  parts.tail = tailMesh;
+
+  driver.userData.parts = parts;
+  driver.userData.beaver = {
+    who, R, S, H, B, lod, paws: spec.paws,
+    rimY: rim.y, rimZ: rim.z,
+    seatY: spec.seat[1], seatZ: spec.seat[2],
+    rootY, rootZ,
+  };
   const scarfTails = [new THREE.Object3D()];
   driver.add(scarfTails[0]);
   chassis.add(driver);
+  let crewTris = 0;
+  driver.traverse((o) => {
+    if (!o.isMesh || (o.userData && o.userData.artProbe)) return;
+    const geo = o.geometry;
+    crewTris += geo.index ? geo.index.count / 3 : geo.attributes.position.count / 3;
+  });
+  driver.userData.crewTris = Math.round(crewTris);
   return {
     driver,
     head,
     arms: [],
     scarfTails,
-    tailFn: tailPose(bodyMesh.geometry, tailStart, [spec.tail.x, spec.tail.y, spec.tail.z]),
+    tailFn: (time) => {
+      tailMesh.rotation.y = Math.sin(time * 3.3) * 0.12;
+    },
     scarfFn: scarfPose(scarfMesh.geometry),
   };
 }
-
 function bendPaddle(geo, arc) {
   const pos = geo.attributes.position;
   let yMin = Infinity;
@@ -1259,6 +1520,7 @@ function buildBober(THREE, mats, shadow) {
     }, mats, shadow),
   ];
   const crew = addCrew(THREE, chassis, {
+    who: "bober",
     seed: 81,
     seat: [0, 0.78, 0.02],
     body: [1.05, 1, 0.92],
@@ -1348,6 +1610,7 @@ function buildMuscle(THREE, mats, shadow) {
     }, mats, shadow),
   ];
   const crew = addCrew(THREE, chassis, {
+    who: "muscle",
     seed: 82,
     seat: [0, 0.86, 0.04],
     body: [1.22, 0.96, 0.9],
@@ -1374,8 +1637,8 @@ function buildMuscle(THREE, mats, shadow) {
   for (const x of [-0.26, 0.26]) {
     const origin = [x, 1.58, -0.72];
     const start = countVerts(flameGeos);
-    const a = new THREE.PlaneGeometry(0.2, 0.46);
-    const b = new THREE.PlaneGeometry(0.2, 0.46);
+    const a = stamp(new THREE.PlaneGeometry(0.2, 0.46));
+    const b = stamp(new THREE.PlaneGeometry(0.2, 0.46));
     flameGeos.push(prep(THREE, a, 0xffffff, null, origin[0], origin[1] + 0.2, origin[2]));
     flameGeos.push(prep(THREE, b, 0xffffff, null, origin[0], origin[1] + 0.2, origin[2], 0, Math.PI / 2, 0));
     const count = countVerts(flameGeos) - start;
@@ -1514,6 +1777,7 @@ function buildNib(THREE, mats, shadow) {
     addAxle(THREE, g, { x: 0, y: frontR, z: 0.58, half: 0.8, steer: true, wheel: woodWheel(frontR) }, mats, shadow),
   ];
   const crew = addCrew(THREE, chassis, {
+    who: "nib",
     seed: 84,
     seat: [0, 0.82, 0.12],
     body: [1.02, 0.98, 0.9],
@@ -1566,7 +1830,6 @@ function buildTall(THREE, mats, shadow) {
     wood.push(prep(THREE, board(THREE, 1.16, 0.22, 0.055, 0.028), tones[1], WOOD, 0, 1.05, z));
   }
   wood.push(prep(THREE, board(THREE, 1.15, 1.4, 0.06, 0.03), 0xb5522e, WOOD, 0, 0.58, 0.02, Math.PI / 2, 0, 0));
-  wood.push(prep(THREE, board(THREE, 1.32, 0.08, 1.58, 0.024), 0xd1703f, WOOD, 0, 1.2, 0.02));
   chassis.add(solidMesh(THREE, wood, woodMat, shadow, "tall-wood"));
   const brassMat = mats.metal.clone();
   brassMat.emissiveIntensity = 0;
@@ -1610,6 +1873,7 @@ function buildTall(THREE, mats, shadow) {
     addAxle(THREE, g, { x: 0, y: radius, z: 0.62, half: 0.78, steer: true, wheel: woodWheel }, mats, shadow),
   ];
   const crew = addCrew(THREE, chassis, {
+    who: "tall",
     seed: 83,
     seat: [0, 0.95, 0.02],
     body: [0.82, 1.12, 0.72],
@@ -1642,7 +1906,7 @@ function pack(THREE, g, chassis, wheels, kind, crew) {
   rear.position.set(0, 0.85, -1.05);
   g.add(rear);
   const blob = new THREE.Mesh(
-    new THREE.CircleGeometry(1.25, 16),
+    stamp(new THREE.CircleGeometry(1.25, 16)),
     new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false })
   );
   blob.rotation.x = -Math.PI / 2;
@@ -1659,18 +1923,17 @@ function pack(THREE, g, chassis, wheels, kind, crew) {
   let draws = 0;
   let tris = 0;
   g.traverse((o) => {
+    if (o.userData && o.userData.artProbe) return;
     if (!o.isMesh && !o.isInstancedMesh) return;
     draws += 1;
     const geo = o.geometry;
     const n = geo.index ? geo.index.count / 3 : geo.attributes.position.count / 3;
     tris += n * (o.isInstancedMesh ? o.count : 1);
-    const banned = o.geometry && o.geometry.type;
-    if (banned === "BoxGeometry" || banned === "SphereGeometry" || banned === "CylinderGeometry" || banned === "ConeGeometry") {
-      throw new Error(kind + " bare " + banned);
-    }
   });
   g.userData.draws = draws;
   g.userData.tris = Math.round(tris);
+  g.userData.made = MADE.slice();
+  g.userData.lod = BUILD.lod;
   return {
     group: g,
     wheels,
@@ -1688,6 +1951,7 @@ function pack(THREE, g, chassis, wheels, kind, crew) {
 }
 
 export function buildKart(THREE, def, _wood, opts) {
+  MADE.length = 0;
   BUILD.lod = !!(opts && opts.lod);
   BUILD.curve = BUILD.lod ? 1 : 2;
   const mats = materials(THREE);
@@ -1697,4 +1961,170 @@ export function buildKart(THREE, def, _wood, opts) {
   if (id === "tall") return buildTall(THREE, mats, shadow);
   if (id === "nib") return buildNib(THREE, mats, shadow);
   return buildBober(THREE, mats, shadow);
+}
+
+const FACE_NAMES = [
+  "muzzle", "nose", "nostrilL", "nostrilR", "toothL", "toothR",
+  "eyeWhiteL", "eyeWhiteR", "irisL", "irisR", "pupilL", "pupilR",
+  "browL", "browR", "earL", "earR", "cheekL", "cheekR",
+];
+const FUR_NAMES = ["crown0", "crown1", "crown2", "napeL", "napeR", "cheekFurL", "cheekFurR"];
+const WHISKER_NAMES = ["whiskerL0", "whiskerR0", "whiskerL1", "whiskerR1", "whiskerL2", "whiskerR2"];
+
+export function checkArt(THREE, kart) {
+  const fails = [];
+  const g = kart.group;
+  g.updateMatrixWorld(true);
+  const driver = kart.driver;
+  const head = kart.head;
+  const info = driver.userData.beaver || {};
+  const parts = driver.userData.parts || {};
+  const banned = ["BoxGeometry", "SphereGeometry", "CylinderGeometry", "CapsuleGeometry"];
+  for (const t of g.userData.made || []) {
+    if (banned.indexOf(t) >= 0) fails.push((info.who || "crew") + " bare " + t);
+  }
+  const skull = head.getObjectByName("skull");
+  if (!skull || !skull.geometry) {
+    fails.push((info.who || "?") + " skull missing");
+    return fails;
+  }
+  skull.geometry.computeBoundingSphere();
+  const center = skull.geometry.boundingSphere.center.clone().applyMatrix4(skull.matrixWorld);
+  const origin = new THREE.Vector3();
+  head.getWorldPosition(origin);
+  const centerDist = center.distanceTo(origin);
+  if (centerDist > 0.01) fails.push(info.who + " skull center " + centerDist.toFixed(4));
+  const ws = new THREE.Vector3();
+  g.getWorldScale(ws);
+  const radius = info.R * Math.max(info.S[0], info.S[1], info.S[2]) * ws.x;
+  const sphere = new THREE.Sphere(origin, radius);
+  const names = FACE_NAMES.slice();
+  if (!info.lod) names.push(...WHISKER_NAMES, ...FUR_NAMES);
+  for (const name of names) {
+    const mesh = parts[name];
+    if (!mesh) {
+      fails.push(info.who + " " + name + " missing");
+      continue;
+    }
+    const box = new THREE.Box3().setFromObject(mesh);
+    if (box.isEmpty() || !box.intersectsSphere(sphere)) fails.push(info.who + " " + name + " off skull");
+  }
+  const overlap = (a, b) => {
+    if (!parts[a] || !parts[b]) return;
+    const ba = new THREE.Box3().setFromObject(parts[a]);
+    const bb = new THREE.Box3().setFromObject(parts[b]);
+    if (!ba.intersectsBox(bb)) fails.push(info.who + " " + a + " misses " + b);
+  };
+  overlap("irisL", "eyeWhiteL");
+  overlap("irisR", "eyeWhiteR");
+  overlap("pupilL", "eyeWhiteL");
+  overlap("pupilR", "eyeWhiteR");
+  overlap("toothL", "muzzle");
+  overlap("toothR", "muzzle");
+  const torso = parts.torso;
+  if (!torso) fails.push(info.who + " torso missing");
+  else {
+    const pos = torso.geometry.attributes.position;
+    const v = new THREE.Vector3();
+    let best = new THREE.Vector3();
+    let maxY = -Infinity;
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(torso.matrixWorld);
+      if (v.y > maxY) {
+        maxY = v.y;
+        best.copy(v);
+      }
+    }
+    const pen = radius - best.distanceTo(origin);
+    if (pen < 0.15 * radius * 2) fails.push(info.who + " neck " + pen.toFixed(3));
+  }
+  const driverInv = new THREE.Matrix4().copy(driver.matrixWorld).invert();
+  const localOf = (mesh) => {
+    const pos = mesh.geometry.attributes.position;
+    const v = new THREE.Vector3();
+    const out = [];
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld).applyMatrix4(driverInv);
+      out.push(v.clone());
+    }
+    return out;
+  };
+  const pawOf = (x) => (info.paws[0][0] < 0 ? (x < 0 ? info.paws[0] : info.paws[1]) : (x < 0 ? info.paws[1] : info.paws[0]));
+  const endCheck = (name, paw) => {
+    const mesh = parts[name];
+    if (!mesh) {
+      fails.push(info.who + " " + name + " missing");
+      return;
+    }
+    const target = new THREE.Vector3(paw[0], paw[1], paw[2]);
+    const pts = localOf(mesh);
+    const mid = new THREE.Vector3();
+    for (const p of pts) mid.add(p);
+    mid.multiplyScalar(1 / Math.max(1, pts.length));
+    const axis = target.clone().sub(mid);
+    if (axis.lengthSq() < 1e-8) axis.set(0, 0, 1);
+    axis.normalize();
+    let maxD = -Infinity;
+    const dots = [];
+    for (const p of pts) {
+      const d = p.dot(axis);
+      dots.push(d);
+      if (d > maxD) maxD = d;
+    }
+    const c = new THREE.Vector3();
+    let n = 0;
+    for (let i = 0; i < pts.length; i++) {
+      if (dots[i] < maxD - 0.012) continue;
+      c.add(pts[i]);
+      n += 1;
+    }
+    if (n) c.multiplyScalar(1 / n);
+    const dist = c.distanceTo(target);
+    if (dist > 0.03) fails.push(info.who + " " + name + " end " + dist.toFixed(3));
+  };
+  endCheck("armForeL", pawOf(-1));
+  endCheck("armForeR", pawOf(1));
+  const bottomCheck = (name, paw) => {
+    const mesh = parts[name];
+    if (!mesh) {
+      fails.push(info.who + " " + name + " missing");
+      return;
+    }
+    let minY = Infinity;
+    for (const p of localOf(mesh)) if (p.y < minY) minY = p.y;
+    if (Math.abs(minY - paw[1]) > 0.02) fails.push(info.who + " " + name + " bottom " + minY.toFixed(3));
+  };
+  bottomCheck("pawL", pawOf(-1));
+  bottomCheck("pawR", pawOf(1));
+  const tail = parts.tail;
+  if (!tail) fails.push(info.who + " tail missing");
+  else {
+    const rimZ = info.rimZ - info.seatZ;
+    const rimY = info.rimY - info.seatY;
+    const onRim = Math.abs(tail.position.z - rimZ) < 0.15 && Math.abs(tail.position.y - (rimY + 0.03)) < 0.12;
+    let inTorso = false;
+    if (torso) {
+      const tb = new THREE.Box3().setFromObject(torso);
+      const rw = new THREE.Vector3();
+      tail.getWorldPosition(rw);
+      inTorso = tb.distanceToPoint(rw) < 0.08;
+    }
+    if (!onRim && !inTorso) fails.push(info.who + " tail root");
+    const pos = tail.geometry.attributes.position;
+    const v = new THREE.Vector3();
+    let tip = new THREE.Vector3();
+    let minZ = Infinity;
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i);
+      if (v.z < minZ) {
+        minZ = v.z;
+        tip.copy(v);
+      }
+    }
+    tip.applyMatrix4(tail.matrixWorld);
+    if (tip.y < 0.25) fails.push(info.who + " tail tip " + tip.y.toFixed(3));
+  }
+  const cap = info.lod ? 2000 : 3500;
+  if ((driver.userData.crewTris || 0) > cap) fails.push(info.who + " tris " + driver.userData.crewTris + "/" + cap);
+  return fails;
 }

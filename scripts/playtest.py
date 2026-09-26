@@ -1,4 +1,4 @@
-"""Phone, landscape, and desktop gates. Finishes one Dam Loop to the podium."""
+"""Phone, landscape, and desktop gates. Each crest finishes to the podium."""
 import sys
 import time
 from pathlib import Path
@@ -8,7 +8,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "assets" / "ref"
 OUT.mkdir(parents=True, exist_ok=True)
-URL = "http://127.0.0.1:8791/?v=gd44"
+URL = "http://127.0.0.1:8791/?v=gd45"
 
 
 def shot(page, name):
@@ -46,18 +46,48 @@ def snap(page):
     return page.evaluate("() => window.__grand.snapshot()")
 
 
+def sim_wait(page, ms):
+    page.evaluate("(sec) => window.__grand.rush(sec)", max(0.016, ms / 1000.0))
+
+
+def burn_open(page):
+    page.evaluate(
+        """() => {
+          let n = 0;
+          while (window.__grand.snapshot().phase !== 'race' && n < 80) {
+            window.__grand.rush(0.25);
+            n += 1;
+          }
+        }"""
+    )
+
+
+def leave_splash(page):
+    page.evaluate(
+        """() => {
+          const splash = document.getElementById('btn-splash');
+          if (splash) splash.click();
+          if (window.__grand.snapshot().phase !== 'splash') {
+            const quit = document.getElementById('btn-quit');
+            if (quit) quit.click();
+          }
+        }"""
+    )
+    page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'", timeout=8000)
+
+
+def apply_fast(page, result):
+    page._laps = set(result.get("seen") or [])
+    page._air = result.get("air") or 0
+    page._falls = result.get("falls") or 0
+
+
 def lane_finish(page, side, timeout_s=420):
-    page._laps = set()
     page.evaluate("(side) => window.__grand.setLane(side)", side)
-    deadline = time.time() + timeout_s
-    fin = snap(page)
-    while time.time() < deadline and fin["phase"] != "podium":
-        page._laps.add(fin["lap"])
-        page.wait_for_timeout(100)
-        fin = snap(page)
-    page._laps.add(fin.get("lap"))
+    result = page.evaluate("(s) => window.__grand.runRace(s)", timeout_s)
     page.evaluate("() => window.__grand.setLane(null)")
-    return fin
+    apply_fast(page, result)
+    return snap(page)
 
 
 def wrap_delta(a, b):
@@ -73,7 +103,7 @@ def hold(page, sel, ms):
     b = box(page, sel)
     page.mouse.move(b["x"] + b["width"] / 2, b["y"] + b["height"] / 2)
     page.mouse.down()
-    page.wait_for_timeout(ms)
+    sim_wait(page, ms)
     page.mouse.up()
 
 
@@ -86,7 +116,7 @@ def steer_delta(page, sel, ms=450):
 def key_steer_delta(page, key, ms=450):
     y0 = snap(page)["yaw"]
     page.keyboard.down(key)
-    page.wait_for_timeout(ms)
+    sim_wait(page, ms)
     page.keyboard.up(key)
     return wrap_delta(y0, snap(page)["yaw"])
 
@@ -136,49 +166,18 @@ def museum_round(page, w, h):
 
 
 def key_race(page, timeout_s=400):
-    import time
-    down = set()
-
-    def set_keys(want):
-        for key in list(down):
-            if key not in want:
-                page.keyboard.up(key)
-                down.discard(key)
-        for key in want:
-            if key not in down:
-                page.keyboard.down(key)
-                down.add(key)
-
-    deadline = time.time() + timeout_s
-    try:
-        while time.time() < deadline:
-            s = snap(page)
-            if s["phase"] == "podium":
-                return s
-            page._laps = getattr(page, "_laps", set())
-            page._laps.add(s["lap"])
-            advice = s["advice"]
-            want = set()
-            if advice.get("gas"):
-                want.add("KeyW")
-            if advice.get("steer", 0) > 0.18:
-                want.add("KeyA")
-            elif advice.get("steer", 0) < -0.18:
-                want.add("KeyD")
-            if advice.get("fire"):
-                want.add("KeyF")
-            set_keys(want)
-            page.wait_for_timeout(70)
-    finally:
-        set_keys(set())
-    raise AssertionError("keyboard race timeout")
+    result = page.evaluate("(s) => window.__grand.runKeyed(s)", timeout_s)
+    apply_fast(page, result)
+    if result.get("phase") != "podium":
+        raise AssertionError("keyboard race timeout")
+    return snap(page)
 
 
 def clean_starts(page, n=3):
     for i in range(n):
         begin_race(page)
-        page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=15000)
-        page.wait_for_timeout(900)
+        burn_open(page)
+        sim_wait(page, 900)
         s = snap(page)
         if s["phase"] != "race" or s["laps"] != 0 or s["progress"] >= 0.55:
             raise AssertionError("instant %s %s" % (i, s))
@@ -221,8 +220,54 @@ def nudge_stick(page, fx, fy, ms=450):
     page.mouse.move(cx, cy)
     page.mouse.down()
     page.mouse.move(cx + fx * rad, cy + fy * rad)
-    page.wait_for_timeout(ms)
+    sim_wait(page, ms)
     page.mouse.up()
+
+
+def auto_crest(page, fails, tid, laps, timeout_s=480, shot_name=None):
+    page.click("[data-track=%s]" % tid)
+    begin_race(page)
+    burn_open(page)
+    st = snap(page)
+    print("TRACK", tid, st["track"], st["phase"], st["laps"], round(st.get("y") or 0, 1), flush=True)
+    if st["track"] != tid or st["phase"] != "race" or st["laps"] != 0:
+        fails.append("start " + tid + " " + str(st["track"]) + " " + str(st["laps"]))
+    if shot_name:
+        shot(page, shot_name)
+    page.evaluate("() => window.__grand.setAuto(true)")
+    result = page.evaluate("(s) => window.__grand.runRace(s)", timeout_s)
+    apply_fast(page, result)
+    fin = snap(page)
+    print(
+        "PODIUM",
+        tid,
+        fin.get("place"),
+        round(fin.get("time") or 0, 2),
+        fin.get("laps"),
+        sorted(page._laps),
+        "air",
+        round(page._air, 2),
+        "falls",
+        page._falls,
+        flush=True,
+    )
+    if (
+        fin["phase"] != "podium"
+        or fin["laps"] < laps
+        or fin.get("lapTarget") != laps
+        or (fin.get("time") or 0) < 15
+        or not (set(range(1, laps + 1)) <= page._laps)
+    ):
+        fails.append(
+            "%s short %s laps %s target %s hud %s"
+            % (tid, fin["phase"], fin.get("laps"), fin.get("lapTarget"), sorted(page._laps))
+        )
+    if page._air < 0.8:
+        fails.append("%s air %.2f" % (tid, page._air))
+    if page._falls > 0:
+        fails.append("%s falls %s" % (tid, page._falls))
+    leave_splash(page)
+    return fin
 
 
 def main():
@@ -236,6 +281,7 @@ def main():
         page.goto(URL, wait_until="networkidle")
         page.wait_for_function("() => window.__grand && window.__grand.snapshot().phase === 'splash'")
         page.wait_for_function("() => !document.getElementById('btn-start').disabled", timeout=20000)
+        page.evaluate("() => window.__grand.hold(true)")
         if page.locator("#history").count() or page.locator("#btn-history").count():
             fails.append("history still present")
         splash = page.locator("#splash").inner_text()
@@ -249,7 +295,7 @@ def main():
         tag = page.locator("#build-tag").inner_text().strip()
         tag_px = page.evaluate("() => parseFloat(getComputedStyle(document.getElementById('build-tag')).fontSize)")
         print("TAG", tag, tag_px)
-        if tag != "gd44" or tag_px < 12:
+        if tag != "gd45" or tag_px < 12:
             fails.append("build tag " + tag + " " + str(tag_px))
         shot(page, "splash-390.png")
         hero = box(page, "#splash img.hero")
@@ -290,7 +336,7 @@ def main():
             show_beavers(page)
             page.click("[data-driver=%s]" % driver)
             begin_race(page)
-            page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=15000)
+            burn_open(page)
             body = page.evaluate("() => window.__grand.snapshot()")
             print("MODEL", driver, body["model"], body["sig"], body["driver"])
             if body["driver"] != driver or body["model"] != driver:
@@ -331,10 +377,10 @@ def main():
                 break
             if info["phase"] == "race" and info["time"] > 1:
                 break
-            page.wait_for_timeout(160)
+            sim_wait(page, 160)
         if blocked is not None:
             fails.append("dam start wall " + str(blocked))
-        page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=15000)
+        burn_open(page)
         assert_race_chrome(page, 390, 844)
         page.wait_for_timeout(80)
         if page.locator("#held-name").inner_text().strip() != "—":
@@ -382,7 +428,7 @@ def main():
                 continue
             if item == "boost":
                 continue
-            page.wait_for_timeout(750 if item in ("pine", "surge", "meteor") else 400)
+            sim_wait(page, 750 if item in ("pine", "surge", "meteor") else 400)
             hit = page.evaluate(
                 """() => {
                   const s = window.__grand.snapshot();
@@ -408,31 +454,13 @@ def main():
             if miss["fired"] or miss["held"] != item or miss["toast"] != "NO TARGET":
                 fails.append("miss " + item + " " + str(miss))
         page.evaluate("() => window.__grand.exile(false)")
-        seated = page.evaluate("() => window.__grand.seatCut('roof')")
-        page.evaluate("() => window.__grand.setInput({steer:0,gas:1,drift:false,brake:false,fire:false})")
-        climbed = seated.get("y", 0)
-        saw_roof = False
-        saw_air = False
-        roof_deadline = time.time() + 7
-        while time.time() < roof_deadline:
-            page.wait_for_timeout(200)
-            sample = page.evaluate(
-                "() => { const s = window.__grand.snapshot(); return { y: s.y, cut: s.onCut || '', grounded: !!s.grounded }; }"
-            )
-            if sample["y"] > climbed:
-                climbed = sample["y"]
-            if "roof" in sample["cut"]:
-                saw_roof = True
-                if not sample["grounded"]:
-                    saw_air = True
-            if saw_air and climbed >= seated.get("y", 0) + 1.2:
-                break
-        print("ROOF", seated, round(climbed, 2), saw_roof, saw_air)
-        if not seated.get("ok") or not saw_roof or not saw_air or climbed < seated.get("y", 0) + 1.2:
-            fails.append("visible roof %s -> %s on %s air %s" % (seated.get("y"), round(climbed, 2), saw_roof, saw_air))
-        shot(page, "roof-dam.png")
-        page.evaluate("() => window.__grand.seatCut('fence')")
-        page.wait_for_timeout(4500)
+        page.evaluate(
+            """() => {
+              window.__grand.seatCut('fence');
+              window.__grand.setInput({ steer: 0, gas: 1, drift: false, brake: false, fire: false });
+            }"""
+        )
+        sim_wait(page, 4500)
         broke = page.evaluate("() => window.__grand.cutBroken('fence')")
         print("FENCE", broke)
         if not broke:
@@ -440,7 +468,7 @@ def main():
         shot(page, "fence-dam.png")
         page.evaluate("() => { window.__grand.setInput(null); window.__grand.rewind(); }")
         page.evaluate("() => window.__grand.grant('boost')")
-        page.wait_for_timeout(80)
+        sim_wait(page, 80)
         if page.locator("#held-name").inner_text().strip() != "BOOST":
             fails.append("hud boost " + page.locator("#held-name").inner_text())
         if page.locator("#held-mark").inner_text().strip() != "BOOST":
@@ -449,14 +477,14 @@ def main():
             fails.append("fire label " + page.locator("#btn-fire").inner_text())
         page.evaluate("() => { window.__grand.draft(-14); window.__grand.grant('pine'); }")
         page.click("#btn-fire")
-        page.wait_for_timeout(120)
+        sim_wait(page, 120)
         if page.evaluate("() => window.__grand.snapshot().held"):
             fails.append("fire button held")
         stick = box(page, "#stick")
         page.mouse.move(stick["x"] + stick["width"] / 2, stick["y"] + stick["height"] / 2)
         page.mouse.down()
         page.mouse.move(stick["x"] + stick["width"] / 2, stick["y"] + stick["height"] * 0.18)
-        page.wait_for_timeout(500)
+        sim_wait(page, 500)
         speed = page.evaluate("() => window.__grand.snapshot().speed")
         page.mouse.up()
         print("gas speed", round(speed, 2))
@@ -477,6 +505,10 @@ def main():
             fails.append("place")
         if pod["time"] < 15 or pod["laps"] < 4 or pod.get("lapTarget") != 4:
             fails.append("short race %s laps %s target %s" % (pod["time"], pod["laps"], pod.get("lapTarget")))
+        if (getattr(page, "_air", 0) or 0) < 0.8:
+            fails.append("dam air %.2f" % (page._air or 0))
+        if (getattr(page, "_falls", 0) or 0) > 0:
+            fails.append("dam falls %s" % page._falls)
         assert_inside(box(page, "#btn-rematch"), 390, 844, "rematch", 44)
         assert_inside(box(page, "#btn-splash"), 390, 844, "splash-back", 40)
         you_row = page.locator("#podium-list li.me").inner_text()
@@ -484,66 +516,23 @@ def main():
         if "Pip" not in you_row:
             fails.append("podium you " + you_row)
         shot(page, "podium-390.png")
-        page.click("#btn-splash")
-        page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")
+        leave_splash(page)
         for side in ("outer", "inner"):
             begin_race(page)
-            page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=15000)
+            burn_open(page)
             fin = lane_finish(page, side)
             print("LANE 390", side, fin["phase"], fin["laps"], fin.get("lapTarget"), sorted(page._laps))
             if fin["phase"] != "podium" or fin["laps"] < 4 or fin.get("lapTarget") != 4 or not ({1, 2, 3, 4} <= page._laps):
                 fails.append("lane 390 %s %s laps %s hud %s" % (side, fin["phase"], fin["laps"], sorted(page._laps)))
-            page.click("#btn-splash")
-            page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")
-        page.click("[data-track=frost]")
-        begin_race(page)
-        page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=15000)
-        page.wait_for_timeout(800)
-        fr = snap(page)
-        print("FROST", fr["track"], round(fr["progress"], 3), fr["laps"])
-        if fr["track"] != "frost" or fr["phase"] != "race" or fr["laps"] != 0:
-            fails.append("frost start " + str(fr["track"]) + " " + str(fr["laps"]))
-        page._laps = set()
-        page.evaluate("() => window.__grand.setAuto(true)")
-        frost_deadline = time.time() + 480
-        fr2 = snap(page)
-        while time.time() < frost_deadline and fr2["phase"] != "podium":
-            page._laps.add(fr2["lap"])
-            page.wait_for_timeout(80)
-            fr2 = snap(page)
-        page._laps.add(fr2["lap"])
-        print("FROST PODIUM", fr2["place"], round(fr2["time"], 2), fr2["laps"], sorted(page._laps))
-        if fr2["phase"] != "podium" or fr2["laps"] < 4 or fr2["time"] < 15 or not ({1, 2, 3, 4} <= page._laps):
-            fails.append("frost short %s laps %s hud %s" % (fr2["phase"], fr2["laps"], sorted(page._laps)))
-        page.click("#btn-splash")
-        page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")
-        for tid in ("clover", "oasis", "sky"):
-            page.click("[data-track=%s]" % tid)
-            begin_race(page)
-            page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=15000)
-            page.wait_for_timeout(700)
-            st = snap(page)
-            print("TRACK", tid, st["track"], st["phase"], st["laps"], round(st["y"], 1))
-            if st["track"] != tid or st["phase"] != "race" or st["laps"] != 0:
-                fails.append("start " + tid + " " + str(st["track"]) + " " + str(st["laps"]))
-            shot(page, "race-%s.png" % tid)
-            if tid == "oasis":
-                page._laps = set()
-                page.evaluate("() => window.__grand.setAuto(true)")
-                oasis_deadline = time.time() + 420
-                fin = snap(page)
-                while time.time() < oasis_deadline and fin["phase"] != "podium":
-                    page._laps.add(fin["lap"])
-                    page.wait_for_timeout(80)
-                    fin = snap(page)
-                page._laps.add(fin["lap"])
-                print("OASIS PODIUM", fin["place"], round(fin["time"], 2), fin["laps"], sorted(page._laps))
-                if fin["phase"] != "podium" or fin["laps"] < 3 or fin.get("lapTarget") != 3 or not ({1, 2, 3} <= page._laps):
-                    fails.append("oasis short %s laps %s target %s hud %s" % (fin["phase"], fin["laps"], fin.get("lapTarget"), sorted(page._laps)))
-                page.click("#btn-splash")
-            else:
-                page.click("#btn-quit")
-            page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")
+            if (page._air or 0) < 0.8:
+                fails.append("lane 390 %s air %.2f" % (side, page._air or 0))
+            if (page._falls or 0) > 0:
+                fails.append("lane 390 %s falls %s" % (side, page._falls))
+            leave_splash(page)
+        auto_crest(page, fails, "frost", 4)
+        auto_crest(page, fails, "clover", 4, shot_name="race-clover.png")
+        auto_crest(page, fails, "oasis", 3, timeout_s=420, shot_name="race-oasis.png")
+        auto_crest(page, fails, "sky", 3, shot_name="race-sky.png")
         page.locator("#btn-museum").focus()
         page.keyboard.press("Enter")
         page.wait_for_selector("#museum", state="visible")
@@ -558,8 +547,9 @@ def main():
         page.set_viewport_size({"width": 844, "height": 390})
         page.reload(wait_until="networkidle")
         page.wait_for_function("() => window.__grand && !document.getElementById('btn-start').disabled", timeout=20000)
+        page.evaluate("() => window.__grand.hold(true)")
         begin_race(page)
-        page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=15000)
+        burn_open(page)
         assert_race_chrome(page, 844, 390)
         shot(page, "race-land.png")
 
@@ -599,10 +589,10 @@ def main():
                 break
             if info["phase"] == "race" and info["time"] > 1:
                 break
-            page.wait_for_timeout(160)
+            sim_wait(page, 160)
         if desk_blocked is not None:
             fails.append("desk start wall " + str(desk_blocked))
-        page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=15000)
+        burn_open(page)
         canvas = page.evaluate(
             """() => {
               const c = document.querySelector('#stage canvas');
@@ -630,13 +620,13 @@ def main():
         if desk_left <= 0.05:
             fails.append("desk left " + str(desk_left))
         page.evaluate("() => window.__grand.grant('boost')")
-        page.wait_for_timeout(80)
+        sim_wait(page, 80)
         if page.locator("#desk-fire").inner_text().strip() != "BOOST":
             fails.append("desk fire label " + page.locator("#desk-fire").inner_text())
         if page.locator("#held-name").inner_text().strip() != "BOOST":
             fails.append("desk hud " + page.locator("#held-name").inner_text())
         page.click("#desk-fire")
-        page.wait_for_timeout(120)
+        sim_wait(page, 120)
         if page.evaluate("() => window.__grand.snapshot().held"):
             fails.append("desk fire held")
         if page.evaluate("() => window.__grand.snapshot().boost") <= 0:
@@ -657,13 +647,18 @@ def main():
         page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")
         for side in ("outer", "inner"):
             begin_race(page)
-            page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=15000)
+            burn_open(page)
             fin = lane_finish(page, side)
             print("LANE DESK", side, fin["phase"], fin["laps"], fin.get("lapTarget"), sorted(page._laps))
             if fin["phase"] != "podium" or fin["laps"] < 4 or fin.get("lapTarget") != 4 or not ({1, 2, 3, 4} <= page._laps):
                 fails.append("lane desk %s %s laps %s hud %s" % (side, fin["phase"], fin["laps"], sorted(page._laps)))
-            page.click("#btn-splash")
-            page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")
+            if (page._air or 0) < 0.8:
+                fails.append("lane desk %s air %.2f" % (side, page._air or 0))
+            if (page._falls or 0) > 0:
+                fails.append("lane desk %s falls %s" % (side, page._falls))
+            leave_splash(page)
+        for tid, laps in (("frost", 4), ("clover", 4), ("oasis", 3), ("sky", 3)):
+            auto_crest(page, fails, tid, laps)
         browser.close()
     if fails:
         print("PLAYTEST_FAIL")

@@ -1,7 +1,7 @@
 /* Race sim. No rendering.
    yaw 0 faces +z. yaw > 0 turns toward +x (screen-left in the chase view).
    forward = (sin(yaw), 0, cos(yaw)). */
-import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd44";
+import { launchHeld, seedItems, stepItems, testItems } from "./items.js?v=gd45";
 export { launchHeld };
 
 export const LAPS = 3;
@@ -23,7 +23,7 @@ export function lapsFor(track) {
 }
 
 /* Shorter bowls. Dam's west lip climbs into two airborne samples, then a low deck.
-   Gap samples are not road. Frost keeps two side bridges and no jump. */
+   Gap samples are not road. Each crest has one ramp jump. Frost keeps two side bridges. */
 const DAM_RAW = [
   { x: -92, z: -153, y: 12.4 },
   { x: -42, z: -158, y: 12.6 },
@@ -67,7 +67,12 @@ const FROST_RAW = [
   { x: 132, z: 16, y: 6.3, bridge: true },
   { x: 106, z: 54, y: 6.8 },
   { x: 66, z: 86, y: 7.6 },
-  { x: 20, z: 106, y: 8.4 },
+  { x: 56.8, z: 90, y: 9.5 },
+  { x: 52.2, z: 92, y: 11.0, lip: true },
+  { x: 45.3, z: 95, y: 14.6, gap: true },
+  { x: 38.4, z: 98, y: 14.0, gap: true },
+  { x: 29.2, z: 102, y: 8.15, deck: true },
+  { x: 20, z: 106, y: 8.4, deck: true },
   { x: -28, z: 114, y: 8.8 },
   { x: -74, z: 104, y: 8.0 },
   { x: -112, z: 74, y: 7.0 },
@@ -92,11 +97,31 @@ function cloverRaw() {
     const lift = Math.exp(-((delta / 0.48) ** 2));
     pts.push({ x, y: 3.15 + lift * 9.4, z, bridge: lift > 0.45 });
   }
+  const p33 = pts[33];
+  const p34 = pts[34];
+  const p35 = pts[35];
+  const ax = p33.x;
+  const az = p33.z;
+  const bx = p34.x;
+  const bz = p34.z;
+  p33.y = 4.65;
+  p33.bridge = false;
+  const mix = (t, y, flags) => ({
+    x: ax + (bx - ax) * t,
+    y,
+    z: az + (bz - az) * t,
+    bridge: false,
+    ...flags,
+  });
+  pts.splice(34, 0, mix(0.3, 6.15, { lip: true }), mix(0.6, 9.75, { gap: true }), mix(0.9, 9.15, { gap: true }));
+  p34.y = 3.3;
+  p34.deck = true;
+  p34.bridge = false;
+  p35.deck = true;
   return pts;
 }
 
-/* Oasis Leap: two dam-style lips. Two high gap samples, then a low deck.
-   The hole is air. Missing it meets the pool, not the next road. */
+/* Oasis Leap: one ramp over a pool. The second rise is ordinary road. */
 const OASIS_RAW = [
   { x: -150, z: -128, y: 4.0 },
   { x: -96, z: -136, y: 4.15 },
@@ -112,12 +137,12 @@ const OASIS_RAW = [
   { x: 150, z: 64, y: 4.0 },
   { x: 112, z: 112, y: 4.15 },
   { x: 58, z: 136, y: 4.3 },
-  { x: 8, z: 128, y: 7.0 },
-  { x: -6, z: 120, y: 10.2, lip: true },
-  { x: -14, z: 114, y: 13.8, gap: true },
-  { x: -22, z: 108, y: 13.2, gap: true },
-  { x: -32, z: 100, y: 6.15, deck: true },
-  { x: -52, z: 88, y: 5.6, deck: true },
+  { x: 8, z: 128, y: 4.3 },
+  { x: -6, z: 120, y: 4.3 },
+  { x: -14, z: 114, y: 4.3 },
+  { x: -22, z: 108, y: 4.3 },
+  { x: -32, z: 100, y: 4.3 },
+  { x: -52, z: 88, y: 4.3 },
   { x: -128, z: 40, y: 4.25 },
   { x: -164, z: -16, y: 4.0 },
   { x: -158, z: -76, y: 4.0 },
@@ -130,7 +155,12 @@ function skyRaw() {
   const before = [
     [140, 4.8, 148],
     [210, 5.25, 120],
-    [265, 5.55, 70],
+    [221, 6.8, 110],
+    [227.6, 8.7, 104, { lip: true }],
+    [233.7, 12.6, 98.5, { gap: true }],
+    [240.8, 12.0, 92, { gap: true }],
+    [249.6, 5.5, 84, { deck: true }],
+    [265, 5.55, 70, { deck: true }],
     [300, 5.5, 16],
     [305, 5.35, -40],
     [275, 5.1, -96],
@@ -143,7 +173,7 @@ function skyRaw() {
     [0, 4.03, -30],
     [0, 4.02, -16],
   ];
-  for (const p of before) pts.push({ x: p[0], y: p[1], z: p[2] });
+  for (const p of before) pts.push({ x: p[0], y: p[1], z: p[2], ...(p[3] || {}) });
   const R = 10.5;
   const cy = 4 + R;
   const n = 22;
@@ -403,6 +433,7 @@ export function createTrack(id = "dam") {
       fr.shoulder = !fr.rail;
     }
   }
+  railsAcrossJumps(frames);
   let cx = 0;
   let cz = 0;
   for (const f of frames) {
@@ -562,6 +593,40 @@ function roadClear(frames, x, z, extra) {
 
 const CUT_IN = 1.2;
 
+function railsAcrossJumps(frames) {
+  const n = frames.length;
+  for (let i = 0; i < n; i++) {
+    if (!frames[i].gap) continue;
+    let a = i;
+    let guard = 0;
+    while (frames[a].gap && guard++ < n) a = (a - 1 + n) % n;
+    let b = i;
+    guard = 0;
+    while (frames[b].gap && guard++ < n) b = (b + 1) % n;
+    let lip = !!frames[a].lip;
+    for (let k = 0; k < 20 && !lip; k++) {
+      const f = frames[(a - k + n) % n];
+      if (f.gap) break;
+      if (f.lip) lip = true;
+    }
+    let deck = !!frames[b].deck;
+    for (let k = 0; k < 20 && !deck; k++) {
+      const f = frames[(b + k) % n];
+      if (f.gap) break;
+      if (f.deck) deck = true;
+    }
+    if (!lip || !deck) continue;
+    let span = b - a;
+    if (span <= 0) span += n;
+    let along = i - a;
+    if (along < 0) along += n;
+    const u = span > 0 ? along / span : 0;
+    frames[i].rail = true;
+    frames[i].railY = frames[a].p.y + (frames[b].p.y - frames[a].p.y) * u;
+    frames[i].shoulder = false;
+  }
+}
+
 function hazardEnd(fr) {
   return !fr || fr.gap || fr.lip || fr.deck || fr.loop || fr.ceiling || fr.bridge;
 }
@@ -588,7 +653,7 @@ function cutPoint(a, b, mid, u) {
   const p0z = a.p.z + basis.iz * a.width * 0.5;
   const p3x = b.p.x + basis.ix * b.width * 0.5;
   const p3z = b.p.z + basis.iz * b.width * 0.5;
-  const h = 6;
+  const h = Math.hypot(b.p.x - a.p.x, b.p.z - a.p.z) / 3;
   const bulge = Math.sin(Math.PI * u) * CUT_IN;
   return {
     x: bezier1(p0x, p0x + a.tangent.x * h, p3x - b.tangent.x * h, p3x, u) + basis.ix * bulge,
@@ -597,27 +662,34 @@ function cutPoint(a, b, mid, u) {
   };
 }
 
-function pathBlocked(track, a, b, mid) {
+function pathBlockReason(track, a, b, mid) {
   const frames = track.frames;
   for (let s = 1; s < 8; s++) {
     const u = s / 8;
     const p = cutPoint(a, b, mid, u);
-    if (waterUnder(track, p.x, p.z)) return true;
+    const w = waterUnder(track, p.x, p.z);
+    if (w && p.y < w.y + 1.15) return "water@" + u.toFixed(2);
     for (let i = 0; i < frames.length; i += 2) {
       const f = frames[i];
       if (f.t >= a.t - 0.02 && f.t <= b.t + 0.02) {
         if ((f.gap || f.lip || f.loop || f.ceiling) && Math.hypot(f.p.x - p.x, f.p.z - p.z) < 8 && Math.abs(f.p.y - p.y) < 6) {
-          return true;
+          return "hazard@" + f.t.toFixed(3) + " u" + u.toFixed(2);
         }
         continue;
       }
       const dx = f.p.x - p.x;
       const dz = f.p.z - p.z;
       const reach = f.width * 0.55 + 1.2;
-      if (dx * dx + dz * dz < reach * reach && Math.abs(f.p.y - p.y) < 3.4) return true;
+      if (dx * dx + dz * dz < reach * reach && Math.abs(f.p.y - p.y) < 3.4) {
+        return "road@" + f.t.toFixed(3) + " u" + u.toFixed(2);
+      }
     }
   }
-  return false;
+  return "";
+}
+
+function pathBlocked(track, a, b, mid) {
+  return !!pathBlockReason(track, a, b, mid);
 }
 
 function makeCut(track, a, b, mid, kind, arc, chord) {
@@ -631,19 +703,7 @@ function makeCut(track, a, b, mid, kind, arc, chord) {
   for (let s = 0; s <= steps; s++) {
     const u = s / steps;
     const p = cutPoint(a, b, mid, u);
-    let y = p.y + 0.1;
-    let gap = false;
-    if (kind === "roof") {
-      if (u < ramp) y = p.y + (deck - p.y) * (u / Math.max(0.08, ramp));
-      else if (u < 0.55) y = deck;
-      else if (u < jumpAt) y = deck + ((u - 0.55) / (jumpAt - 0.55)) * 1.35;
-      else if (u < landAt) {
-        y = deck + 1.35;
-        gap = true;
-      } else if (u > 1 - ramp) y = p.y + (deck - p.y) * ((1 - u) / Math.max(0.08, ramp));
-      else y = deck;
-    }
-    pts.push({ x: p.x, y, z: p.z, u, gap });
+    pts.push({ x: p.x, y: p.y + 0.1, z: p.z, u, gap: false });
   }
   return {
     id: track.id + "-" + kind + "-" + Math.round(a.t * 1000),
@@ -703,33 +763,77 @@ function gatherCuts(track, minSave, minLat, maxSpan) {
   return found;
 }
 
-function placeCuts(track) {
-  let found = gatherCuts(track, 26, 4, 0.32);
-  if (found.length < 2) found = gatherCuts(track, 18, 3.2, 0.36);
-  let best = null;
-  const scorePair = (roof, fence, cap) => {
-    if (roof.tOut + 0.03 >= fence.tIn) return null;
-    if (roof.save > cap || fence.save > cap) return null;
-    return Math.min(roof.save, fence.save);
-  };
-  const search = (cap) => {
-    for (let i = 0; i < found.length; i++) {
-      for (let j = 0; j < found.length; j++) {
-        if (i === j) continue;
-        const score = scorePair(found[i], found[j], cap);
-        if (score == null) continue;
-        if (!best || score > best.score) best = { score, roof: found[i], fence: found[j] };
+const CUT_PLAN = {
+  dam: { tIn: 0.424, tOut: 0.743 },
+  frost: { tIn: 0.17, tOut: 0.488 },
+  sky: { tIn: 0.416, tOut: 0.717 },
+};
+
+function snapFrame(track, t) {
+  let best = track.frames[0];
+  let bestD = 2;
+  for (const fr of track.frames) {
+    let d = Math.abs(fr.t - t);
+    if (d > 0.5) d = 1 - d;
+    if (d < bestD) {
+      bestD = d;
+      best = fr;
+    }
+  }
+  return best;
+}
+
+function openMouths(track) {
+  for (const cut of track.cuts || []) {
+    for (const fr of track.frames) {
+      for (const t of [cut.tIn, cut.tOut]) {
+        let d = Math.abs(fr.t - t);
+        if (d > 0.5) d = 1 - d;
+        if (d <= 0.012) {
+          fr.rail = false;
+          fr.shoulder = true;
+        }
       }
     }
-  };
-  search(64);
-  if (!best) search(92);
+  }
+}
+
+function placeCuts(track) {
   const cuts = [];
-  if (best) {
-    cuts.push(makeCut(track, best.roof.a, best.roof.b, best.roof.mid, "roof", best.roof.arc, best.roof.chord));
-    cuts.push(makeCut(track, best.fence.a, best.fence.b, best.fence.mid, "fence", best.fence.arc, best.fence.chord));
+  const plan = CUT_PLAN[track.id];
+  if (plan) {
+    let a = snapFrame(track, plan.tIn);
+    let b = snapFrame(track, plan.tOut);
+    let mid = snapFrame(track, (a.t + b.t) * 0.5);
+    if (pathBlocked(track, a, b, mid)) {
+      for (let s = 1; s <= 8; s++) {
+        const a2 = snapFrame(track, plan.tIn + s * 0.004);
+        const b2 = snapFrame(track, plan.tOut - s * 0.004);
+        const m2 = snapFrame(track, (a2.t + b2.t) * 0.5);
+        if (!pathBlocked(track, a2, b2, m2)) {
+          a = a2;
+          b = b2;
+          mid = m2;
+          break;
+        }
+      }
+    }
+    const frames = track.frames;
+    const ia = frames.indexOf(a);
+    const ib = frames.indexOf(b);
+    const lo = Math.min(ia, ib);
+    const hi = Math.max(ia, ib);
+    let arc = 0;
+    for (let k = lo; k < hi; k++) {
+      arc += Math.hypot(frames[k + 1].p.x - frames[k].p.x, frames[k + 1].p.z - frames[k].p.z);
+    }
+    const chord = Math.hypot(b.p.x - a.p.x, b.p.z - a.p.z);
+    const cut = makeCut(track, a, b, mid, "fence", arc, chord);
+    cut.blocked = pathBlocked(track, a, b, mid);
+    cuts.push(cut);
   }
   track.cuts = cuts;
+  openMouths(track);
 }
 
 function camBlocked(frames, x, z, rad) {
@@ -782,25 +886,6 @@ function placeBuildings(track) {
   if (buildings.length < 5) place(true);
   track.buildings = buildings;
   for (const b of buildings) track.solids.push({ x: b.x, z: b.z, r: b.r * 0.78 });
-  placeRoofLodge(track);
-}
-
-function placeRoofLodge(track) {
-  const roof = (track.cuts || []).find((c) => c.kind === "roof");
-  if (!roof || !track.buildings) return;
-  const u = 0.4;
-  const p = sampleCut(roof, u);
-  const ahead = sampleCut(roof, Math.min(0.98, u + 0.04));
-  const tip = 4.15;
-  track.buildings.push({
-    kind: "lodge",
-    x: p.x,
-    z: p.z,
-    y: (roof.deckY || p.y) - tip,
-    yaw: Math.atan2(ahead.x - p.x, ahead.z - p.z),
-    r: 3.1,
-    roof: true,
-  });
 }
 
 function sampleCut(cut, u) {
@@ -913,7 +998,8 @@ function headingNear(kart, cut, u) {
 function innerThird(track, kart, cut) {
   const fr = frameAt(track, cut.tIn);
   const lat = (kart.x - fr.p.x) * fr.right.x + (kart.z - fr.p.z) * fr.right.z;
-  const along = lat * -outerSign(track, fr);
+  const side = Math.sign((cut.pts[2].x - fr.p.x) * fr.right.x + (cut.pts[2].z - fr.p.z) * fr.right.z) || 1;
+  const along = lat * side;
   const half = fr.width * 0.5;
   return along >= half / 3 - 0.8 && along <= half + 2.2;
 }
@@ -950,19 +1036,6 @@ function rideCut(track, kart, dt) {
     cut = best.cut;
     hit = best.hit;
   }
-  const jumpAt = cut.jumpAt == null ? 0.58 : cut.jumpAt;
-  const landAt = cut.landAt == null ? 0.62 : cut.landAt;
-  if (cut.kind === "roof" && hit.u >= jumpAt && hit.u < landAt) {
-    if (!kart.cutAir) {
-      const sp = Math.hypot(kart.vx, kart.vz);
-      kart.vy = Math.max(kart.vy || 0, 8.5 + sp * 0.12);
-    }
-    kart.onCut = cut.id;
-    kart.cutU = hit.u;
-    kart.cutAir = true;
-    kart.grounded = false;
-    return false;
-  }
   if (cut.kind === "fence" && !cut.broken && Math.abs(hit.u - cut.gate) < cut.gateHalf) {
     const sp = Math.hypot(kart.vx, kart.vz);
     if (sp >= 14) shatterCut(cut, kart.laps || 0);
@@ -984,8 +1057,7 @@ function rideCut(track, kart, dt) {
   }
   const deck = hit.y;
   const above = kart.y - deck;
-  const nearLand = cut.kind === "roof" && hit.u >= landAt && hit.u < landAt + 0.14;
-  const catchH = nearLand ? 4.8 : 0.35;
+  const catchH = 0.35;
   if (above > catchH) {
     kart.onCut = cut.id;
     kart.cutU = hit.u;
@@ -1018,6 +1090,16 @@ function rideCut(track, kart, dt) {
   kart.onCut = cut.id;
   kart.cutU = hit.u;
   kart.cutAir = false;
+  if (kart.grounded) {
+    const cap = MAX_SPEED * 0.8;
+    const sp = Math.hypot(kart.vx, kart.vz);
+    if (sp > cap) {
+      const scale = cap / sp;
+      kart.vx *= scale;
+      kart.vz *= scale;
+      kart.speed = Math.min(kart.speed || cap, cap);
+    }
+  }
   advanceCutT(track, kart, cut, hit.u);
   return true;
 }
@@ -1201,6 +1283,9 @@ function blankKart(def, track, slot) {
     speed: 0,
     grounded: true,
     air: 0,
+    peakAir: 0,
+    falls: 0,
+    peakFalls: 0,
     off: 0,
     wet: 0,
     splash: 0,
@@ -1596,7 +1681,7 @@ function bodyStep(track, kart, dt) {
   let mode = riding ? "road" : "air";
   let latNow = lat;
   if (!riding && !(kart.cutAir && kart.onCut)) {
-  if (!fr.gap && fr.rail && Math.abs(lat) > edge && !offOuter) {
+  if (!fr.gap && fr.rail && Math.abs(kart.y - fr.p.y) < 2.2 && Math.abs(lat) > edge && !offOuter) {
     const sign = Math.sign(lat) || 1;
     const push = Math.abs(lat) - edge;
     kart.x -= fr.right.x * sign * push;
@@ -1819,10 +1904,12 @@ function bodyStep(track, kart, dt) {
         }
         if (!ahead) ahead = frameAt(track, kart.t + 0.1);
         kart.safeHint = frameIndex(track, ahead.t);
-        kart.falls = 0;
         kart.fallStreak = 0;
         kart.fallSpot = null;
         respawnKart(track, kart);
+        kart.falls = 0;
+        kart.fallStreak = 0;
+        kart.fallSpot = null;
       }
     }
   }
@@ -1830,6 +1917,8 @@ function bodyStep(track, kart, dt) {
     if (kart.speed < 2.2 && kart.grounded) kart.stuck += dt;
     else kart.stuck = 0;
   }
+  kart.peakAir = Math.max(kart.peakAir || 0, kart.air || 0);
+  kart.peakFalls = Math.max(kart.peakFalls || 0, kart.falls || 0);
 }
 
 function separate(karts) {
@@ -1987,11 +2076,11 @@ export function adviceFor(race, id) {
     return { steer: 0, gas: 1, drift: false, brake: false, fire: false };
   }
   if (!kart.grounded) {
-    const land = frameAt(track, kart.t + 0.04);
-    const desired = Math.atan2(land.tangent.x, land.tangent.z);
+    const land = frameAt(track, kart.t + 0.055);
+    const desired = Math.atan2(land.p.x - kart.x, land.p.z - kart.z);
     const err = wrapAngle(desired - kart.yaw);
     return {
-      steer: Math.max(-1, Math.min(1, err / 0.45)),
+      steer: Math.max(-1, Math.min(1, err / 0.35)),
       gas: 1,
       drift: false,
       brake: false,
@@ -2154,11 +2243,19 @@ export function laneAdvice(race, id, side) {
   const track = race.track;
   const fr = track.frames[kart.hint] || frameAt(track, kart.t);
   const ahead = frameAt(track, kart.t + 0.035);
-  const hazard = fr.lip || fr.gap || fr.deck || ahead.lip || ahead.gap || ahead.deck;
+  const soon = frameAt(track, kart.t + 0.07);
+  let cutNear = false;
+  for (const cut of track.cuts || []) {
+    let d = (cut.tIn || 0) - (kart.t || 0);
+    if (d > 0.5) d -= 1;
+    if (d < -0.5) d += 1;
+    if (d > -0.01 && d < 0.08) cutNear = true;
+  }
+  const hazard = cutNear || fr.lip || fr.gap || fr.deck || ahead.lip || ahead.gap || ahead.deck || soon.lip || soon.gap || soon.deck;
   const steep = Math.abs(fr.tangent.y) > 0.12 || Math.abs(ahead.tangent.y) > 0.16;
   const tight = Math.abs(fr.curvature) > 0.012 || Math.abs(ahead.curvature) > 0.014 || hazard || steep || (kart.speed || 0) < 16;
   const sign = side === "inner" ? -outerSign(track, fr) : outerSign(track, fr);
-  const want = sign * fr.width * (tight ? 0.06 : 0.42);
+  const want = hazard ? 0 : sign * fr.width * (tight ? 0.06 : 0.42);
   const lat = (kart.x - fr.p.x) * fr.right.x + (kart.z - fr.p.z) * fr.right.z;
   const nudge = Math.max(-1, Math.min(1, (want - lat) / (tight ? 4.2 : 2.2)));
   return {
@@ -2582,7 +2679,7 @@ function testLeap(track, fails, label) {
   for (let i = 0; i < track.frames.length; i++) {
     if (track.frames[i].lip && (i === 0 || !track.frames[i - 1].lip)) lips.push(i);
   }
-  if (lips.length < 2) fails.push(label + " lips " + lips.length);
+  if (lips.length !== 1) fails.push(label + " lips " + lips.length);
   for (const lip of lips) {
     let steep = lip;
     for (let i = lip; i < lip + 20 && i < track.frames.length; i++) {
@@ -2633,7 +2730,7 @@ function testOasis(fails) {
   const track = createTrack("oasis");
   if (track.name !== "Oasis Leap") fails.push("oasis name");
   const leaps = (track.waters || []).filter((w) => String(w.id).startsWith("leap"));
-  if (leaps.length < 2) fails.push("oasis pools " + leaps.length);
+  if (leaps.length !== 1) fails.push("oasis pools " + leaps.length);
   for (const fr of track.frames) {
     if (fr.gap) continue;
     const w = waterUnder(track, fr.p.x, fr.p.z);
@@ -2758,36 +2855,135 @@ function driveCut(track, cut, speed, startU, gas) {
   return { kart, hi, y0: p0.y, aired };
 }
 
+function testCutEntry(track, cut, fails) {
+  const fr = frameAt(track, cut.tIn);
+  const side = Math.sign((cut.pts[2].x - fr.p.x) * fr.right.x + (cut.pts[2].z - fr.p.z) * fr.right.z) || 1;
+  const along = fr.width * 0.5 * 0.72;
+  const kart = loneKart(track, fr, 22);
+  kart.x = fr.p.x + fr.right.x * along * side;
+  kart.z = fr.p.z + fr.right.z * along * side;
+  kart.y = fr.p.y + 0.05;
+  const aim = cut.pts[Math.min(4, cut.pts.length - 1)];
+  kart.yaw = Math.atan2(aim.x - kart.x, aim.z - kart.z);
+  const nose = forward(kart.yaw);
+  kart.vx = nose.x * 22;
+  kart.vz = nose.z * 22;
+  kart.speed = 22;
+  kart.onCut = "";
+  kart.seenHalf = false;
+  kart.laps = 0;
+  let rode = false;
+  for (let i = 0; i < 420; i++) {
+    integrate(kart, { steer: 0, gas: 1, drift: false }, 1 / 60);
+    bodyStep(track, kart, 1 / 60);
+    if (kart.onCut) rode = true;
+    if ((kart.falls || 0) > 0) {
+      fails.push(track.id + " trap");
+      return;
+    }
+    if (rode && (kart.cutU || 0) > 0.45) break;
+  }
+  if (!rode) fails.push(track.id + " no entry");
+  if ((kart.laps || 0) !== 0) fails.push(track.id + " entry lap " + kart.laps);
+}
+
 function testShortcuts(fails) {
-  for (const id of ["dam", "frost", "clover", "oasis", "sky"]) {
-    const track = id === "dam" ? createTrack() : createTrack(id);
+  const want = { dam: 1, frost: 1, clover: 0, oasis: 0, sky: 1 };
+  for (const id of Object.keys(want)) {
+    const track = createTrack(id);
     if (lapsFor(track) !== (id === "oasis" || id === "sky" ? 3 : 4)) fails.push(id + " laps " + lapsFor(track));
     const roofs = (track.cuts || []).filter((c) => c.kind === "roof");
     const fences = (track.cuts || []).filter((c) => c.kind === "fence");
-    if (!roofs.length || !fences.length) fails.push(id + " cuts " + roofs.length + "/" + fences.length);
+    if (roofs.length) fails.push(id + " roof " + roofs.length);
+    if (fences.length !== want[id]) fails.push(id + " fences " + fences.length);
     const kinds = new Set((track.buildings || []).map((b) => b.kind));
     for (const kind of ["lodge", "sawmill", "cabin", "tower", "hut"]) {
       if (!kinds.has(kind)) fails.push(id + " yard " + kind);
     }
-    for (const cut of track.cuts || []) {
-      if (cut.save < 18 || cut.save > 96) fails.push(id + " " + cut.kind + " save " + cut.save.toFixed(1));
+    for (const cut of fences) {
+      if (cut.blocked) {
+        const a = snapFrame(track, cut.tIn);
+        const b = snapFrame(track, cut.tOut);
+        const mid = snapFrame(track, (cut.tIn + cut.tOut) * 0.5);
+        fails.push(id + " blocked " + pathBlockReason(track, a, b, mid));
+      }
+      let mouth = false;
+      for (const fr of track.frames) {
+        let d = Math.abs(fr.t - cut.tIn);
+        if (d > 0.5) d = 1 - d;
+        if (d <= 0.006) {
+          mouth = true;
+          if (fr.rail) fails.push(id + " mouth rail");
+          if (!fr.shoulder) fails.push(id + " mouth shoulder");
+        }
+      }
+      if (!mouth) fails.push(id + " no mouth");
     }
-    if (id !== "dam" || !roofs.length || !fences.length) continue;
-    const roof = driveCut(track, roofs[0], 22, 0, 1);
-    if (roof.hi < roof.y0 + 1.5) fails.push("roof height " + roof.hi.toFixed(2));
-    if ((roof.kart.falls || 0) > 0) fails.push("roof fall");
-    if (!roof.aired) fails.push("roof air");
-    if ((roof.kart.laps || 0) !== 0) fails.push("roof lap " + roof.kart.laps);
-    let adv = roof.kart.t - roofs[0].tIn;
-    if (adv < -0.5) adv += 1;
-    if (adv < 0.03) fails.push("roof t " + adv.toFixed(3));
+    if (!fences.length) continue;
     const fence = fences[0];
+    testCutEntry(track, fence, fails);
     driveCut(track, fence, 22, Math.max(0, fence.gate - 0.12), 1);
-    if (!fence.broken) fails.push("fence shut");
+    if (!fence.broken) fails.push(id + " fence shut");
     fence.broken = false;
     fence.bits = [];
     driveCut(track, fence, 6, Math.max(0, fence.gate - 0.08), 0);
-    if (fence.broken) fails.push("fence slow break");
+    if (fence.broken) fails.push(id + " fence slow break");
+  }
+}
+
+function testJumps(fails) {
+  for (const id of ["dam", "frost", "clover", "oasis", "sky"]) {
+    const track = createTrack(id);
+    const runs = [];
+    let open = false;
+    for (const fr of track.frames) {
+      if (fr.lip && !open) {
+        runs.push(fr);
+        open = true;
+      } else if (!fr.lip) open = false;
+    }
+    if (runs.length !== 1) fails.push(id + " jumps " + runs.length);
+    if (!runs.length) continue;
+    const kart = loneKart(track, runs[0], 27);
+    kart.seenHalf = false;
+    kart.laps = 0;
+    kart.assist = false;
+    let streak = 0;
+    let maxAir = 0;
+    let saw = false;
+    let landed = false;
+    let deck = false;
+    for (let i = 0; i < 420; i++) {
+      let steer = 0;
+      if (!kart.grounded) {
+        const aim = frameAt(track, (kart.t || 0) + 0.045);
+        const err = wrapAngle(Math.atan2(aim.tangent.x, aim.tangent.z) - kart.yaw);
+        if (Math.abs(err) > 0.2) steer = Math.max(-1, Math.min(1, err / 0.45));
+      }
+      integrate(kart, { steer, gas: 1, drift: false }, 1 / 60);
+      bodyStep(track, kart, 1 / 60);
+      if ((kart.falls || 0) > 0) break;
+      if (!kart.grounded) {
+        saw = true;
+        streak += 1 / 60;
+        if (streak > maxAir) maxAir = streak;
+      } else if (saw) {
+        landed = true;
+        const near = nearest(track, kart.x, kart.y, kart.z, kart.hint);
+        const idx = near.index || 0;
+        for (let k = -6; k <= 10; k++) {
+          const fr = track.frames[(idx + k + track.frames.length) % track.frames.length];
+          if (fr.deck && Math.hypot(fr.p.x - kart.x, fr.p.z - kart.z) < 22) deck = true;
+        }
+        break;
+      } else streak = 0;
+    }
+    if (maxAir < 0.8) fails.push(id + " air " + maxAir.toFixed(2));
+    if ((kart.falls || 0) > 0) {
+      fails.push(id + " fall y" + kart.y.toFixed(1) + " air" + maxAir.toFixed(2) + " t" + (kart.t || 0).toFixed(3) + " wet" + (kart.wet || 0).toFixed(2));
+    }
+    if ((kart.laps || 0) !== 0) fails.push(id + " jump lap " + kart.laps);
+    if (!landed || !deck) fails.push(id + " deck " + (landed ? "miss" : "air"));
   }
 }
 
@@ -2795,6 +2991,7 @@ export function selfTest() {
   const fails = [];
   testSpin(fails);
   testShortcuts(fails);
+  testJumps(fails);
   const track = createTrack();
   if (track.length < 700 || track.length > 1300) fails.push("length " + track.length.toFixed(1));
   const pinch = hardPinch(track.frames);

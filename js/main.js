@@ -21,9 +21,10 @@ import {
   setDriver as chooseDriver,
   swapTrack,
   writeSave,
-} from "./sim.js?v=gd44";
-import { createWorld } from "./world.js?v=gd44";
-import { createSfx } from "./audio.js?v=gd44";
+} from "./sim.js?v=gd45";
+import { createWorld } from "./world.js?v=gd45";
+import { createSfx } from "./audio.js?v=gd45";
+import { buildKart, checkArt } from "./racers.js?v=gd45";
 
 const app = document.getElementById("app");
 const stage = document.getElementById("stage");
@@ -793,6 +794,71 @@ function hudTick() {
   }
 }
 
+function driveStep(dt, quiet) {
+  const inputs = {};
+  for (const k of race.karts) {
+    inputs[k.id] = k.cpu ? adviceFor(race, k.id) : youInput();
+  }
+  const pilot = humanOf(race);
+  const beforeBoost = pilot ? pilot.boost : 0;
+  const phaseBefore = race.phase;
+  stepRace(race, inputs, dt);
+  let hitNow = 0;
+  for (const k of race.karts) hitNow += k.hitTick || 0;
+  if (!quiet) {
+    const youNow = humanOf(race);
+    if (youNow && youNow.boost > 0 && beforeBoost <= 0) {
+      sfx.boost();
+      if (navigator.vibrate) navigator.vibrate(12);
+    }
+    if (hitNow > hitSeen) sfx.hit();
+    if ((race.buzz || 0) !== buzzSeen) sfx.buzz();
+    const you = humanOf(race);
+    if (you && (race.phase === "race" || race.phase === "countdown")) sfx.engine(you.speed, you.boost > 0);
+  }
+  hitSeen = hitNow;
+  buzzSeen = race.buzz || 0;
+  if (race.phase === "podium" && phaseBefore !== "podium") showPodium();
+  else if (race.phase !== "podium") podiumEl.classList.add("hidden");
+}
+
+function paintStep(dt) {
+  hudTick();
+  world.update(race, dt, window.innerHeight >= window.innerWidth);
+}
+
+function withSeed(fn) {
+  const prev = Math.random;
+  let s = 0x6d2b79f5;
+  Math.random = () => {
+    s = (Math.imul(1664525, s) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+  try {
+    return fn();
+  } finally {
+    Math.random = prev;
+  }
+}
+
+function raceReport(seen) {
+  const you = humanOf(race);
+  return {
+    phase: race.phase,
+    air: you ? you.peakAir || 0 : 0,
+    falls: you ? you.peakFalls || 0 : 0,
+    laps: you ? you.laps || 0 : 0,
+    lap: you ? lapOf(you, race) : 0,
+    seen: seen ? [...seen] : [],
+    time: race.time || 0,
+    place: you ? you.place || 0 : 0,
+    lapTarget: race.lapTarget,
+    track: race.track && race.track.id,
+  };
+}
+
+let holdSim = false;
+
 function frame(now) {
   const dt = Math.min(0.05, (now - lastTick) / 1000);
   lastTick = now;
@@ -804,37 +870,8 @@ function frame(now) {
       fireHold.empty = false;
     }
   }
-  const inputs = {};
-  for (const k of race.karts) {
-    inputs[k.id] = k.cpu ? adviceFor(race, k.id) : youInput();
-  }
-  const pilot = humanOf(race);
-  const beforeBoost = pilot.boost;
-  stepRace(race, inputs, dt);
-  const youNow = humanOf(race);
-  if (youNow.boost > 0 && beforeBoost <= 0) {
-    sfx.boost();
-    if (navigator.vibrate) navigator.vibrate(12);
-  }
-  let hitNow = 0;
-  for (const k of race.karts) hitNow += k.hitTick || 0;
-  if (hitNow > hitSeen) {
-    hitSeen = hitNow;
-    sfx.hit();
-  } else {
-    hitSeen = hitNow;
-  }
-  if ((race.buzz || 0) !== buzzSeen) {
-    buzzSeen = race.buzz || 0;
-    sfx.buzz();
-  }
-  if (race.phase === "podium") showPodium();
-  else podiumEl.classList.add("hidden");
-  const you = humanOf(race);
-  if (race.phase === "race" || race.phase === "countdown") sfx.engine(you.speed, you.boost > 0);
-  hudTick();
-  const portrait = window.innerHeight >= window.innerWidth;
-  world.update(race, dt, portrait);
+  if (!holdSim) driveStep(dt, false);
+  paintStep(holdSim ? 0 : dt);
   requestAnimationFrame(frame);
 }
 
@@ -882,12 +919,14 @@ function seatKart(kart, cut, u, speed) {
   kart.slowT = 0;
   kart.speedMul = 1;
   kart.falls = 0;
+  kart.peakFalls = 0;
   kart.fallStreak = 0;
   kart.fallSpot = null;
   kart.onCut = cut.id;
   kart.cutU = u;
   kart.cutAir = false;
   kart.air = 0;
+  kart.peakAir = 0;
   kart.wet = 0;
   kart.off = 0;
   return kart.y;
@@ -927,6 +966,10 @@ window.__grand = {
       z: you.z,
       yaw: you.yaw,
       y: you.y,
+      air: you.air || 0,
+      falls: you.falls || 0,
+      peakAir: you.peakAir || 0,
+      peakFalls: you.peakFalls || 0,
       grounded: !!you.grounded,
       splash: you.splash || 0,
       finished: you.finished,
@@ -973,6 +1016,75 @@ window.__grand = {
     laneSide = side === "outer" || side === "inner" ? side : null;
     auto = false;
     scripted = null;
+  },
+  hold(on) {
+    holdSim = !!on;
+    lastTick = performance.now();
+  },
+  rush(seconds) {
+    const total = Math.max(0, Math.min(12, Number(seconds) || 0));
+    const dt = 1 / 60;
+    const n = Math.max(1, Math.round(total * 60));
+    for (let i = 0; i < n; i++) driveStep(dt, true);
+    paintStep(dt);
+    return race.phase;
+  },
+  runRace(maxSec) {
+    return withSeed(() => {
+      const dt = 1 / 60;
+      const cap = Math.round(Math.max(1, Math.min(480, Number(maxSec) || 480)) * 60);
+      const seen = new Set();
+      let i = 0;
+      while (race.phase !== "podium" && i < cap) {
+        driveStep(dt, true);
+        const you = humanOf(race);
+        if (you) seen.add(lapOf(you, race));
+        i += 1;
+      }
+      paintStep(dt);
+      return raceReport(seen);
+    });
+  },
+  runKeyed(maxSec) {
+    return withSeed(() => this.runKeyedOpen(maxSec));
+  },
+  runKeyedOpen(maxSec) {
+    const prevAuto = auto;
+    const prevLane = laneSide;
+    const prevScript = scripted;
+    auto = false;
+    laneSide = null;
+    scripted = null;
+    const dt = 1 / 60;
+    const cap = Math.round(Math.max(1, Math.min(480, Number(maxSec) || 480)) * 60);
+    const seen = new Set();
+    let i = 0;
+    let fireArmed = false;
+    while (race.phase !== "podium" && i < cap) {
+      const you = humanOf(race);
+      const advice = you ? adviceFor(race, you.id) : { gas: 0, steer: 0, fire: false };
+      held.gas = !!advice.gas;
+      held.brake = false;
+      held.left = (advice.steer || 0) > 0.18;
+      held.right = (advice.steer || 0) < -0.18;
+      if (advice.fire && !fireArmed) firePulse = true;
+      fireArmed = !!advice.fire;
+      for (let c = 0; c < 4 && race.phase !== "podium" && i < cap; c += 1, i += 1) {
+        driveStep(dt, true);
+        const pilot = humanOf(race);
+        if (pilot) seen.add(lapOf(pilot, race));
+      }
+    }
+    held.gas = false;
+    held.brake = false;
+    held.left = false;
+    held.right = false;
+    firePulse = false;
+    auto = prevAuto;
+    laneSide = prevLane;
+    scripted = prevScript;
+    paintStep(dt);
+    return raceReport(seen);
   },
   selfTest,
   frameCheck: () => check,
@@ -1026,6 +1138,15 @@ window.__grand = {
     const you = humanOf(race);
     const foe = race.karts.find((k) => k.cpu);
     if (!you || !foe) return "";
+    you.buckler = 0;
+    you.bucklerHits = 0;
+    you.bucklerKnocked = false;
+    race.shots = [];
+    race.traps = [];
+    race.surges = [];
+    race.slicks = [];
+    race.meteors = [];
+    race.tethers = [];
     foe.finished = false;
     foe.stun = 0;
     foe.stunCd = 0;
@@ -1036,8 +1157,13 @@ window.__grand = {
     foe.slowT = 0;
     foe.speedMul = 1;
     foe.buckler = 0;
+    foe.bucklerHits = 0;
     foe.hitFlash = 0;
     foe.grounded = true;
+    for (const other of race.karts) {
+      other.buckler = 0;
+      other.bucklerHits = 0;
+    }
     if (kind === "buckler") {
       const sx = Math.cos(you.yaw);
       const sz = -Math.sin(you.yaw);
@@ -1105,38 +1231,30 @@ window.__grand = {
   probeCuts() {
     const fails = [];
     const trackId = race.track.id;
-    const drive = (kind) => {
+    const wantFence = { dam: 1, frost: 1, clover: 0, oasis: 0, sky: 1 };
+    const driveFence = (id) => {
       const you = humanOf(race);
-      const cut = (race.track.cuts || []).find((c) => c.kind === kind);
+      const cut = (race.track.cuts || []).find((c) => c.kind === "fence");
       if (!cut) {
-        fails.push(race.track.id + " no " + kind);
+        fails.push(id + " no fence");
         return;
       }
       cut.broken = false;
       cut.bits = [];
-      const u = kind === "fence" ? Math.max(0, cut.gate - 0.1) : 0;
-      const y0 = seatKart(you, cut, u, 22);
+      cut.shatter = 0;
+      const y0 = seatKart(you, cut, Math.max(0, cut.gate - 0.1), 22);
       const t0 = you.t;
       parkFoes();
-      let hi = you.y;
-      let aired = false;
-      const frames = kind === "roof" ? 520 : 220;
-      for (let n = 0; n < frames; n++) {
+      for (let n = 0; n < 220; n++) {
         stepRace(race, { [you.id]: { steer: 0, gas: 1, drift: false, brake: false, fire: false } }, 1 / 60);
         parkFoes();
-        if (you.y > hi) hi = you.y;
-        const u = you.cutU || 0;
-        if (kind === "roof" && u > 0.55 && u < 0.74 && !you.grounded) aired = true;
-        if (kind === "fence" && cut.broken) break;
-        if (kind === "roof" && u > 0.82) break;
+        if (cut.broken) break;
       }
-      if (kind === "roof" && hi < y0 + 1.2) fails.push(race.track.id + " roof " + hi.toFixed(2) + "/" + y0.toFixed(2));
-      if (kind === "roof" && !aired) fails.push(race.track.id + " roof air");
-      if (kind === "fence" && !cut.broken) fails.push(race.track.id + " fence shut");
-      if ((you.laps || 0) !== 0) fails.push(race.track.id + " " + kind + " lap " + you.laps);
+      if (!cut.broken) fails.push(id + " fence shut");
+      if ((you.laps || 0) !== 0) fails.push(id + " fence lap " + you.laps);
       let adv = you.t - t0;
       if (adv < -0.5) adv += 1;
-      if (adv < 0.02) fails.push(race.track.id + " " + kind + " t " + adv.toFixed(3));
+      if (adv < 0.02) fails.push(id + " fence t " + adv.toFixed(3) + " y " + y0.toFixed(1));
     };
     for (const id of ["dam", "frost", "clover", "oasis", "sky"]) {
       swapTrack(race, id);
@@ -1148,8 +1266,11 @@ window.__grand = {
       for (const kind of ["lodge", "sawmill", "cabin", "tower", "hut"]) {
         if (!kinds.has(kind)) fails.push(id + " yard " + kind);
       }
-      drive("roof");
-      drive("fence");
+      const roofs = (race.track.cuts || []).filter((c) => c.kind === "roof");
+      const fences = (race.track.cuts || []).filter((c) => c.kind === "fence");
+      if (roofs.length) fails.push(id + " roof " + roofs.length);
+      if (fences.length !== wantFence[id]) fails.push(id + " fences " + fences.length);
+      if (wantFence[id]) driveFence(id);
     }
     swapTrack(race, trackId);
     world.setTrack(race.track);
@@ -1187,4 +1308,51 @@ window.__grand = {
     return foe.id;
   },
 };
+
+function runArtcheck() {
+  const params = new URLSearchParams(location.search);
+  if (params.get("artcheck") !== "1") return;
+  const ids = ["bober", "nib", "muscle", "tall"];
+  const shots = [];
+  const reports = [];
+  const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  renderer.setSize(960, 720);
+  renderer.setClearColor(0x8eafc2, 1);
+  const artScene = new THREE.Scene();
+  artScene.add(new THREE.AmbientLight(0xfff6ea, 0.72));
+  const key = new THREE.DirectionalLight(0xfff2dd, 1.25);
+  key.position.set(3.2, 6.5, 5.4);
+  artScene.add(key);
+  const fill = new THREE.DirectionalLight(0xc5d8ea, 0.45);
+  fill.position.set(-4, 3, -2);
+  artScene.add(fill);
+  const cam = new THREE.PerspectiveCamera(32, 960 / 720, 0.05, 40);
+  for (const id of ids) {
+    for (const lod of [false, true]) {
+      const kart = buildKart(THREE, { id }, null, { lod });
+      const fails = checkArt(THREE, kart);
+      reports.push({ id, lod, tris: kart.driver.userData.crewTris || 0, fails });
+      if (lod) continue;
+      artScene.add(kart.group);
+      kart.group.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(kart.group);
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      const span = Math.max(size.x, size.y, size.z, 1.2);
+      cam.position.set(center.x + span * 0.95, center.y + span * 0.38, center.z + span * 1.25);
+      cam.lookAt(center.x, center.y + size.y * 0.02, center.z - span * 0.2);
+      cam.updateProjectionMatrix();
+      renderer.render(artScene, cam);
+      shots.push(renderer.domElement.toDataURL("image/png"));
+      artScene.remove(kart.group);
+    }
+  }
+  renderer.dispose();
+  const fails = reports.reduce((acc, row) => acc.concat(row.fails), []);
+  window.__artcheck = { ok: fails.length === 0, reports };
+  window.__artFrame = (i) => shots[i] || "";
+  if (fails.length) console.error("ARTCHECK", fails.join(" | "));
+}
+
+runArtcheck();
 requestAnimationFrame(frame);

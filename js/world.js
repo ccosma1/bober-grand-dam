@@ -1,5 +1,5 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd44";
-import { buildKart } from "./racers.js?v=gd44";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd45";
+import { buildKart } from "./racers.js?v=gd45";
 
 function canvasTex(THREE, draw, w, h, repeat) {
   const c = document.createElement("canvas");
@@ -359,10 +359,13 @@ function buildRoad(THREE, track, map) {
 
   const curbPos = [];
   const curbIdx = [];
+  function frameY(fr) {
+    return fr.railY != null ? fr.railY : fr.p.y;
+  }
   function curbPoint(fr, side, extra, yAdd) {
     curbPos.push(
       fr.p.x + fr.right.x * (fr.width * 0.5 + extra) * side,
-      fr.p.y + yAdd,
+      frameY(fr) + yAdd,
       fr.p.z + fr.right.z * (fr.width * 0.5 + extra) * side
     );
   }
@@ -376,7 +379,7 @@ function buildRoad(THREE, track, map) {
   }
   for (let i = 0; i < n; i++) {
     const j = (i + 1) % n;
-    if (f[i].gap || f[j].gap) continue;
+    if ((f[i].gap || f[j].gap) && !(f[i].rail && f[j].rail)) continue;
     for (const baseSide of [0, 4]) {
       const a = i * 8 + baseSide;
       const b = j * 8 + baseSide;
@@ -440,24 +443,83 @@ function buildRoad(THREE, track, map) {
   line.receiveShadow = false;
 
   let chevCount = 0;
-  for (const fr of f) if (fr.lip) chevCount += 1;
+  for (const fr of f) if (fr.lip) chevCount += 2;
   const chevrons = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(1, 0.07, 0.42),
-    new THREE.MeshStandardMaterial({ color: icy ? 0xe7f6ff : 0xf0a024, emissive: icy ? 0x8ecfff : 0xc98416, emissiveIntensity: 0.45 }),
+    new THREE.BoxGeometry(1, 0.08, 0.36),
+    new THREE.MeshStandardMaterial({ color: icy ? 0xe7f6ff : 0xf0a024, emissive: icy ? 0x8ecfff : 0xc98416, emissiveIntensity: 0.55 }),
     Math.max(1, chevCount)
   );
   let ci = 0;
   for (const fr of f) {
     if (!fr.lip) continue;
-    dummy.position.set(fr.p.x, fr.p.y + 0.12, fr.p.z);
-    dummy.rotation.set(0, Math.atan2(fr.tangent.x, fr.tangent.z), 0);
-    dummy.scale.set(Math.max(2.2, fr.width * 0.72), 1, 1);
-    dummy.updateMatrix();
-    chevrons.setMatrixAt(ci++, dummy.matrix);
+    const yaw = Math.atan2(fr.tangent.x, fr.tangent.z);
+    for (const s of [-1, 1]) {
+      dummy.position.set(
+        fr.p.x + fr.tangent.x * 0.15,
+        fr.p.y + 0.1,
+        fr.p.z + fr.tangent.z * 0.15
+      );
+      dummy.rotation.set(0, yaw + s * 0.62, 0);
+      dummy.scale.set(Math.max(1.6, fr.width * 0.34), 1.4, 1);
+      dummy.updateMatrix();
+      chevrons.setMatrixAt(ci++, dummy.matrix);
+    }
   }
   chevrons.count = Math.max(1, ci);
   if (!ci) chevrons.visible = false;
-  return { mesh, skirt, rivets, curb, line, chevrons };
+
+  const rampPos = [];
+  const rampIdx = [];
+  const rampRuns = [];
+  let rampRun = [];
+  for (let i = 0; i < n; i++) {
+    const nxt = f[(i + 1) % n];
+    if (f[i].lip || nxt.lip) rampRun.push(i);
+    else if (rampRun.length) {
+      rampRuns.push(rampRun);
+      rampRun = [];
+    }
+  }
+  if (rampRun.length) rampRuns.push(rampRun);
+  for (const run of rampRuns) {
+    const base = rampPos.length / 3;
+    run.forEach((i) => {
+      const fr = f[i];
+      const half = fr.width * 0.46;
+      const y = fr.p.y + 0.04;
+      rampPos.push(
+        fr.p.x - fr.right.x * half, y, fr.p.z - fr.right.z * half,
+        fr.p.x + fr.right.x * half, y, fr.p.z + fr.right.z * half,
+        fr.p.x - fr.right.x * half, y - 0.28, fr.p.z - fr.right.z * half,
+        fr.p.x + fr.right.x * half, y - 0.28, fr.p.z + fr.right.z * half
+      );
+    });
+    for (let k = 0; k < run.length - 1; k++) {
+      const a = base + k * 4;
+      const b = a + 4;
+      rampIdx.push(a, b, a + 1, a + 1, b, b + 1);
+      rampIdx.push(a + 2, a + 3, b + 2, b + 2, a + 3, b + 3);
+      rampIdx.push(a, a + 2, b, b, a + 2, b + 2);
+      rampIdx.push(a + 1, b + 1, a + 3, a + 3, b + 1, b + 3);
+    }
+  }
+  const rampGeo = new THREE.BufferGeometry();
+  rampGeo.setAttribute("position", new THREE.Float32BufferAttribute(rampPos.length ? rampPos : [0, 0, 0], 3));
+  if (rampIdx.length) rampGeo.setIndex(rampIdx);
+  rampGeo.computeVertexNormals();
+  const ramps = new THREE.Mesh(
+    rampGeo,
+    new THREE.MeshStandardMaterial({
+      color: 0x8a5a32,
+      roughness: 0.78,
+      metalness: 0.02,
+      side: THREE.DoubleSide,
+    })
+  );
+  ramps.castShadow = false;
+  ramps.receiveShadow = false;
+  ramps.visible = rampIdx.length > 0;
+  return { mesh, skirt, rivets, curb, line, chevrons, ramps };
 }
 
 function skyMaterial(THREE) {
@@ -612,7 +674,7 @@ export function createWorld(THREE, track) {
   iceMap.wrapS = THREE.RepeatWrapping;
 
   let road = buildRoad(THREE, track, roadMap);
-  scene.add(road.mesh, road.skirt, road.rivets, road.curb, road.line, road.chevrons);
+  scene.add(road.mesh, road.skirt, road.rivets, road.curb, road.line, road.chevrons, road.ramps);
 
   function crestOf(tr) {
     let best = tr.frames.find((fr) => !fr.gap && !fr.lip && !fr.deck) || tr.frames[0];
@@ -818,14 +880,15 @@ export function createWorld(THREE, track) {
     const half = s.fr.width * 0.5 + 0.2;
     dummy.scale.set(1, 1, 1);
     dummy.rotation.set(0, Math.atan2(s.fr.tangent.x, s.fr.tangent.z), 0);
+    const railY = s.fr.railY != null ? s.fr.railY : s.fr.p.y;
     dummy.position.set(
       s.fr.p.x + s.fr.right.x * half * s.side,
-      s.fr.p.y + 0.7,
+      railY + 0.7,
       s.fr.p.z + s.fr.right.z * half * s.side
     );
     dummy.updateMatrix();
     postMesh.setMatrixAt(idx, dummy.matrix);
-    dummy.position.y = s.fr.p.y + 1.15;
+    dummy.position.y = railY + 1.15;
     dummy.updateMatrix();
     railMesh.setMatrixAt(idx, dummy.matrix);
   });
@@ -1996,33 +2059,116 @@ export function createWorld(THREE, track) {
   let extraDress = null;
   let yard = null;
 
+  function pathBasis(pts, i) {
+    const p = pts[i];
+    const n = pts[Math.min(pts.length - 1, i + 1)];
+    const prev = pts[Math.max(0, i - 1)];
+    const dx = i === pts.length - 1 ? p.x - prev.x : n.x - p.x;
+    const dz = i === pts.length - 1 ? p.z - prev.z : n.z - p.z;
+    const len = Math.hypot(dx, dz) || 1;
+    return { p, rx: -dz / len, rz: dx / len, dx: dx / len, dz: dz / len };
+  }
+
   function deckStrip(pts, half) {
     const geo = new THREE.BufferGeometry();
     const pos = [];
     const nrm = [];
     const uv = [];
     const idx = [];
-    for (let i = 0; i < pts.length; i++) {
-      const p = pts[i];
-      const n = pts[Math.min(pts.length - 1, i + 1)];
-      const prev = pts[Math.max(0, i - 1)];
-      const dx = (i === pts.length - 1 ? p.x - prev.x : n.x - p.x);
-      const dz = (i === pts.length - 1 ? p.z - prev.z : n.z - p.z);
-      const len = Math.hypot(dx, dz) || 1;
-      const rx = (-dz / len) * half;
-      const rz = (dx / len) * half;
-      pos.push(p.x + rx, p.y + 0.06, p.z + rz, p.x - rx, p.y + 0.06, p.z - rz);
-      nrm.push(0, 1, 0, 0, 1, 0);
-      uv.push(0, i * 0.2, 1, i * 0.2);
-      if (i < pts.length - 1) {
-        const v = i * 2;
-        idx.push(v, v + 2, v + 1, v + 1, v + 2, v + 3);
-      }
+    const dist = [0];
+    for (let i = 1; i < pts.length; i++) {
+      dist.push(dist[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z));
+    }
+    const add = (x, y, z, nx, ny, nz, u, v) => {
+      pos.push(x, y, z);
+      nrm.push(nx, ny, nz);
+      uv.push(u, v);
+    };
+    const quad = (a, b, c, d) => {
+      idx.push(a, c, b, b, c, d);
+    };
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pathBasis(pts, i);
+      const b = pathBasis(pts, i + 1);
+      const va = dist[i] / 3;
+      const vb = dist[i + 1] / 3;
+      const yT0 = a.p.y + 0.08;
+      const yB0 = yT0 - 0.22;
+      const yT1 = b.p.y + 0.08;
+      const yB1 = yT1 - 0.22;
+      const top = pos.length / 3;
+      add(a.p.x + a.rx * half, yT0, a.p.z + a.rz * half, 0, 1, 0, 0, va);
+      add(a.p.x - a.rx * half, yT0, a.p.z - a.rz * half, 0, 1, 0, 1, va);
+      add(b.p.x + b.rx * half, yT1, b.p.z + b.rz * half, 0, 1, 0, 0, vb);
+      add(b.p.x - b.rx * half, yT1, b.p.z - b.rz * half, 0, 1, 0, 1, vb);
+      quad(top, top + 1, top + 2, top + 3);
+      const bot = pos.length / 3;
+      add(a.p.x + a.rx * half, yB0, a.p.z + a.rz * half, 0, -1, 0, 0, va);
+      add(a.p.x - a.rx * half, yB0, a.p.z - a.rz * half, 0, -1, 0, 1, va);
+      add(b.p.x + b.rx * half, yB1, b.p.z + b.rz * half, 0, -1, 0, 0, vb);
+      add(b.p.x - b.rx * half, yB1, b.p.z - b.rz * half, 0, -1, 0, 1, vb);
+      quad(bot + 1, bot, bot + 3, bot + 2);
+      const rw = pos.length / 3;
+      add(a.p.x + a.rx * half, yT0, a.p.z + a.rz * half, a.rx, 0, a.rz, 0, va);
+      add(a.p.x + a.rx * half, yB0, a.p.z + a.rz * half, a.rx, 0, a.rz, 1, va);
+      add(b.p.x + b.rx * half, yT1, b.p.z + b.rz * half, b.rx, 0, b.rz, 0, vb);
+      add(b.p.x + b.rx * half, yB1, b.p.z + b.rz * half, b.rx, 0, b.rz, 1, vb);
+      quad(rw + 1, rw, rw + 3, rw + 2);
+      const lw = pos.length / 3;
+      add(a.p.x - a.rx * half, yT0, a.p.z - a.rz * half, -a.rx, 0, -a.rz, 0, va);
+      add(a.p.x - a.rx * half, yB0, a.p.z - a.rz * half, -a.rx, 0, -a.rz, 1, va);
+      add(b.p.x - b.rx * half, yT1, b.p.z - b.rz * half, -b.rx, 0, -b.rz, 0, vb);
+      add(b.p.x - b.rx * half, yB1, b.p.z - b.rz * half, -b.rx, 0, -b.rz, 1, vb);
+      quad(lw, lw + 1, lw + 2, lw + 3);
     }
     geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute("normal", new THREE.Float32BufferAttribute(nrm, 3));
     geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
     geo.setIndex(idx);
+    return geo;
+  }
+
+  function railRibbon(pts, half) {
+    const geo = new THREE.BufferGeometry();
+    const pos = [];
+    const uv = [];
+    const idx = [];
+    const dist = [0];
+    for (let i = 1; i < pts.length; i++) {
+      dist.push(dist[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z));
+    }
+    const add = (x, y, z, u, v) => {
+      pos.push(x, y, z);
+      uv.push(u, v);
+    };
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pathBasis(pts, i);
+        const b = pathBasis(pts, i + 1);
+        const va = dist[i] / 3;
+        const vb = dist[i + 1] / 3;
+        const inn = half + 0.04;
+        const out = half + 0.28;
+        const base = pos.length / 3;
+        const station = (s, v) => {
+          const yb = s.p.y + 0.1;
+          const yt = s.p.y + 0.76;
+          add(s.p.x + s.rx * inn * side, yb, s.p.z + s.rz * inn * side, 0, v);
+          add(s.p.x + s.rx * inn * side, yt, s.p.z + s.rz * inn * side, 0, v);
+          add(s.p.x + s.rx * out * side, yt, s.p.z + s.rz * out * side, 1, v);
+          add(s.p.x + s.rx * out * side, yb, s.p.z + s.rz * out * side, 1, v);
+        };
+        station(a, va);
+        station(b, vb);
+        idx.push(base + 1, base + 5, base + 2, base + 2, base + 5, base + 6);
+        idx.push(base + 2, base + 6, base + 3, base + 3, base + 6, base + 7);
+        idx.push(base + 5, base + 1, base + 4, base + 4, base + 1, base);
+      }
+    }
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
     return geo;
   }
 
@@ -2103,13 +2249,35 @@ export function createWorld(THREE, track) {
     return g;
   }
 
+  const arrowMap = canvasTex(THREE, (g, w, h) => {
+    g.fillStyle = "#6b3a24";
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = "#f0a024";
+    g.beginPath();
+    g.moveTo(w * 0.5, h * 0.14);
+    g.lineTo(w * 0.84, h * 0.58);
+    g.lineTo(w * 0.64, h * 0.58);
+    g.lineTo(w * 0.64, h * 0.88);
+    g.lineTo(w * 0.36, h * 0.88);
+    g.lineTo(w * 0.36, h * 0.58);
+    g.lineTo(w * 0.16, h * 0.58);
+    g.closePath();
+    g.fill();
+  }, 128, 128, false);
+  const arrowMat = new THREE.MeshStandardMaterial({ map: arrowMap, roughness: 0.55, side: THREE.DoubleSide });
+
   function buildYard(next) {
     if (!yard) {
       yard = new THREE.Group();
       scene.add(yard);
     }
     clearGroup(yard);
-    const deckMat = new THREE.MeshStandardMaterial({ map: woodMap, roughness: 0.62, side: THREE.DoubleSide });
+    const deckMap = woodMap.clone();
+    deckMap.wrapS = THREE.RepeatWrapping;
+    deckMap.wrapT = THREE.RepeatWrapping;
+    deckMap.needsUpdate = true;
+    const deckMat = new THREE.MeshStandardMaterial({ map: deckMap, roughness: 0.62, side: THREE.DoubleSide });
+    const railCutMat = new THREE.MeshStandardMaterial({ map: deckMap, color: 0xc47a3a, roughness: 0.58, side: THREE.DoubleSide });
     for (const b of next.buildings || []) {
       const g = lodgeGroup(b.kind);
       g.position.set(b.x, b.y, b.z);
@@ -2117,15 +2285,45 @@ export function createWorld(THREE, track) {
       yard.add(g);
     }
     for (const cut of next.cuts || []) {
+      const half = cut.width * 0.5;
+      if (cut.pts.length >= 2) {
+        const mouth = cut.pts[0];
+        const nextPt = cut.pts[1];
+        const basis = pathBasis(cut.pts, 0);
+        const sign = new THREE.Group();
+        sign.position.set(mouth.x + basis.rx * (half + 2.5), mouth.y, mouth.z + basis.rz * (half + 2.5));
+        const signPost = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 1.35, 6), lodgeMat);
+        signPost.position.y = 0.68;
+        const board = new THREE.Mesh(new THREE.PlaneGeometry(0.78, 0.56), arrowMat);
+        board.position.y = 1.45;
+        board.rotation.y = Math.atan2(-(nextPt.x - mouth.x), -(nextPt.z - mouth.z));
+        sign.add(signPost, board);
+        yard.add(sign);
+      }
       let run = [];
       const flush = () => {
         if (run.length < 2) {
           run = [];
           return;
         }
-        const deck = new THREE.Mesh(deckStrip(run, cut.width * 0.5), deckMat);
+        const deck = new THREE.Mesh(deckStrip(run, half), deckMat);
         deck.castShadow = true;
         yard.add(deck);
+        const rails = new THREE.Mesh(railRibbon(run, half), railCutMat);
+        rails.castShadow = true;
+        yard.add(rails);
+        let walked = 0;
+        let mark = 0;
+        for (let i = 0; i < run.length; i++) {
+          if (i) walked += Math.hypot(run[i].x - run[i - 1].x, run[i].z - run[i - 1].z);
+          if (walked + 0.01 < mark) continue;
+          const b = pathBasis(run, i);
+          const h = Math.max(0.4, b.p.y + 0.02);
+          for (const side of [-1, 1]) {
+            yard.add(postAt(b.p.x + b.rx * (half + 0.16) * side, 0, b.p.z + b.rz * (half + 0.16) * side, h));
+          }
+          mark = walked + 6;
+        }
         run = [];
       };
       for (const p of cut.pts) {
@@ -2133,25 +2331,6 @@ export function createWorld(THREE, track) {
         else run.push(p);
       }
       flush();
-      const half = cut.width * 0.5;
-      for (let i = 0; i < cut.pts.length - 1; i++) {
-        const p = cut.pts[i];
-        const q = cut.pts[i + 1];
-        if (p.gap || q.gap) continue;
-        const dx = q.x - p.x;
-        const dz = q.z - p.z;
-        const len = Math.hypot(dx, dz) || 1;
-        const rx = -dz / len;
-        const rz = dx / len;
-        const yaw = Math.atan2(dx, dz);
-        for (const side of [-1, 1]) {
-          const rail = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.85, len), lodgeMat);
-          rail.position.set((p.x + q.x) * 0.5 + rx * half * side, (p.y + q.y) * 0.5 + 0.48, (p.z + q.z) * 0.5 + rz * half * side);
-          rail.rotation.y = yaw;
-          rail.castShadow = true;
-          yard.add(rail);
-        }
-      }
       if (cut.kind !== "fence") continue;
       const gate = cut.pts[Math.round(cut.gate * (cut.pts.length - 1))] || cut.pts[0];
       const fence = new THREE.Group();
@@ -2199,7 +2378,8 @@ export function createWorld(THREE, track) {
     const bermMat = new THREE.MeshStandardMaterial({ map: woodMap, color: 0xe8b15a, roughness: 0.55 });
     for (let i = 0; i < next.frames.length; i += 3) {
       const fr = next.frames[i];
-      if (!fr.rail || fr.gap) continue;
+      if (!fr.rail) continue;
+      const railY = fr.railY != null ? fr.railY : fr.p.y;
       const up = fr.up || { x: 0, y: 1, z: 0 };
       const upV = new THREE.Vector3(up.x, up.y, up.z);
       if (upV.lengthSq() < 1e-6) upV.set(0, 1, 0);
@@ -2215,7 +2395,7 @@ export function createWorld(THREE, track) {
         const berm = new THREE.Mesh(new THREE.BoxGeometry(0.95, 1.2, 2.7), bermMat);
         berm.position.set(
           fr.p.x + fr.right.x * (fr.width * 0.5 + 0.2) * side + upV.x * 0.48,
-          fr.p.y + upV.y * 0.48,
+          railY + upV.y * 0.48,
           fr.p.z + fr.right.z * (fr.width * 0.5 + 0.2) * side + upV.z * 0.48
         );
         berm.quaternion.setFromRotationMatrix(basis);
@@ -2293,13 +2473,15 @@ export function createWorld(THREE, track) {
   }
   function setTrack(next) {
     liveTrack = next;
-    scene.remove(road.mesh, road.skirt, road.rivets, road.curb, road.line, road.chevrons);
+    scene.remove(road.mesh, road.skirt, road.rivets, road.curb, road.line, road.chevrons, road.ramps);
     road.mesh.geometry.dispose();
     road.skirt.geometry.dispose();
     road.rivets.geometry.dispose();
     road.curb.geometry.dispose();
     road.line.geometry.dispose();
     road.chevrons.geometry.dispose();
+    road.ramps.geometry.dispose();
+    road.ramps.material.dispose();
     road = buildRoad(THREE, next, next.theme === "frost" ? iceMap : roadMap);
     const roadLook = {
       frost: { color: 0xd7e8f4, rough: 0.22, metal: 0.18, coat: 0.88, curb: 0xd7eef8 },
@@ -2317,7 +2499,7 @@ export function createWorld(THREE, track) {
     road.mesh.material.emissive.set(next.theme === "sky" ? 0x6a5030 : 0x000000);
     road.mesh.material.emissiveIntensity = next.theme === "sky" ? 0.28 : 0;
     road.curb.material.color.set(look.curb);
-    scene.add(road.mesh, road.skirt, road.rivets, road.curb, road.line, road.chevrons);
+    scene.add(road.mesh, road.skirt, road.rivets, road.curb, road.line, road.chevrons, road.ramps);
     scene.remove(waterGroup);
     waterGroup.traverse((o) => {
       if (o.geometry) o.geometry.dispose();
@@ -2361,9 +2543,10 @@ export function createWorld(THREE, track) {
         if (!fr.rail) continue;
         for (const side of [-1, 1]) {
           const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.2, 0.16), railMat);
+          const railY = fr.railY != null ? fr.railY : fr.p.y;
           post.position.set(
             fr.p.x + fr.right.x * (fr.width * 0.5 + 0.2) * side,
-            fr.p.y + 0.7,
+            railY + 0.7,
             fr.p.z + fr.right.z * (fr.width * 0.5 + 0.2) * side
           );
           frostDress.add(post);
