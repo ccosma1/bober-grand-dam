@@ -2,7 +2,7 @@
    Static parts merge by material. Nails and rivets are instanced.
    Player detail is the full mesh; CPU detail drops whiskers, tufts, and spokes. */
 
-import { mergeGeometries } from "../vendor/BufferGeometryUtils.js?v=gd43";
+import { mergeGeometries } from "../vendor/BufferGeometryUtils.js?v=gd44";
 
 const GEO = new Map();
 const BUILD = { lod: false, curve: 2 };

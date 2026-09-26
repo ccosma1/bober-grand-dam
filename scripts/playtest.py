@@ -8,7 +8,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "assets" / "ref"
 OUT.mkdir(parents=True, exist_ok=True)
-URL = "http://127.0.0.1:8791/?v=gd43"
+URL = "http://127.0.0.1:8791/?v=gd44"
 
 
 def shot(page, name):
@@ -44,6 +44,20 @@ def assert_inside(b, w, h, name, min_h=36):
 
 def snap(page):
     return page.evaluate("() => window.__grand.snapshot()")
+
+
+def lane_finish(page, side, timeout_s=420):
+    page._laps = set()
+    page.evaluate("(side) => window.__grand.setLane(side)", side)
+    deadline = time.time() + timeout_s
+    fin = snap(page)
+    while time.time() < deadline and fin["phase"] != "podium":
+        page._laps.add(fin["lap"])
+        page.wait_for_timeout(100)
+        fin = snap(page)
+    page._laps.add(fin.get("lap"))
+    page.evaluate("() => window.__grand.setLane(null)")
+    return fin
 
 
 def wrap_delta(a, b):
@@ -163,7 +177,7 @@ def key_race(page, timeout_s=400):
 def clean_starts(page, n=3):
     for i in range(n):
         begin_race(page)
-        page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=9000)
+        page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=15000)
         page.wait_for_timeout(900)
         s = snap(page)
         if s["phase"] != "race" or s["laps"] != 0 or s["progress"] >= 0.55:
@@ -235,7 +249,7 @@ def main():
         tag = page.locator("#build-tag").inner_text().strip()
         tag_px = page.evaluate("() => parseFloat(getComputedStyle(document.getElementById('build-tag')).fontSize)")
         print("TAG", tag, tag_px)
-        if tag != "gd43" or tag_px < 12:
+        if tag != "gd44" or tag_px < 12:
             fails.append("build tag " + tag + " " + str(tag_px))
         shot(page, "splash-390.png")
         hero = box(page, "#splash img.hero")
@@ -276,7 +290,7 @@ def main():
             show_beavers(page)
             page.click("[data-driver=%s]" % driver)
             begin_race(page)
-            page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=8000)
+            page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=15000)
             body = page.evaluate("() => window.__grand.snapshot()")
             print("MODEL", driver, body["model"], body["sig"], body["driver"])
             if body["driver"] != driver or body["model"] != driver:
@@ -320,7 +334,7 @@ def main():
             page.wait_for_timeout(160)
         if blocked is not None:
             fails.append("dam start wall " + str(blocked))
-        page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=8000)
+        page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=15000)
         assert_race_chrome(page, 390, 844)
         page.wait_for_timeout(80)
         if page.locator("#held-name").inner_text().strip() != "—":
@@ -398,22 +412,27 @@ def main():
         page.evaluate("() => window.__grand.setInput({steer:0,gas:1,drift:false,brake:false,fire:false})")
         climbed = seated.get("y", 0)
         saw_roof = False
+        saw_air = False
         roof_deadline = time.time() + 7
         while time.time() < roof_deadline:
             page.wait_for_timeout(200)
-            sample = page.evaluate("() => { const s = window.__grand.snapshot(); return { y: s.y, cut: s.onCut || '' }; }")
+            sample = page.evaluate(
+                "() => { const s = window.__grand.snapshot(); return { y: s.y, cut: s.onCut || '', grounded: !!s.grounded }; }"
+            )
             if sample["y"] > climbed:
                 climbed = sample["y"]
             if "roof" in sample["cut"]:
                 saw_roof = True
-            if saw_roof and climbed >= seated.get("y", 0) + 1.2:
+                if not sample["grounded"]:
+                    saw_air = True
+            if saw_air and climbed >= seated.get("y", 0) + 1.2:
                 break
-        print("ROOF", seated, round(climbed, 2), saw_roof)
-        if not seated.get("ok") or not saw_roof or climbed < seated.get("y", 0) + 1.2:
-            fails.append("visible roof %s -> %s on %s" % (seated.get("y"), round(climbed, 2), saw_roof))
+        print("ROOF", seated, round(climbed, 2), saw_roof, saw_air)
+        if not seated.get("ok") or not saw_roof or not saw_air or climbed < seated.get("y", 0) + 1.2:
+            fails.append("visible roof %s -> %s on %s air %s" % (seated.get("y"), round(climbed, 2), saw_roof, saw_air))
         shot(page, "roof-dam.png")
         page.evaluate("() => window.__grand.seatCut('fence')")
-        page.wait_for_timeout(1000)
+        page.wait_for_timeout(4500)
         broke = page.evaluate("() => window.__grand.cutBroken('fence')")
         print("FENCE", broke)
         if not broke:
@@ -467,9 +486,18 @@ def main():
         shot(page, "podium-390.png")
         page.click("#btn-splash")
         page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")
+        for side in ("outer", "inner"):
+            begin_race(page)
+            page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=15000)
+            fin = lane_finish(page, side)
+            print("LANE 390", side, fin["phase"], fin["laps"], fin.get("lapTarget"), sorted(page._laps))
+            if fin["phase"] != "podium" or fin["laps"] < 4 or fin.get("lapTarget") != 4 or not ({1, 2, 3, 4} <= page._laps):
+                fails.append("lane 390 %s %s laps %s hud %s" % (side, fin["phase"], fin["laps"], sorted(page._laps)))
+            page.click("#btn-splash")
+            page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")
         page.click("[data-track=frost]")
         begin_race(page)
-        page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=9000)
+        page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=15000)
         page.wait_for_timeout(800)
         fr = snap(page)
         print("FROST", fr["track"], round(fr["progress"], 3), fr["laps"])
@@ -492,7 +520,7 @@ def main():
         for tid in ("clover", "oasis", "sky"):
             page.click("[data-track=%s]" % tid)
             begin_race(page)
-            page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=9000)
+            page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=15000)
             page.wait_for_timeout(700)
             st = snap(page)
             print("TRACK", tid, st["track"], st["phase"], st["laps"], round(st["y"], 1))
@@ -531,7 +559,7 @@ def main():
         page.reload(wait_until="networkidle")
         page.wait_for_function("() => window.__grand && !document.getElementById('btn-start').disabled", timeout=20000)
         begin_race(page)
-        page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=8000)
+        page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=15000)
         assert_race_chrome(page, 844, 390)
         shot(page, "race-land.png")
 
@@ -574,7 +602,7 @@ def main():
             page.wait_for_timeout(160)
         if desk_blocked is not None:
             fails.append("desk start wall " + str(desk_blocked))
-        page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=8000)
+        page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=15000)
         canvas = page.evaluate(
             """() => {
               const c = document.querySelector('#stage canvas');
@@ -625,6 +653,17 @@ def main():
         if kl <= 0.05:
             fails.append("key left " + str(kl))
         shot(page, "race-desk.png")
+        page.click("#btn-quit")
+        page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")
+        for side in ("outer", "inner"):
+            begin_race(page)
+            page.wait_for_function("() => window.__grand.snapshot().phase === 'race'", timeout=15000)
+            fin = lane_finish(page, side)
+            print("LANE DESK", side, fin["phase"], fin["laps"], fin.get("lapTarget"), sorted(page._laps))
+            if fin["phase"] != "podium" or fin["laps"] < 4 or fin.get("lapTarget") != 4 or not ({1, 2, 3, 4} <= page._laps):
+                fails.append("lane desk %s %s laps %s hud %s" % (side, fin["phase"], fin["laps"], sorted(page._laps)))
+            page.click("#btn-splash")
+            page.wait_for_function("() => window.__grand.snapshot().phase === 'splash'")
         browser.close()
     if fails:
         print("PLAYTEST_FAIL")

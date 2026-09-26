@@ -2,15 +2,18 @@ import * as THREE from "../vendor/three.module.js";
 import {
   lapsFor,
   adviceFor,
+  laneAdvice,
   createRace,
   createTrack,
   lapOf,
   frameAt,
+  forward,
   livePlace,
   raceProgress,
   loadSave,
   noteFinish,
   resetRace,
+  skipIntro,
   selfTest,
   stepRace,
   launchHeld,
@@ -18,9 +21,9 @@ import {
   setDriver as chooseDriver,
   swapTrack,
   writeSave,
-} from "./sim.js?v=gd43";
-import { createWorld } from "./world.js?v=gd43";
-import { createSfx } from "./audio.js?v=gd43";
+} from "./sim.js?v=gd44";
+import { createWorld } from "./world.js?v=gd44";
+import { createSfx } from "./audio.js?v=gd44";
 
 const app = document.getElementById("app");
 const stage = document.getElementById("stage");
@@ -51,6 +54,7 @@ stage.addEventListener("dblclick", (e) => e.preventDefault());
 
 let save = loadSave();
 let scripted = null;
+let laneSide = null;
 let firePulse = false;
 let auto = false;
 let savedThisRace = false;
@@ -84,6 +88,7 @@ function paintBest() {
 function youInput() {
   if (scripted) return scripted;
   const you = humanOf(race);
+  if (laneSide) return laneAdvice(race, you.id, laneSide);
   if (auto) return adviceFor(race, you.id);
   const keySteer = (held.left ? 1 : 0) - (held.right ? 1 : 0);
   if (joy.active) {
@@ -143,7 +148,9 @@ function cycleHold() {
   you.held = id;
   you.holdAge = 0;
   you.fireCd = 0;
-  if (id !== "boost" && window.__grand) window.__grand.draft(-14);
+  if (id === "trap" || id === "slick" || id === "buckler") {
+    if (window.__grand) window.__grand.plant(id);
+  } else if (id !== "boost" && window.__grand) window.__grand.draft(-14);
   return id;
 }
 
@@ -344,6 +351,11 @@ function menuKey(e) {
 }
 
 window.addEventListener("keydown", (e) => {
+  if (race.phase === "intro") {
+    e.preventDefault();
+    skipIntro(race);
+    return;
+  }
   if (!inRace()) {
     const used = menuKey(e);
     if (used) return;
@@ -372,6 +384,9 @@ window.addEventListener("keydown", (e) => {
   if (!map[e.code]) return;
   e.preventDefault();
   if (!e.repeat) held[map[e.code]] = true;
+});
+window.addEventListener("pointerdown", () => {
+  if (race.phase === "intro") skipIntro(race);
 });
 window.addEventListener("keyup", (e) => {
   const map = {
@@ -423,13 +438,15 @@ function startRace() {
   auto = false;
   scripted = null;
   resetRace(race);
+  race.phase = "intro";
+  race.intro = 3;
   showRaceChrome(true);
   document.getElementById("minimap").classList.remove("hidden");
   museumEl.classList.add("hidden");
   document.getElementById("how").classList.add("hidden");
   exhibitEl.classList.add("hidden");
   hintEl.classList.remove("hidden");
-  hintEl.textContent = "Drive through a box. FIRE uses what you hold.";
+  hintEl.textContent = "Tap or any key to skip.";
   layout();
 }
 
@@ -748,7 +765,11 @@ function hudTick() {
   const order = [...race.karts].sort((a, b) => raceProgress(b) - raceProgress(a));
   document.getElementById("hud-order").textContent = order.map((k) => k.name).join("  ");
   paintMinimap();
-  if (race.phase === "countdown") {
+  if (race.phase === "intro") {
+    countdownEl.classList.add("hidden");
+    hintEl.classList.remove("hidden");
+    hintEl.textContent = "Tap or any key to skip.";
+  } else if (race.phase === "countdown") {
     countdownEl.classList.remove("hidden");
     const n = Math.max(1, Math.ceil(race.countdown));
     countdownEl.textContent = String(n);
@@ -861,7 +882,11 @@ function seatKart(kart, cut, u, speed) {
   kart.slowT = 0;
   kart.speedMul = 1;
   kart.falls = 0;
-  kart.onCut = "";
+  kart.fallStreak = 0;
+  kart.fallSpot = null;
+  kart.onCut = cut.id;
+  kart.cutU = u;
+  kart.cutAir = false;
   kart.air = 0;
   kart.wet = 0;
   kart.off = 0;
@@ -942,6 +967,12 @@ window.__grand = {
   setAuto(on) {
     auto = !!on;
     scripted = null;
+    laneSide = null;
+  },
+  setLane(side) {
+    laneSide = side === "outer" || side === "inner" ? side : null;
+    auto = false;
+    scripted = null;
   },
   selfTest,
   frameCheck: () => check,
@@ -995,7 +1026,6 @@ window.__grand = {
     const you = humanOf(race);
     const foe = race.karts.find((k) => k.cpu);
     if (!you || !foe) return "";
-    const len = Math.max(80, race.track.length || 1000);
     foe.finished = false;
     foe.stun = 0;
     foe.stunCd = 0;
@@ -1021,17 +1051,16 @@ window.__grand = {
       foe.speed = 0;
       return foe.id;
     }
-    const back = kind === "slick" ? 4.5 : 3;
-    const fr = frameAt(race.track, you.t - back / len);
-    const sp = 8;
-    foe.x = fr.p.x;
-    foe.z = fr.p.z;
-    foe.y = fr.p.y;
-    foe.yaw = Math.atan2(fr.tangent.x, fr.tangent.z);
-    foe.t = fr.t;
-    foe.vx = fr.tangent.x * sp;
-    foe.vz = fr.tangent.z * sp;
-    foe.speed = sp;
+    const nose = forward(you.yaw);
+    const back = 5.2;
+    foe.x = you.x - nose.x * back;
+    foe.z = you.z - nose.z * back;
+    foe.y = you.y;
+    foe.yaw = you.yaw;
+    foe.t = you.t;
+    foe.vx = nose.x * 8;
+    foe.vz = nose.z * 8;
+    foe.speed = 8;
     return foe.id;
   },
   exile(on) {
@@ -1090,15 +1119,19 @@ window.__grand = {
       const t0 = you.t;
       parkFoes();
       let hi = you.y;
+      let aired = false;
       const frames = kind === "roof" ? 520 : 220;
       for (let n = 0; n < frames; n++) {
         stepRace(race, { [you.id]: { steer: 0, gas: 1, drift: false, brake: false, fire: false } }, 1 / 60);
         parkFoes();
         if (you.y > hi) hi = you.y;
+        const u = you.cutU || 0;
+        if (kind === "roof" && u > 0.55 && u < 0.74 && !you.grounded) aired = true;
         if (kind === "fence" && cut.broken) break;
-        if (kind === "roof" && (you.cutU || 0) > 0.55) break;
+        if (kind === "roof" && u > 0.82) break;
       }
       if (kind === "roof" && hi < y0 + 1.2) fails.push(race.track.id + " roof " + hi.toFixed(2) + "/" + y0.toFixed(2));
+      if (kind === "roof" && !aired) fails.push(race.track.id + " roof air");
       if (kind === "fence" && !cut.broken) fails.push(race.track.id + " fence shut");
       if ((you.laps || 0) !== 0) fails.push(race.track.id + " " + kind + " lap " + you.laps);
       let adv = you.t - t0;

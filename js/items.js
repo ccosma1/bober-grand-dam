@@ -1,5 +1,5 @@
 /* Eight lodge throws. One held item. Boxes return in 4.5s. */
-import { frameAt, forward, livePlace } from "./sim.js?v=gd43";
+import { frameAt, forward, livePlace } from "./sim.js?v=gd44";
 
 export const ITEM_IDS = ["boost", "trap", "pine", "surge", "magnet", "buckler", "meteor", "slick"];
 export const ITEM_NAME = {
@@ -33,7 +33,7 @@ const SURGE_AHEAD = 4;
 const SURGE_SPEED = 46;
 const SURGE_ALONG = 2;
 const AIM_RANGE = 60;
-const BUCK_R = 2.5;
+const BUCK_R = 3.6;
 const METEOR_R = 7;
 const SLICK_W = 1.6;
 const SLICK_L = 2.1;
@@ -154,9 +154,11 @@ export function applyHit(race, kart, weapon, extra) {
       knockBuckler(race, kart);
     }
     noteHit(race, "block", kart);
+    race.hitToast = "BLOCKED";
+    race.hitToastT = 1.15;
     return false;
   }
-  if ((kart.stunCd || 0) > 0 && !extra.unblockable) return false;
+  if ((kart.stunCd || 0) > 0 && !extra.unblockable && !extra.ignoreStun) return false;
   const short = !!(extra.short || weapon === "slick");
   const dur = short ? 0.45 : 0.9;
   const turns = short ? 1 : 2;
@@ -287,19 +289,18 @@ export function launchHeld(race, kart) {
     burst(race, "boost", kart.x - f.x * 1.4, kart.y + 0.4, kart.z - f.z * 1.4, 0.45);
   } else if (id === "trap") {
     const drop = 3;
-    const plate = frameAt(race.track, kart.t - drop / length);
     race.traps.push({
       owner: kart.id,
-      x: plate.p.x,
-      z: plate.p.z,
-      y: plate.p.y,
-      yaw: Math.atan2(plate.tangent.x, plate.tangent.z),
+      x: kart.x - f.x * drop,
+      z: kart.z - f.z * drop,
+      y: kart.y,
+      yaw: kart.yaw,
       life: 12,
       armed: 0.05,
       halfW: 3.2,
       halfL: 2.8,
     });
-    burst(race, "trap", plate.p.x, plate.p.y + 0.5, plate.p.z, 0.45);
+    burst(race, "trap", kart.x - f.x * drop, kart.y + 0.5, kart.z - f.z * drop, 0.45);
   } else if (id === "pine") {
     const prey = pickTarget(race, kart, AIM_RANGE);
     if (!prey) return missKeep(race, kart, id);
@@ -349,8 +350,15 @@ export function launchHeld(race, kart) {
   } else if (id === "magnet") {
     const tgt = pickTarget(race, kart, AIM_RANGE);
     if (!tgt) return missKeep(race, kart, id);
-    race.tethers.push({ owner: kart.id, id: tgt.kart.id, life: 1.6, pull: 18, pulse: 0, hit: true });
-    applyHit(race, tgt.kart, "magnet", { by: kart.id, shake: 0.45 });
+    const landed = applyHit(race, tgt.kart, "magnet", { by: kart.id, shake: 0.45 });
+    race.tethers.push({
+      owner: kart.id,
+      id: tgt.kart.id,
+      life: 1.6,
+      pull: 18,
+      pulse: 0,
+      landed: !!landed,
+    });
   } else if (id === "buckler") {
     kart.buckler = 2.5;
     kart.bucklerHits = 1;
@@ -380,18 +388,18 @@ export function launchHeld(race, kart) {
     });
     juice(race, "meteor", 0.4);
   } else if (id === "slick") {
-    const patch = frameAt(race.track, kart.t - 4.5 / length);
+    const drop = 3;
     race.slicks.push({
       owner: kart.id,
-      x: patch.p.x,
-      z: patch.p.z,
-      y: patch.p.y,
-      yaw: Math.atan2(patch.tangent.x, patch.tangent.z),
+      x: kart.x - f.x * drop,
+      z: kart.z - f.z * drop,
+      y: kart.y,
+      yaw: kart.yaw,
       life: 9,
       hit: {},
     });
     kart.slickImmune = 0.35;
-    burst(race, "slick", patch.p.x, patch.p.y + 0.25, patch.p.z, 0.5);
+    burst(race, "slick", kart.x - f.x * drop, kart.y + 0.25, kart.z - f.z * drop, 0.5);
   }
   race.lastFx = id;
   race.pickup = id;
@@ -497,7 +505,13 @@ function stepItems(race, dt) {
     if ((trap.armed || 0) > 0) continue;
     for (const k of race.karts) {
       if (k.id === trap.owner || k.finished) continue;
-      if (!wheelTouch(k, trap.x, trap.z, 1.2)) continue;
+      const dx = k.x - trap.x;
+      const dz = k.z - trap.z;
+      const s = Math.sin(trap.yaw);
+      const c = Math.cos(trap.yaw);
+      const along = dx * s + dz * c;
+      const across = dx * c - dz * s;
+      if (Math.abs(along) > (trap.halfL || 2.8) || Math.abs(across) > (trap.halfW || 3.2)) continue;
       const back = forward(k.yaw);
       const landed = applyHit(race, k, "trap", {
         by: trap.owner,
@@ -557,6 +571,10 @@ function stepItems(race, dt) {
     link.pulse = (link.pulse || 0) + dt;
     if (link.pulse >= 0.2) {
       link.pulse -= 0.2;
+      if (!link.landed) {
+        const hit = applyHit(race, tgt, "magnet", { by: owner.id, shake: 0.45, ignoreStun: true });
+        if (hit) link.landed = true;
+      }
       const dx = owner.x - tgt.x;
       const dz = owner.z - tgt.z;
       const d = Math.hypot(dx, dz) || 1;
@@ -594,28 +612,33 @@ function stepItems(race, dt) {
     chip.z = chip.tz;
     if (!chip.boom && (k >= 1 || chip.life <= 0)) {
       chip.boom = true;
-      chip.life = 0;
+      chip.blast = 0.3;
+      chip.hit = {};
       burst(race, "meteor", chip.x, chip.y + 0.6, chip.z, 0.9);
       burst(race, "blast", chip.x, chip.y + 1.4, chip.z, 0.7);
       race.craters.push({ x: chip.x, y: chip.ty, z: chip.z, life: 2, max: 2 });
       juice(race, "meteor", 0.7);
+    }
+    if (chip.boom && (chip.blast || 0) > 0) {
+      chip.blast -= dt;
       for (const kart of race.karts) {
-        if (kart.finished) continue;
-        if (kart.id === chip.owner) continue;
+        if (kart.finished || kart.id === chip.owner || chip.hit[kart.id]) continue;
         const mdx = kart.x - chip.x;
         const mdz = kart.z - chip.z;
         if (mdx * mdx + mdz * mdz > METEOR_R * METEOR_R) continue;
         const d = Math.hypot(mdx, mdz) || 1;
-        applyHit(race, kart, "meteor", {
+        const landed = applyHit(race, kart, "meteor", {
           by: chip.owner,
           shake: 0.6,
+          ignoreStun: true,
           ix: (mdx / d) * 6,
           iz: (mdz / d) * 6,
         });
+        if (landed) chip.hit[kart.id] = true;
       }
     }
   }
-  race.meteors = (race.meteors || []).filter((m) => !m.boom);
+  race.meteors = (race.meteors || []).filter((m) => !m.boom || (m.blast || 0) > 0);
 
   for (const patch of race.slicks || []) {
     patch.life -= dt;

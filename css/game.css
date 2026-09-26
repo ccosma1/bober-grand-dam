@@ -348,9 +348,8 @@ button:focus-visible {
   font-size: 14px;
   font-weight: 800;
   letter-spacing: 0.06em;
-  color: #f6f1e6;
-  background: #102a33;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #102a33;
+  background: #f0a024;
   padding: 3px 7px;
   pointer-events: none;
 }

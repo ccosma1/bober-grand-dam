@@ -1,5 +1,5 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd43";
-import { buildKart } from "./racers.js?v=gd43";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd44";
+import { buildKart } from "./racers.js?v=gd44";
 
 function canvasTex(THREE, draw, w, h, repeat) {
   const c = document.createElement("canvas");
@@ -1180,7 +1180,7 @@ export function createWorld(THREE, track) {
   function ensureReact(view) {
     if (view.stars) return;
     view.stars = new THREE.Group();
-    const geo = new THREE.OctahedronGeometry(0.2);
+    const geo = new THREE.OctahedronGeometry(0.32);
     const mat = new THREE.MeshBasicMaterial({ color: 0xffe14a });
     for (let i = 0; i < 5; i++) {
       const star = new THREE.Mesh(geo, mat);
@@ -1214,6 +1214,29 @@ export function createWorld(THREE, track) {
     view.hitMark.renderOrder = 999;
     view.hitMark.visible = false;
     view.group.add(view.hitMark);
+  }
+
+  function ensureName(view, name) {
+    if (view.nameTag) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = 256;
+    canvas.height = 64;
+    const g = canvas.getContext("2d");
+    g.fillStyle = "#102a33";
+    g.fillRect(16, 8, 224, 48);
+    g.font = "700 36px sans-serif";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillStyle = "#f6d48a";
+    g.fillText(String(name), 128, 34);
+    const tex = new THREE.CanvasTexture(canvas);
+    if (THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
+    const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+    tag.scale.set(3.4, 0.85, 1);
+    tag.position.set(0, 2.7, 0.2);
+    tag.visible = false;
+    view.nameTag = tag;
+    view.group.add(tag);
   }
 
   function poseCart(view, k, dt, race) {
@@ -1431,6 +1454,8 @@ export function createWorld(THREE, track) {
         emitSpark(k.x - bf.x * 4.2, k.y + 0.16, k.z - bf.z * 4.2, false, "boost");
       }
       ensureReact(view);
+      ensureName(view, k.name || k.id);
+      view.nameTag.visible = race.phase === "intro";
       const showStars = (k.dizzyT || 0) > 0;
       view.stars.visible = showStars;
       if (showStars) {
@@ -1438,7 +1463,7 @@ export function createWorld(THREE, track) {
         view.stars.children.forEach((star, n) => {
           const a = star.userData.ang + race.time * 2.2;
           const bob = Math.sin(race.time * 6 + n) * 0.16;
-          star.position.set(Math.cos(a) * 0.8, 2.3 + bob, Math.sin(a) * 0.8);
+          star.position.set(Math.cos(a) * 1.25, 2.45 + bob, Math.sin(a) * 1.25);
           star.rotation.y += dt * 5;
           star.rotation.z += dt * 3.2;
         });
@@ -1449,6 +1474,8 @@ export function createWorld(THREE, track) {
       if (showMark) {
         view.hitMark.position.set(0, 2.35 + (1 - mark) * 1.2, 0);
         view.hitMark.material.opacity = Math.max(0, mark);
+        const pop = 1 + 0.7 * Math.max(0, (mark - 0.72) / 0.43);
+        view.hitMark.scale.set(3 * pop, 1.5 * pop, 1);
       }
       if ((k.splash || 0) > 0.4) {
         for (let n = 0; n < 3; n++) emitSpark(k.x + (n - 1) * 0.4, k.y + 0.15, k.z, false, "foam");
@@ -1502,6 +1529,37 @@ export function createWorld(THREE, track) {
       camGoal.x += frYou.up.x * inward;
       camGoal.y += frYou.up.y * inward;
       camGoal.z += frYou.up.z * inward;
+    }
+    if (race.phase === "intro") {
+      const left = race.intro == null ? 3 : race.intro;
+      const u = 1 - Math.max(0, Math.min(1, left / 3));
+      const noses = race.karts.map((k) => forward(k.yaw));
+      const nose = noses[0] || { x: 0, z: 1 };
+      const yaw = Math.atan2(nose.x, nose.z);
+      const sideX = Math.cos(yaw);
+      const sideZ = -Math.sin(yaw);
+      let gx = 0;
+      let gy = 0;
+      let gz = 0;
+      for (const k of race.karts) {
+        gx += k.x;
+        gy += k.y;
+        gz += k.z;
+      }
+      const n = race.karts.length || 1;
+      gx /= n;
+      gy /= n;
+      gz /= n;
+      const lateral = (u * 2 - 1) * 6.2;
+      const introPos = new THREE.Vector3(
+        gx + nose.x * 6.4 + sideX * lateral,
+        gy + 1.85,
+        gz + nose.z * 6.4 + sideZ * lateral
+      );
+      const introLook = new THREE.Vector3(gx + sideX * lateral * 0.45, gy + 1.15, gz + sideZ * lateral * 0.45);
+      const settle = Math.max(0, (u - 0.72) / 0.28);
+      camGoal.lerpVectors(introPos, camGoal, settle);
+      lookGoal.lerpVectors(introLook, lookGoal, settle);
     }
     const blend = 1 - Math.exp(-Math.max(0.001, dt) * 9);
     if (race.phase === "splash") {
@@ -1958,7 +2016,7 @@ export function createWorld(THREE, track) {
       uv.push(0, i * 0.2, 1, i * 0.2);
       if (i < pts.length - 1) {
         const v = i * 2;
-        idx.push(v, v + 1, v + 2, v + 1, v + 3, v + 2);
+        idx.push(v, v + 2, v + 1, v + 1, v + 2, v + 3);
       }
     }
     geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
@@ -2059,20 +2117,40 @@ export function createWorld(THREE, track) {
       yard.add(g);
     }
     for (const cut of next.cuts || []) {
-      const deck = new THREE.Mesh(deckStrip(cut.pts, cut.width * 0.5), deckMat);
-      deck.castShadow = true;
-      yard.add(deck);
-      for (let i = 0; i < cut.pts.length; i += 2) {
+      let run = [];
+      const flush = () => {
+        if (run.length < 2) {
+          run = [];
+          return;
+        }
+        const deck = new THREE.Mesh(deckStrip(run, cut.width * 0.5), deckMat);
+        deck.castShadow = true;
+        yard.add(deck);
+        run = [];
+      };
+      for (const p of cut.pts) {
+        if (p.gap) flush();
+        else run.push(p);
+      }
+      flush();
+      const half = cut.width * 0.5;
+      for (let i = 0; i < cut.pts.length - 1; i++) {
         const p = cut.pts[i];
-        const q = cut.pts[Math.min(cut.pts.length - 1, i + 1)];
+        const q = cut.pts[i + 1];
+        if (p.gap || q.gap) continue;
         const dx = q.x - p.x;
         const dz = q.z - p.z;
         const len = Math.hypot(dx, dz) || 1;
         const rx = -dz / len;
         const rz = dx / len;
-        const half = cut.width * 0.5;
-        yard.add(postAt(p.x + rx * half, p.y, p.z + rz * half, 0.9));
-        yard.add(postAt(p.x - rx * half, p.y, p.z - rz * half, 0.9));
+        const yaw = Math.atan2(dx, dz);
+        for (const side of [-1, 1]) {
+          const rail = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.85, len), lodgeMat);
+          rail.position.set((p.x + q.x) * 0.5 + rx * half * side, (p.y + q.y) * 0.5 + 0.48, (p.z + q.z) * 0.5 + rz * half * side);
+          rail.rotation.y = yaw;
+          rail.castShadow = true;
+          yard.add(rail);
+        }
       }
       if (cut.kind !== "fence") continue;
       const gate = cut.pts[Math.round(cut.gate * (cut.pts.length - 1))] || cut.pts[0];
