@@ -1,5 +1,5 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd45";
-import { buildKart } from "./racers.js?v=gd45";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd46";
+import { buildKart } from "./racers.js?v=gd46";
 
 function canvasTex(THREE, draw, w, h, repeat) {
   const c = document.createElement("canvas");
@@ -979,6 +979,7 @@ export function createWorld(THREE, track) {
   }
 
   const views = [];
+  let podiumCamSet = false;
   const sparkN = 320;
   const sparkPos = new Float32Array(sparkN * 3);
   const sparkCol = new Float32Array(sparkN * 3);
@@ -1352,9 +1353,9 @@ export function createWorld(THREE, track) {
       view.driver.position.y = baseY + Math.sin(race.time * 10 + speed) * Math.min(0.02, speed * 0.0008);
     }
     if (view.head) {
-      view.head.rotation.y = stunned ? Math.sin(race.time * 11) * 0.4 : steer * 1.05;
+      view.head.rotation.y = stunned ? Math.sin(race.time * 11) * 0.4 : steer * 0.5;
       view.head.rotation.z = stunned ? Math.sin(race.time * 14) * 0.2 : steer * 0.08;
-      view.head.rotation.x = -0.42 + (stunned ? Math.sin(race.time * 9) * 0.1 : Math.abs(steer) * 0.16);
+      view.head.rotation.x = 0.08 + (stunned ? Math.sin(race.time * 9) * 0.1 : Math.abs(steer) * 0.16);
     }
     const brace = Math.min(1, Math.abs(steer) * 1.5 + (k.braking || 0));
     for (const arm of view.arms || []) {
@@ -1593,43 +1594,37 @@ export function createWorld(THREE, track) {
       camGoal.y += frYou.up.y * inward;
       camGoal.z += frYou.up.z * inward;
     }
-    if (race.phase === "intro") {
-      const left = race.intro == null ? 3 : race.intro;
-      const u = 1 - Math.max(0, Math.min(1, left / 3));
-      const noses = race.karts.map((k) => forward(k.yaw));
-      const nose = noses[0] || { x: 0, z: 1 };
-      const yaw = Math.atan2(nose.x, nose.z);
-      const sideX = Math.cos(yaw);
-      const sideZ = -Math.sin(yaw);
-      let gx = 0;
-      let gy = 0;
-      let gz = 0;
-      for (const k of race.karts) {
-        gx += k.x;
-        gy += k.y;
-        gz += k.z;
-      }
+    let snapCam = false;
+    if (race.phase === "intro" || race.phase === "podium") {
+      const total = race.introTotal || 4.8;
+      const left = race.intro == null ? total : race.intro;
       const n = race.karts.length || 1;
-      gx /= n;
-      gy /= n;
-      gz /= n;
-      const lateral = (u * 2 - 1) * 6.2;
-      const introPos = new THREE.Vector3(
-        gx + nose.x * 6.4 + sideX * lateral,
-        gy + 1.85,
-        gz + nose.z * 6.4 + sideZ * lateral
-      );
-      const introLook = new THREE.Vector3(gx + sideX * lateral * 0.45, gy + 1.15, gz + sideZ * lateral * 0.45);
-      const settle = Math.max(0, (u - 0.72) / 0.28);
-      camGoal.lerpVectors(introPos, camGoal, settle);
-      lookGoal.lerpVectors(introLook, lookGoal, settle);
-    }
+      const slot = total / n;
+      const elapsed = Math.max(0, total - left);
+      let idx, local;
+      if (race.phase === "podium") { idx = race.karts.indexOf(you); local = (race.time % 6) / 6; }
+      else { idx = Math.min(n - 1, Math.floor(elapsed / slot)); local = (elapsed - idx * slot) / slot; }
+      const k = race.karts[idx] || you;
+      const f = forward(k.yaw);
+      const sx = Math.cos(k.yaw), sz = -Math.sin(k.yaw);
+      const side = (idx % 2 ? -1 : 1) * (1.9 + local * 0.9);
+      const backRow = idx >= 2;
+      const lastSettle = race.phase === "intro" && idx === n - 1 && k === you ? Math.max(0, (local - 0.6) / 0.4) : 0;
+      const shotPos = new THREE.Vector3(k.x + f.x * 3.4 + sx * side, k.y + (backRow ? 2.4 : 1.75), k.z + f.z * 3.4 + sz * side);
+      const hp = new THREE.Vector3(k.x, k.y + 1.35, k.z);
+      const vw = views[idx];
+      if (vw && vw.head) vw.head.getWorldPosition(hp);
+      camGoal.lerpVectors(shotPos, camGoal, lastSettle);
+      lookGoal.lerpVectors(hp, lookGoal, lastSettle);
+      snapCam = race.phase === "intro" ? lastSettle === 0 : !podiumCamSet;
+      podiumCamSet = race.phase === "podium";
+    } else podiumCamSet = false;
     const blend = 1 - Math.exp(-Math.max(0.001, dt) * 9);
     if (race.phase === "splash") {
       raceCam = false;
       camera.position.lerp(new THREE.Vector3(18, 16, -6), 0.02);
       look.lerp(new THREE.Vector3(0, 10, -28), 0.02);
-    } else if (!raceCam) {
+    } else if (!raceCam || snapCam) {
       camera.position.copy(camGoal);
       look.copy(lookGoal);
       raceCam = true;
@@ -1871,7 +1866,7 @@ export function createWorld(THREE, track) {
       const puddle = addMesh(diskGeo, new THREE.MeshBasicMaterial({ color: 0xf0a024, transparent: true, opacity: 0.82, side: THREE.DoubleSide }), patch.x, patch.y + 0.08, patch.z, 1);
       puddle.rotation.x = -Math.PI / 2;
       puddle.rotation.z = patch.yaw || 0;
-      puddle.scale.set(1.78, 2.34, 1);
+      puddle.scale.set(2.6 / 1.8, 3.2 / 1.8, 1);
     }
     for (const chip of race.meteors || []) {
       const rock = addMesh(new THREE.DodecahedronGeometry(0.7, 0), rocketMat, chip.x, chip.y, chip.z, 1.3);
@@ -2092,10 +2087,10 @@ export function createWorld(THREE, track) {
       const b = pathBasis(pts, i + 1);
       const va = dist[i] / 3;
       const vb = dist[i + 1] / 3;
-      const yT0 = a.p.y + 0.08;
-      const yB0 = yT0 - 0.22;
-      const yT1 = b.p.y + 0.08;
-      const yB1 = yT1 - 0.22;
+      const yT0 = a.p.y + 0.02;
+      const yB0 = yT0 - 0.6;
+      const yT1 = b.p.y + 0.02;
+      const yB1 = yT1 - 0.6;
       const top = pos.length / 3;
       add(a.p.x + a.rx * half, yT0, a.p.z + a.rz * half, 0, 1, 0, 0, va);
       add(a.p.x - a.rx * half, yT0, a.p.z - a.rz * half, 0, 1, 0, 1, va);
@@ -2286,10 +2281,11 @@ export function createWorld(THREE, track) {
     }
     for (const cut of next.cuts || []) {
       const half = cut.width * 0.5;
-      if (cut.pts.length >= 2) {
-        const mouth = cut.pts[0];
-        const nextPt = cut.pts[1];
-        const basis = pathBasis(cut.pts, 0);
+      const placeSign = (index, dir) => {
+        if (cut.pts.length < 2) return;
+        const mouth = cut.pts[index];
+        const nextPt = cut.pts[Math.max(0, Math.min(cut.pts.length - 1, index + dir))];
+        const basis = pathBasis(cut.pts, index);
         const sign = new THREE.Group();
         sign.position.set(mouth.x + basis.rx * (half + 2.5), mouth.y, mouth.z + basis.rz * (half + 2.5));
         const signPost = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 1.35, 6), lodgeMat);
@@ -2299,7 +2295,9 @@ export function createWorld(THREE, track) {
         board.rotation.y = Math.atan2(-(nextPt.x - mouth.x), -(nextPt.z - mouth.z));
         sign.add(signPost, board);
         yard.add(sign);
-      }
+      };
+      placeSign(0, 1);
+      placeSign(cut.pts.length - 1, -1);
       let run = [];
       const flush = () => {
         if (run.length < 2) {

@@ -21,10 +21,10 @@ import {
   setDriver as chooseDriver,
   swapTrack,
   writeSave,
-} from "./sim.js?v=gd45";
-import { createWorld } from "./world.js?v=gd45";
-import { createSfx } from "./audio.js?v=gd45";
-import { buildKart, checkArt } from "./racers.js?v=gd45";
+} from "./sim.js?v=gd46";
+import { createWorld } from "./world.js?v=gd46";
+import { createSfx } from "./audio.js?v=gd46";
+import { buildKart, checkArt } from "./racers.js?v=gd46";
 
 const app = document.getElementById("app");
 const stage = document.getElementById("stage");
@@ -440,7 +440,8 @@ function startRace() {
   scripted = null;
   resetRace(race);
   race.phase = "intro";
-  race.intro = 3;
+  race.intro = 4.8;
+  race.introTotal = 4.8;
   showRaceChrome(true);
   document.getElementById("minimap").classList.remove("hidden");
   museumEl.classList.add("hidden");
@@ -932,6 +933,25 @@ function seatKart(kart, cut, u, speed) {
   return kart.y;
 }
 
+function pinFoe(foe, x, y, z, yaw, t, vx, vz) {
+  const fr = frameAt(race.track, t);
+  const tt = ((fr.t % 1) + 1) % 1;
+  const sector = Math.floor(tt * 8);
+  foe.x = x;
+  foe.y = y;
+  foe.z = z;
+  foe.yaw = yaw;
+  foe.t = fr.t;
+  foe.hint = race.track.frames.indexOf(fr);
+  foe.sector = sector >= 8 ? 0 : sector;
+  foe.vx = vx;
+  foe.vz = vz;
+  foe.vy = 0;
+  foe.speed = Math.hypot(vx, vz);
+  foe.progress = (foe.laps || 0) + tt;
+  foe.along = foe.progress;
+}
+
 function parkFoes() {
   for (const foe of race.karts) {
     if (!foe.cpu) continue;
@@ -1167,26 +1187,12 @@ window.__grand = {
     if (kind === "buckler") {
       const sx = Math.cos(you.yaw);
       const sz = -Math.sin(you.yaw);
-      foe.x = you.x + sx * 2;
-      foe.z = you.z + sz * 2;
-      foe.y = you.y;
-      foe.yaw = you.yaw;
-      foe.t = you.t;
-      foe.vx = 0;
-      foe.vz = 0;
-      foe.speed = 0;
+      pinFoe(foe, you.x + sx * 1.6, you.y, you.z + sz * 1.6, you.yaw, you.t, 0, 0);
       return foe.id;
     }
     const nose = forward(you.yaw);
-    const back = 5.2;
-    foe.x = you.x - nose.x * back;
-    foe.z = you.z - nose.z * back;
-    foe.y = you.y;
-    foe.yaw = you.yaw;
-    foe.t = you.t;
-    foe.vx = nose.x * 8;
-    foe.vz = nose.z * 8;
-    foe.speed = 8;
+    const drop = 3;
+    pinFoe(foe, you.x - nose.x * drop, you.y, you.z - nose.z * drop, you.yaw, you.t, 0, 0);
     return foe.id;
   },
   exile(on) {
@@ -1285,14 +1291,8 @@ window.__grand = {
     const fr = frameAt(race.track, you.t - dist / len);
     const cap = foe.baseCap || 29;
     const sp = cap * 0.6;
-    foe.x = fr.p.x;
-    foe.z = fr.p.z;
-    foe.y = fr.p.y;
     foe.yaw = Math.atan2(fr.tangent.x, fr.tangent.z);
-    foe.t = fr.t;
-    foe.vx = fr.tangent.x * sp;
-    foe.vz = fr.tangent.z * sp;
-    foe.speed = sp;
+    pinFoe(foe, fr.p.x, fr.p.y, fr.p.z, foe.yaw, fr.t, fr.tangent.x * sp, fr.tangent.z * sp);
     foe.stun = 0;
     foe.stunCd = 0;
     foe.buckler = 0;
@@ -1349,8 +1349,57 @@ function runArtcheck() {
   }
   renderer.dispose();
   const fails = reports.reduce((acc, row) => acc.concat(row.fails), []);
+  const table = reports.map((row) => ({
+    driver: row.id,
+    detail: row.lod ? "lo" : "hi",
+    tris: row.tris,
+    result: row.fails.length ? "FAIL" : "PASS",
+    parts: row.fails.join("; "),
+  }));
+  console.table(table);
   window.__artcheck = { ok: fails.length === 0, reports };
   window.__artFrame = (i) => shots[i] || "";
+  const splashEl = document.getElementById("splash");
+  if (splashEl) splashEl.classList.add("hidden");
+  const overlay = document.createElement("div");
+  overlay.id = "artcheck";
+  const title = document.createElement("h1");
+  title.textContent = "Beaver art check";
+  overlay.appendChild(title);
+  const thumbOf = {};
+  let shotAt = 0;
+  for (const row of reports) {
+    if (!row.lod) {
+      thumbOf[row.id] = shots[shotAt] || "";
+      shotAt += 1;
+    }
+  }
+  for (const row of reports) {
+    const line = document.createElement("div");
+    line.className = "art-row " + (row.fails.length ? "fail" : "pass");
+    const img = document.createElement("img");
+    img.alt = row.id + (row.lod ? " low detail" : " high detail");
+    if (thumbOf[row.id]) img.src = thumbOf[row.id];
+    const text = document.createElement("div");
+    const head = document.createElement("strong");
+    const verdict = row.fails.length ? "FAIL" : "PASS";
+    head.textContent = row.id + " · " + (row.lod ? "lo" : "hi") + " · " + verdict;
+    text.appendChild(head);
+    if (!row.fails.length) {
+      const ok = document.createElement("p");
+      ok.textContent = "PASS";
+      text.appendChild(ok);
+    } else {
+      for (const fail of row.fails) {
+        const item = document.createElement("p");
+        item.textContent = "FAIL " + fail;
+        text.appendChild(item);
+      }
+    }
+    line.append(img, text);
+    overlay.appendChild(line);
+  }
+  document.body.appendChild(overlay);
   if (fails.length) console.error("ARTCHECK", fails.join(" | "));
 }
 

@@ -8,7 +8,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "assets" / "ref"
 OUT.mkdir(parents=True, exist_ok=True)
-URL = "http://127.0.0.1:8791/?v=gd45"
+URL = "http://127.0.0.1:8791/?v=gd46"
 
 
 def shot(page, name):
@@ -295,7 +295,7 @@ def main():
         tag = page.locator("#build-tag").inner_text().strip()
         tag_px = page.evaluate("() => parseFloat(getComputedStyle(document.getElementById('build-tag')).fontSize)")
         print("TAG", tag, tag_px)
-        if tag != "gd45" or tag_px < 12:
+        if tag != "gd46" or tag_px < 12:
             fails.append("build tag " + tag + " " + str(tag_px))
         shot(page, "splash-390.png")
         hero = box(page, "#splash img.hero")

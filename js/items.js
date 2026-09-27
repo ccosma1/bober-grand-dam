@@ -1,5 +1,5 @@
 /* Eight lodge throws. One held item. Boxes return in 4.5s. */
-import { frameAt, forward, livePlace } from "./sim.js?v=gd45";
+import { frameAt, forward, livePlace } from "./sim.js?v=gd46";
 
 export const ITEM_IDS = ["boost", "trap", "pine", "surge", "magnet", "buckler", "meteor", "slick"];
 export const ITEM_NAME = {
@@ -35,8 +35,8 @@ const SURGE_ALONG = 2;
 const AIM_RANGE = 60;
 const BUCK_R = 3.6;
 const METEOR_R = 7;
-const SLICK_W = 1.6;
-const SLICK_L = 2.1;
+const SLICK_W = 1.3;
+const SLICK_L = 1.6;
 const REACH = 3.05;
 const HURT = 1.6;
 
@@ -138,7 +138,12 @@ function sideAxis(yaw) {
   return { x: Math.cos(yaw), z: -Math.sin(yaw) };
 }
 
-/* Every throw lands here. Full hits spin twice in 0.9s. Slick is the short form. */
+function toastHit(race, kart) {
+  race.hitToast = "HIT " + String(kart.name || kart.id).toUpperCase() + "!";
+  race.hitToastT = 1.15;
+}
+
+/* Every throw lands here. Full hits spin twice in 0.9s. Slick spins once across a full second. */
 export function applyHit(race, kart, weapon, extra) {
   extra = extra || {};
   if (!kart || kart.finished) return false;
@@ -159,22 +164,23 @@ export function applyHit(race, kart, weapon, extra) {
     return false;
   }
   if ((kart.stunCd || 0) > 0 && !extra.unblockable && !extra.ignoreStun) return false;
-  const short = !!(extra.short || weapon === "slick");
-  const dur = short ? 0.45 : 0.9;
-  const turns = short ? 1 : 2;
+  const slick = weapon === "slick";
+  const short = !slick && !!extra.short;
+  const dur = slick ? 1.0 : short ? 0.45 : 0.9;
+  const turns = slick || short ? 1 : 2;
   kart.spinT = Math.max(kart.spinT || 0, dur);
   kart.spinDur = dur;
   kart.spinTurns = turns;
   if (!(kart.spinDir === 1 || kart.spinDir === -1) || (kart.spinT || 0) >= dur - 0.02) {
     kart.spinDir = Math.random() < 0.5 ? -1 : 1;
   }
-  kart.dizzyT = Math.max(kart.dizzyT || 0, short ? 0.7 : 1.5);
-  kart.hitMarkT = Math.max(kart.hitMarkT || 0, short ? 0.85 : 1.15);
+  kart.dizzyT = Math.max(kart.dizzyT || 0, slick ? 1.0 : short ? 0.7 : 1.5);
+  kart.hitMarkT = Math.max(kart.hitMarkT || 0, slick ? 1.0 : short ? 0.85 : 1.15);
   kart.hitFlash = 0.8;
   const mulNow = kart.speedMul && kart.speedMul > 0 ? kart.speedMul : 1;
   kart.speedMul = Math.min(mulNow, 0.2);
-  kart.slowT = Math.max(kart.slowT || 0, short ? 0.3 : 1.2);
-  kart.stun = Math.max(kart.stun || 0, short ? 0.3 : 0.2);
+  kart.slowT = Math.max(kart.slowT || 0, slick ? 1.0 : short ? 0.3 : 1.2);
+  kart.stun = Math.max(kart.stun || 0, slick ? 0.45 : short ? 0.3 : 0.2);
   kart.vx = (kart.vx || 0) * 0.2;
   kart.vz = (kart.vz || 0) * 0.2;
   if (extra.ix || extra.iz) {
@@ -192,10 +198,7 @@ export function applyHit(race, kart, weapon, extra) {
   juice(race, weapon || "hit", extra.shake || 0.4);
   noteHit(race, weapon || "hit", kart);
   const you = (race.karts || []).find((k) => k && !k.cpu);
-  if (extra.by != null && you && extra.by === you.id && kart.id !== you.id) {
-    race.hitToast = "HIT " + String(kart.name || kart.id).toUpperCase() + "!";
-    race.hitToastT = 1.15;
-  }
+  if (extra.by != null && you && extra.by === you.id && kart.id !== you.id) toastHit(race, kart);
   return true;
 }
 
