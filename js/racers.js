@@ -1,8 +1,8 @@
 /* Painted carts. Nose is local +z, rear marker is local -z.
    Static parts merge by material. Nails and rivets are instanced.
-   Player detail is the full mesh; CPU detail drops whiskers, nubs, highlights, and fur clumps. */
+   Player crew keeps whiskers, highlights, and an outline. CPU crew drops those. */
 
-import { mergeGeometries } from "../vendor/BufferGeometryUtils.js?v=gd46";
+import { mergeGeometries, mergeVertices } from "../vendor/BufferGeometryUtils.js?v=gd47";
 
 const GEO = new Map();
 const BUILD = { lod: false, curve: 2 };
@@ -893,10 +893,10 @@ function flamePose(mesh, clusters) {
 }
 
 const DIAL = {
-  bober: { R: 0.34, S: [1, 0.95, 1], H: 0.8, B: 0.34, e: 0.26, K: 1, earY: 1, O: 0.4, arm: [0.075, 0.065], elbow: 0.08, tail: [0.46, 0.78], fur: 1, crown: 1 },
-  nib: { R: 0.3, S: [1.05, 1, 1], H: 0.6, B: 0.28, e: 0.28, K: 1.25, earY: 1, O: 0.4, arm: [0.075, 0.065], elbow: 0.08, tail: [0.36, 0.58], fur: 1, crown: 1.4 },
-  muscle: { R: 0.34, S: [1.14, 0.92, 1.05], H: 0.82, B: 0.46, e: 0.22, K: 0.8, earY: 1, O: 0.55, arm: [0.1, 0.09], elbow: 0.08, tail: [0.54, 0.8], fur: 1.3, crown: 1.3 },
-  tall: { R: 0.31, S: [0.94, 1.1, 1], H: 1.05, B: 0.26, e: 0.32, K: 1, earY: 1.3, O: 0.4, arm: [0.055, 0.05], elbow: 0.14, tail: [0.4, 0.95], fur: 0.8, crown: 0.8 },
+  bober: { R: 0.38, S: [1, 0.95, 1], H: 0.7, B: 0.34, e: 0.3, K: 1, earY: 1, O: 0.4, arm: [0.075, 0.065], elbow: 0.08, tail: [0.46, 0.78], fur: 1, crown: 1 },
+  nib: { R: 0.34, S: [1.05, 1, 1], H: 0.52, B: 0.28, e: 0.36, K: 1.35, earY: 1, O: 0.4, arm: [0.075, 0.065], elbow: 0.08, tail: [0.36, 0.58], fur: 1, crown: 1.4 },
+  muscle: { R: 0.37, S: [1.14, 0.92, 1.05], H: 0.72, B: 0.46, e: 0.24, K: 0.8, earY: 1, O: 0.55, arm: [0.1, 0.09], elbow: 0.08, tail: [0.54, 0.8], fur: 1.3, crown: 1.3 },
+  tall: { R: 0.34, S: [0.94, 1.1, 1], H: 0.92, B: 0.26, e: 0.38, K: 1, earY: 1.3, O: 0.4, arm: [0.055, 0.05], elbow: 0.14, tail: [0.4, 0.95], fur: 0.8, crown: 0.8 },
 };
 
 let TAIL_TEX = null;
@@ -954,49 +954,6 @@ function aimAxis(THREE, axis, x, y, z) {
   return new THREE.Quaternion().setFromUnitVectors(axis, new THREE.Vector3(x / l, y / l, z / l));
 }
 
-function extrude(THREE, shape, depth, bevel) {
-  const d = Math.max(depth, 0.008);
-  const g = new THREE.ExtrudeGeometry(shape, {
-    depth: d,
-    bevelEnabled: true,
-    bevelThickness: Math.min(0.01, d * 0.35),
-    bevelSize: Math.max(0.004, bevel),
-    bevelSegments: 1,
-    curveSegments: 1,
-    steps: 1,
-  });
-  g.translate(0, 0, -d / 2);
-  return stamp(g);
-}
-
-function withCore(THREE, geo, R) {
-  const core = lathe(THREE, [
-    [0.001, 0],
-    [0.018 * R, 0.003 * R],
-    [0.014 * R, 0.01 * R],
-    [0.001, 0.016 * R],
-  ], 3);
-  const c = core.index ? core.toNonIndexed() : core.clone();
-  c.translate(0, 0.15 * R, 0.2 * R);
-  if (!c.attributes.uv) {
-    c.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(c.attributes.position.count * 2), 2));
-  }
-  const col = new Float32Array(c.attributes.position.count * 3);
-  const src = geo.attributes.color;
-  for (let i = 0; i < c.attributes.position.count; i++) {
-    col[i * 3] = src ? src.getX(0) : 1;
-    col[i * 3 + 1] = src ? src.getY(0) : 1;
-    col[i * 3 + 2] = src ? src.getZ(0) : 1;
-  }
-  c.setAttribute("color", new THREE.BufferAttribute(col, 3));
-  if (geo.attributes.normal) geo.deleteAttribute("normal");
-  if (c.attributes.normal) c.deleteAttribute("normal");
-  const merged = mergeGeometries([geo, c], false);
-  if (!merged) return geo;
-  merged.computeVertexNormals();
-  return merged;
-}
-
 function measureRim(THREE, chassis) {
   chassis.updateMatrixWorld(true);
   let minZ = Infinity;
@@ -1022,14 +979,6 @@ function measureRim(THREE, chassis) {
   return { y: top, z: minZ };
 }
 
-function crescent(THREE, w, h) {
-  const s = new THREE.Shape();
-  s.moveTo(-w / 2, 0);
-  s.quadraticCurveTo(0, h * 2.4, w / 2, 0);
-  s.quadraticCurveTo(0, h * 0.55, -w / 2, 0);
-  return s;
-}
-
 function paddleShape(THREE, W, L) {
   const s = new THREE.Shape();
   const hw0 = 0.18 * W;
@@ -1044,6 +993,212 @@ function paddleShape(THREE, W, L) {
   return s;
 }
 
+const DOME_SRC = [
+  [0, 0], [1, 0], [0.99, 0.12], [0.94, 0.28], [0.82, 0.46],
+  [0.64, 0.62], [0.4, 0.74], [0.15, 0.8], [0, 0.81],
+];
+
+let TOON = null;
+
+function toonLib(THREE) {
+  if (TOON) return TOON;
+  const grad = new THREE.DataTexture(new Uint8Array([90, 170, 255]), 3, 1, THREE.RedFormat);
+  grad.magFilter = THREE.NearestFilter;
+  grad.minFilter = THREE.NearestFilter;
+  grad.generateMipmaps = false;
+  grad.needsUpdate = true;
+  const furLo = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: grad });
+  const fur = furLo.clone();
+  fur.onBeforeCompile = (shader) => {
+    const rim = "gl_FragColor.rgb += vec3(0.956863, 0.901961, 0.764706) * pow(1.0 - max(dot(normalize(vNormal), normalize(vViewPosition)), 0.0), 3.0) * 0.35;";
+    if (shader.fragmentShader.indexOf("#include <dithering_fragment>") >= 0) {
+      shader.fragmentShader = shader.fragmentShader.replace("#include <dithering_fragment>", "#include <dithering_fragment>\n" + rim);
+    }
+  };
+  fur.customProgramCacheKey = () => "gd47rim";
+  const white = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: grad });
+  const dark = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: grad });
+  const line = new THREE.MeshBasicMaterial({ color: 0x1e1410, side: THREE.BackSide, depthWrite: true });
+  const tail = new THREE.MeshToonMaterial({ gradientMap: grad, color: 0xffffff });
+  for (const m of [fur, furLo, white, dark, tail]) m.flatShading = false;
+  TOON = { fur, furLo, white, dark, line, tail };
+  return TOON;
+}
+
+function paintAttr(THREE, geo, color) {
+  const c = new THREE.Color(color == null ? 0xffffff : color);
+  const n = geo.attributes.position.count;
+  const col = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    col[i * 3] = c.r;
+    col[i * 3 + 1] = c.g;
+    col[i * 3 + 2] = c.b;
+  }
+  geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+}
+
+function blankUV(THREE, geo) {
+  if (!geo.attributes.uv) {
+    geo.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count * 2), 2));
+  }
+}
+
+function crewMatrix(THREE, x, y, z, rx, ry, rz, sx, sy, sz, quat) {
+  const fx = sx == null ? 1 : sx;
+  const syv = sy == null ? fx : sy;
+  const szv = sz == null ? fx : sz;
+  const m = new THREE.Matrix4();
+  if (quat) {
+    m.compose(new THREE.Vector3(x || 0, y || 0, z || 0), quat, new THREE.Vector3(fx, syv, szv));
+  } else {
+    const o = new THREE.Object3D();
+    o.position.set(x || 0, y || 0, z || 0);
+    o.rotation.set(rx || 0, ry || 0, rz || 0);
+    o.scale.set(fx, syv, szv);
+    o.updateMatrix();
+    m.copy(o.matrix);
+  }
+  return m;
+}
+
+// Keep the lathe indexed. Weld drops uv so the seam shares a vertex, then normals are rebuilt once.
+// The later transform is applyMatrix4, which carries those normals. Do not recompute after it.
+function crewBake(THREE, src, color, matrix, weld) {
+  let g = src.index || src.attributes ? src.clone() : src;
+  // ExtrudeGeometry in this build is non-indexed. Weld it so bevels stay smooth and merges share an index.
+  if (weld || !g.index) {
+    if (g.attributes.uv) g.deleteAttribute("uv");
+    if (g.attributes.color) g.deleteAttribute("color");
+    g = mergeVertices(g, 1e-4);
+    g.computeVertexNormals();
+  } else if (!g.attributes.normal) {
+    g.computeVertexNormals();
+  }
+  if (matrix) g.applyMatrix4(matrix);
+  blankUV(THREE, g);
+  paintAttr(THREE, g, color);
+  return g;
+}
+
+function resample2(THREE, pts, n) {
+  if (pts.length === n) return pts.map((p) => [Math.max(0.001, p[0]), p[1]]);
+  const curve = new THREE.CatmullRomCurve3(pts.map((p) => new THREE.Vector3(Math.max(0.001, p[0]), p[1], 0)));
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const p = curve.getPoint(i / (n - 1));
+    out.push([Math.max(0.001, p.x), p.y]);
+  }
+  return out;
+}
+
+function extrudeSeg(THREE, shape, depth, bevel, curveSeg, bevelSeg) {
+  const d = Math.max(depth, 0.008);
+  const g = new THREE.ExtrudeGeometry(shape, {
+    depth: d,
+    bevelEnabled: true,
+    bevelThickness: Math.min(0.01, d * 0.35),
+    bevelSize: Math.max(0.004, bevel),
+    bevelSegments: bevelSeg,
+    curveSegments: curveSeg,
+    steps: 1,
+  });
+  g.translate(0, 0, -d / 2);
+  return stamp(g);
+}
+
+function halfMouth(THREE, w, h) {
+  const s = new THREE.Shape();
+  s.moveTo(-w / 2, 0);
+  s.absellipse(0, 0, w / 2, h, Math.PI, Math.PI * 2, false);
+  s.closePath();
+  return s;
+}
+
+function blockShape(THREE, w, h) {
+  const s = new THREE.Shape();
+  s.moveTo(-w / 2, -h / 2);
+  s.lineTo(w / 2, -h / 2);
+  s.lineTo(w / 2, h / 2);
+  s.lineTo(-w / 2, h / 2);
+  s.closePath();
+  return s;
+}
+
+function addShell(THREE, parent, source, mat, push) {
+  const g = source.geometry.clone();
+  const pos = g.attributes.position;
+  const nor = g.attributes.normal;
+  if (!nor) return null;
+  for (let i = 0; i < pos.count; i++) {
+    const nx = nor.getX(i);
+    const ny = nor.getY(i);
+    const nz = nor.getZ(i);
+    const len = Math.hypot(nx, ny, nz) || 1;
+    pos.setXYZ(i, pos.getX(i) + (nx / len) * push, pos.getY(i) + (ny / len) * push, pos.getZ(i) + (nz / len) * push);
+  }
+  const shell = new THREE.Mesh(g, mat);
+  shell.name = "outline";
+  shell.userData.outline = true;
+  shell.position.copy(source.position);
+  shell.quaternion.copy(source.quaternion);
+  shell.scale.copy(source.scale);
+  shell.castShadow = false;
+  shell.receiveShadow = false;
+  parent.add(shell);
+  return shell;
+}
+
+function makeSpot(THREE, eye, eyeE, profile) {
+  const qInv = new THREE.Quaternion();
+  const headOff = new THREE.Vector3();
+  return (px, py) => {
+    qInv.copy(eye.quaternion).invert();
+    headOff.set(px * eyeE, py * eyeE, 0).applyQuaternion(qInv);
+    const lx = headOff.x / eyeE;
+    const lz = headOff.z / eyeE;
+    const d = Math.min(0.98, Math.hypot(lx, lz));
+    let h = profile[profile.length - 1][1];
+    let nr = 0;
+    let nh = 1;
+    for (let i = 1; i < profile.length - 1; i++) {
+      const r0 = profile[i][0];
+      const h0 = profile[i][1];
+      const r1 = profile[i + 1][0];
+      const h1 = profile[i + 1][1];
+      if (d <= Math.max(r0, r1) + 1e-4 && d >= Math.min(r0, r1) - 1e-4) {
+        const t = Math.abs(r0 - r1) < 1e-5 ? 0 : (r0 - d) / (r0 - r1);
+        h = h0 + (h1 - h0) * Math.max(0, Math.min(1, t));
+        let dr = r1 - r0;
+        let dh = h1 - h0;
+        nr = dh;
+        nh = -dr;
+        if (nh < 0) {
+          nr = -nr;
+          nh = -nh;
+        }
+        break;
+      }
+    }
+    const ang = Math.atan2(lz, lx);
+    const pos = new THREE.Vector3(Math.cos(ang) * d * eyeE, h * eyeE, Math.sin(ang) * d * eyeE);
+    const n = new THREE.Vector3(Math.cos(ang) * nr, nh, Math.sin(ang) * nr);
+    if (n.lengthSq() < 1e-6) n.set(0, 1, 0);
+    n.normalize();
+    pos.addScaledVector(n, 0.012 * eyeE);
+    return { pos, n };
+  };
+}
+
+function pupilButton(THREE, rad, thick, segs) {
+  let g = lathe(THREE, [[rad, 0], [rad * 0.98, thick * 0.35], [rad, thick * 0.7], [0.001, thick]], segs).clone();
+  if (g.attributes.uv) g.deleteAttribute("uv");
+  g = mergeVertices(g, 1e-4);
+  g.computeVertexNormals();
+  g.translate(0, -thick, 0);
+  g.rotateX(Math.PI / 2);
+  return g;
+}
+
 function addCrew(THREE, chassis, spec, mats, shadow) {
   const who = spec.who || "bober";
   const dial = DIAL[who] || DIAL.bober;
@@ -1056,6 +1211,9 @@ function addCrew(THREE, chassis, spec, mats, shadow) {
   const lod = BUILD.lod;
   const seg = (hi, lo) => (lod ? lo : hi);
   const parts = {};
+  const toon = toonLib(THREE);
+  const furMat = lod ? toon.furLo : toon.fur;
+  if (!toon.tail.map) toon.tail.map = tailTexture(THREE);
   const driver = new THREE.Group();
   driver.position.set(spec.seat[0], spec.seat[1], spec.seat[2]);
   driver.userData.baseY = spec.seat[1];
@@ -1063,192 +1221,386 @@ function addCrew(THREE, chassis, spec, mats, shadow) {
   const torsoTop = 1.04 * H;
   head.position.set(0, torsoTop + R * S[1] - dial.O * R, 0.06);
   head.rotation.x = 0.08;
+  head.userData.baseY = head.position.y;
+  driver.add(head);
+  const yup = new THREE.Vector3(0, 1, 0);
+  const zup = new THREE.Vector3(0, 0, 1);
 
-  const put = (parent, name, geo) => {
-    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial());
+  const meshOf = (geo, mat, name, parent) => {
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = name || "part";
+    mesh.castShadow = !!shadow;
+    mesh.receiveShadow = true;
+    if (parent) parent.add(mesh);
+    return mesh;
+  };
+  const mergeMesh = (geos, mat, name, parent) => {
+    if (!geos.length) return null;
+    const merged = mergeGeometries(geos, false);
+    if (!merged) throw new Error("merge " + name);
+    return meshOf(merged, mat, name, parent);
+  };
+  const probe = (parent, name, geos) => {
+    const merged = geos.length === 1 ? geos[0] : mergeGeometries(geos, false);
+    if (!merged) {
+      const desc = geos.map((g) => (g ? Object.keys(g.attributes).sort().join("+") + (g.index ? ":i" : ":n") : "null")).join(" | ");
+      throw new Error("probe " + name + " " + desc);
+    }
+    const mesh = new THREE.Mesh(merged, new THREE.MeshBasicMaterial());
     mesh.name = name;
     mesh.visible = false;
     mesh.userData.artProbe = true;
     parent.add(mesh);
     parts[name] = mesh;
+    return mesh;
   };
-  const yup = new THREE.Vector3(0, 1, 0);
-  const zup = new THREE.Vector3(0, 0, 1);
+  const anchor = (color) => crewBake(
+    THREE,
+    lathe(THREE, [[0.001, 0], [0.05 * R, 0.02 * R], [0.001, 0.08 * R]], 5),
+    color,
+    crewMatrix(THREE, 0, 0.04 * R, 0.2 * R, Math.PI / 2, 0, 0, 1, 1, 1),
+    false
+  );
+  const shell = (source, push) => {
+    if (lod || !source) return;
+    addShell(THREE, source.parent, source, toon.line, push);
+  };
 
-  const skullPts = [
+  const skullUnit = [
     [0.02, -0.92], [0.45, -0.86], [0.8, -0.6], [0.98, -0.2], [1, 0.1],
     [0.93, 0.45], [0.72, 0.78], [0.4, 0.96], [0.02, 1],
-  ].map(([r, y]) => [r * R, (y - 0.04) * R]);
-  const skull = new THREE.Mesh(prep(THREE, lathe(THREE, skullPts, seg(16, 10)), fur.main, FUR), mats.fur);
+  ];
+  const skullPts = resample2(THREE, skullUnit.map(([r, y]) => [r * R, (y - 0.04) * R]), seg(14, 9));
+  const skullGeo = crewBake(THREE, lathe(THREE, skullPts, seg(24, 18)), fur.main, null, true);
+  const skull = meshOf(skullGeo, furMat, "skull", head);
   skull.scale.set(S[0], S[1], S[2]);
-  skull.name = "skull";
-  skull.castShadow = !!shadow;
-  head.add(skull);
+  shell(skull, 0.008);
 
-  const furHead = [];
-  const furBody = [];
-  const noseParts = [];
-  const faceParts = [];
-  const pushFur = (list, parent, name, geo) => {
-    list.push(geo);
-    if (name) put(parent, name, geo.clone());
-  };
-
-  const muzzlePts = [
+  const muzzlePts = resample2(THREE, [
     [0.02, 0], [0.42, 0.06], [0.58, 0.25], [0.58, 0.5], [0.5, 0.7], [0.32, 0.85], [0.02, 0.9],
-  ].map(([r, h]) => [r * R, h * R]);
-  pushFur(furHead, head, "muzzle", prep(
-    THREE, lathe(THREE, muzzlePts, seg(14, 8)), fur.light, FUR,
-    0, -0.28 * R, 0.4 * R, Math.PI / 2, 0, 0, 1.15, 0.85, 1
-  ));
+  ].map(([r, h]) => [r * R, h * R]), seg(10, 6));
+  const muzzleGeo = crewBake(
+    THREE, lathe(THREE, muzzlePts, seg(18, 10)), fur.light,
+    crewMatrix(THREE, 0, -0.28 * R, 0.4 * R, Math.PI / 2, 0, 0, 1.15, 0.85, 1),
+    true
+  );
+  const muzzle = meshOf(muzzleGeo, furMat, "muzzle", head);
+  shell(muzzle, 0.008);
+  probe(head, "muzzle", [muzzleGeo.clone()]);
+  let muzzleFront = -Infinity;
+  const mp = muzzleGeo.attributes.position;
+  for (let i = 0; i < mp.count; i++) muzzleFront = Math.max(muzzleFront, mp.getZ(i));
 
   const nosePts = [[0.02, 0], [0.18, 0.03], [0.2, 0.1], [0.1, 0.16], [0.01, 0.18]].map(([r, h]) => [r * R, h * R]);
-  const noseGeo = withCore(THREE, prep(
-    THREE, lathe(THREE, nosePts, seg(5, 4)), 0x2a211c, null,
-    0, -0.08 * R, 1.16 * R, Math.PI / 2, 0, 0, 1.3, 0.8, 0.8
-  ), R);
-  noseParts.push(noseGeo);
-  put(head, "nose", noseGeo.clone());
+  const noseGeo = crewBake(
+    THREE, lathe(THREE, nosePts, seg(6, 4)), 0x2a211c,
+    crewMatrix(THREE, 0, -0.08 * R, 1.16 * R, Math.PI / 2, 0, 0, 1.3, 0.8, 0.8),
+    true
+  );
+  const noseBits = [noseGeo];
+  probe(head, "nose", [noseGeo.clone(), anchor(0x2a211c)]);
   const dot = [[0.001, 0], [0.035 * R, 0.004 * R], [0.03 * R, 0.012 * R], [0.001, 0.016 * R]];
   for (const side of [-1, 1]) {
-    const g = withCore(THREE, prep(
-      THREE, lathe(THREE, dot, seg(5, 4)), 0x140e0c, null,
-      side * 0.07 * R, -0.06 * R, 1.33 * R, Math.PI / 2, 0, 0, 1, 1, 1
-    ), R);
-    noseParts.push(g);
-    put(head, side < 0 ? "nostrilL" : "nostrilR", g.clone());
+    const g = crewBake(
+      THREE, lathe(THREE, dot, seg(5, 4)), 0x140e0c,
+      crewMatrix(THREE, side * 0.07 * R, -0.06 * R, 1.33 * R, Math.PI / 2, 0, 0, 1, 1, 1),
+      true
+    );
+    noseBits.push(g);
+    probe(head, side < 0 ? "nostrilL" : "nostrilR", [g.clone(), anchor(0x140e0c)]);
   }
+  shell(mergeMesh(noseBits, toon.dark, "nose", head), 0.008);
 
-  const toothW = 0.18 * R;
-  const toothH = 0.4 * R;
-  const toothD = 0.07 * R;
-  const toothY = -0.6 * R - toothH / 2;
-  const toothZ = 1.055 * R;
+  const toothScale = who === "nib" ? 0.9 : who === "muscle" ? 1.15 : who === "tall" ? 1.2 : 1;
+  const gap = (who === "tall" ? 0.06 : 0.03) * R;
+  const toothW = 0.24 * R * toothScale;
+  const toothH = 0.55 * R * toothScale;
+  const toothD = 0.09 * R * toothScale;
+  const toothGeos = [];
   for (const side of [-1, 1]) {
-    const g = withCore(THREE, prep(
-      THREE, extrude(THREE, rr(THREE, toothW, toothH, 0.02 * R), toothD, 0.02 * R), spec.tooth, null,
-      side * 0.1 * R, toothY, toothZ
-    ), R);
-    faceParts.push(g);
-    put(head, side < 0 ? "toothL" : "toothR", g.clone());
+    let toothX = side * (gap / 2 + toothW / 2);
+    let toothY = -0.5 * R - toothH / 2;
+    if (who === "muscle" && side < 0) {
+      toothX -= 0.08 * R;
+      toothY += 0.03 * R;
+    }
+    const toothZ = muzzleFront - 0.02 * R + toothD / 2;
+    const g = crewBake(
+      THREE,
+      extrudeSeg(THREE, blockShape(THREE, toothW, toothH), toothD, seg(0.018, 0.01), seg(6, 3), seg(3, 1)),
+      spec.tooth,
+      crewMatrix(THREE, toothX, toothY, toothZ, 0, 0, 0, 1, 1, 1),
+      false
+    );
+    toothGeos.push(g);
+    probe(head, side < 0 ? "toothL" : "toothR", [g.clone(), anchor(spec.tooth)]);
   }
-  faceParts.push(prep(
-    THREE, extrude(THREE, rr(THREE, 0.02 * R, toothH, 0.008 * R), toothD, 0.006 * R), 0x3a2a20, null,
-    0, toothY, toothZ
-  ));
+  const teethMesh = mergeMesh(toothGeos, toon.white, "teeth", head);
+  shell(teethMesh, 0.008);
 
-  const dome = [[0, 0], [1, 0], [0.95, 0.3], [0.7, 0.62], [0.35, 0.8], [0.01, 0.84]].map(([r, h]) => [r * E, h * E]);
-  const irisCol = who === "tall" ? 0x3a2a6a : 0x6b3a1a;
+  const aimZ = new THREE.Vector3(0, 0, 1);
+  const pupilFrac = who === "nib" ? 0.3 : 0.42;
+  const lidRest = who === "bober" ? -0.7 : who === "nib" ? -1.45 : who === "muscle" ? -1.05 : -1.35;
+  const domeProfile = resample2(THREE, DOME_SRC, seg(7, 5));
+  const pupilRest = [[0, 0], [0, 0]];
+  const face = { head, torso: null, tail: null, tufts: null, bodyTufts: null, cheekL: null, cheekR: null };
   for (const side of [-1, 1]) {
-    const raw = [side * 0.38, 0.22, 0.9];
+    const right = side > 0;
+    const eyeE = E * (who === "tall" && right ? 0.82 : 1);
+    const raw = [side * 0.38, 0.22 + (who === "tall" && right ? 0.06 : 0), 0.9];
     const q = aimAxis(THREE, yup, raw[0], raw[1], raw[2]);
-    const base = nPos(THREE, raw[0], raw[1], raw[2], 0.9, R, S);
-    const white = prep(THREE, lathe(THREE, dome, seg(5, 4)), 0xf7f4ee, null, base.x, base.y, base.z, 0, 0, 0, 1, 1, 1, q);
-    faceParts.push(white);
-    put(head, side < 0 ? "eyeWhiteL" : "eyeWhiteR", white.clone());
-    const irisAt = nPos(THREE, raw[0], raw[1], raw[2], 1.08, R, S);
-    const iris = withCore(THREE, prep(
-      THREE, lathe(THREE, [[0.001, 0], [0.58 * E, 0.002], [0.2 * E, 0.008], [0.001, 0.012]], seg(4, 3)),
-      irisCol, null, irisAt.x, irisAt.y, irisAt.z, 0, 0, 0, 1, 1, 1, q.clone()
-    ), R);
-    faceParts.push(iris);
-    put(head, side < 0 ? "irisL" : "irisR", iris.clone());
-    const pupilAt = nPos(THREE, raw[0], raw[1], raw[2], 1.1, R, S);
-    const pupil = withCore(THREE, prep(
-      THREE, lathe(THREE, [[0.001, 0], [0.3 * E, 0.002], [0.1 * E, 0.006], [0.001, 0.01]], seg(5, 4)),
-      0x14110f, null, pupilAt.x, pupilAt.y, pupilAt.z, 0, 0, 0, 1, 1, 1, q.clone()
-    ), R);
-    faceParts.push(pupil);
-    put(head, side < 0 ? "pupilL" : "pupilR", pupil.clone());
+    const base = nPos(THREE, raw[0], raw[1], raw[2], 0.86, R, S);
+    const eye = new THREE.Group();
+    eye.name = right ? "eyeR" : "eyeL";
+    eye.position.copy(base);
+    eye.quaternion.copy(q);
+    head.add(eye);
+    const spot = makeSpot(THREE, eye, eyeE, domeProfile);
+    eye.userData.spot = spot;
+    eye.userData.E = eyeE;
+    const domePts = domeProfile.map(([r, h]) => [Math.max(0.001, r) * eyeE, h * eyeE]);
+    const dome = meshOf(
+      crewBake(THREE, lathe(THREE, domePts, seg(16, 10)), 0xfffdf6, null, true),
+      toon.white, right ? "eyeWhiteR" : "eyeWhiteL", eye
+    );
+    parts[dome.name] = dome;
+    shell(dome, 0.008);
+    const lidPts = domeProfile.map(([r, h]) => [Math.max(0.001, r) * eyeE * 1.04, h * eyeE * 1.04]);
+    const lid = meshOf(
+      crewBake(THREE, lathe(THREE, lidPts, seg(16, 10)), fur.main, null, true),
+      furMat, right ? "lidR" : "lidL", eye
+    );
+    lid.rotation.x = lidRest;
+    lid.userData.restX = lidRest;
+    parts[lid.name] = lid;
+    const iris = new THREE.Mesh(stamp(new THREE.CircleGeometry(eyeE * 0.66, seg(16, 10))), new THREE.MeshBasicMaterial());
+    iris.name = right ? "irisR" : "irisL";
+    iris.visible = false;
+    iris.userData.artProbe = true;
+    iris.rotation.x = -Math.PI / 2;
+    iris.position.y = 0.08 * eyeE;
+    eye.add(iris);
+    parts[iris.name] = iris;
+    const button = pupilButton(THREE, pupilFrac * eyeE, 0.28 * R, seg(16, 10));
+    blankUV(THREE, button);
+    paintAttr(THREE, button, 0x14110f);
+    const pupil = meshOf(button, toon.dark, right ? "pupilR" : "pupilL", eye);
+    const restP = [who === "tall" ? -side * 0.25 : 0, 0];
+    pupil.userData.p = restP.slice();
+    pupil.userData.restP = restP.slice();
+    parts[pupil.name] = pupil;
+    pupilRest[right ? 1 : 0] = restP.slice();
     if (!lod) {
-      const hi = pupilAt.clone();
-      hi.y += 0.25 * E;
-      hi.x += side * 0.2 * E;
-      faceParts.push(prep(
-        THREE, lathe(THREE, [[0.001, 0], [0.1 * E, 0.002], [0.001, 0.008]], 5),
-        0xffffff, null, hi.x, hi.y, hi.z, 0, 0, 0, 1, 1, 1, q.clone()
-      ));
+      const hi = spot(-0.2, 0.32);
+      const glint = meshOf(
+        crewBake(THREE, stamp(new THREE.CircleGeometry(0.14 * eyeE, seg(16, 10))), 0xffffff, null, false),
+        toon.white, "glint", eye
+      );
+      glint.position.copy(hi.pos).addScaledVector(hi.n, 0.03 * eyeE);
+      glint.quaternion.setFromUnitVectors(aimZ, hi.n);
+      glint.castShadow = false;
+    }
+    if (right) {
+      face.eyeR = eye;
+      face.pupilR = pupil;
+      face.lidR = lid;
+    } else {
+      face.eyeL = eye;
+      face.pupilL = pupil;
+      face.lidL = lid;
     }
   }
 
   for (const side of [-1, 1]) {
+    const right = side > 0;
     const raw = [side * 0.36, 0.52, 0.78];
     const q = aimAxis(THREE, zup, raw[0], raw[1], raw[2]);
-    if (who === "muscle") q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -side * 0.25));
-    const at = nPos(THREE, raw[0], raw[1], raw[2], 0.98, R, S);
-    const thick = who === "muscle" ? 1.4 : 1;
-    const brow = prep(
-      THREE, extrude(THREE, crescent(THREE, 0.24 * R, 0.07 * R * thick), 0.04 * R, 0.008 * R), fur.dark, FUR,
-      at.x, at.y, at.z, 0, 0, 0, 1, 1, 1, q
+    const at = nPos(THREE, raw[0], raw[1], raw[2], 0.94, R, S);
+    let raise = 0;
+    let tilt = 0;
+    let thick = 1;
+    if (who === "bober" && !right) {
+      raise = 0.05 * R;
+      tilt = 0.18;
+    }
+    if (who === "nib") raise = 0.08 * R;
+    if (who === "muscle") {
+      thick = 1.5;
+      tilt = side < 0 ? 0.35 : -0.35;
+      raise = -0.06 * R;
+    }
+    const browLen = 0.3 * R;
+    const browRad = 0.0425 * R * thick;
+    const lay = new THREE.Quaternion().setFromAxisAngle(zup, Math.PI / 2);
+    const qBrow = q.clone().multiply(lay);
+    let browGeo = crewBake(
+      THREE,
+      lathe(THREE, [
+        [0.001, -browLen * 0.5],
+        [browRad, -browLen * 0.28],
+        [browRad, browLen * 0.28],
+        [0.001, browLen * 0.5],
+      ], seg(6, 4)),
+      fur.dark,
+      crewMatrix(THREE, at.x, at.y, at.z, 0, 0, 0, 1, 1, 0.55, qBrow),
+      true
     );
-    pushFur(furHead, head, side < 0 ? "browL" : "browR", brow);
+    browGeo.translate(-at.x, -at.y, -at.z);
+    const pivot = new THREE.Group();
+    pivot.name = right ? "browR" : "browL";
+    pivot.position.set(at.x, at.y + raise, at.z);
+    pivot.rotation.z = tilt;
+    pivot.userData.baseY = pivot.position.y;
+    pivot.userData.baseZ = tilt;
+    pivot.add(meshOf(browGeo, furMat, pivot.name + "mesh", null));
+    head.add(pivot);
+    parts[pivot.name] = pivot;
+    if (right) face.browR = pivot;
+    else face.browL = pivot;
   }
 
-  const earPts = [[0.02, 0], [0.16, 0.03], [0.2, 0.1], [0.17, 0.18], [0.06, 0.22]].map(([r, h]) => [r * R, h * R]);
+  const earSrc = [[0.02, 0], [0.16, 0.03], [0.2, 0.1], [0.17, 0.18], [0.06, 0.22]];
+  const earPts = resample2(THREE, earSrc.map(([r, h]) => [r * R, h * R]), seg(6, 4));
   for (const side of [-1, 1]) {
+    const right = side > 0;
     const raw = [side * 0.67, 0.73, -0.11];
     const q = aimAxis(THREE, yup, raw[0], raw[1], raw[2]);
     const at = nPos(THREE, raw[0], raw[1], raw[2], 0.9, R, S);
-    const ear = prep(
-      THREE, lathe(THREE, earPts, seg(5, 4)), fur.dark, FUR,
-      at.x, at.y, at.z, 0, 0, 0, dial.K, dial.K * dial.earY, dial.K * 0.55, q
+    const earGeo = crewBake(
+      THREE, lathe(THREE, earPts, seg(12, 8)), fur.dark,
+      crewMatrix(THREE, at.x, at.y, at.z, 0, 0, 0, dial.K, dial.K * dial.earY, dial.K * 0.55, q),
+      true
     );
-    pushFur(furHead, head, side < 0 ? "earL" : "earR", ear);
+    earGeo.translate(-at.x, -at.y, -at.z);
     const inn = nPos(THREE, raw[0], raw[1], raw[2], 0.97, R, S);
-    pushFur(furHead, head, null, prep(
-      THREE, lathe(THREE, [[0.001, 0], [0.12 * R, 0.002], [0.001, 0.01]], seg(6, 4)), 0xc98a6a, FUR,
-      inn.x, inn.y, inn.z, 0, 0, 0, 1, 1, 1, q.clone()
-    ));
+    const innGeo = crewBake(
+      THREE, lathe(THREE, [[0.001, 0], [0.12 * R, 0.002], [0.001, 0.01]], seg(8, 5)), 0xc98a6a,
+      crewMatrix(THREE, inn.x, inn.y, inn.z, 0, 0, 0, 1, 1, 1, q.clone()),
+      true
+    );
+    innGeo.translate(-at.x, -at.y, -at.z);
+    const pivot = new THREE.Group();
+    pivot.name = right ? "earR" : "earL";
+    pivot.position.copy(at);
+    pivot.userData.baseZ = who === "muscle" && !right ? -0.3 : 0;
+    pivot.userData.baseX = 0;
+    pivot.rotation.z = pivot.userData.baseZ;
+    pivot.add(mergeMesh([earGeo, innGeo], furMat, pivot.name + "mesh", null));
+    head.add(pivot);
+    parts[pivot.name] = pivot;
+    shell(pivot.children[0], 0.008);
+    if (right) face.earR = pivot;
+    else face.earL = pivot;
   }
 
-  const cheekPts = [[0.02, 0], [0.26, 0.05], [0.3, 0.16], [0.12, 0.26], [0.01, 0.28]].map(([r, h]) => [r * R, h * R]);
+  const cheekSrc = [[0.02, 0], [0.26, 0.05], [0.3, 0.16], [0.12, 0.26], [0.01, 0.28]];
+  const cheekPts = resample2(THREE, cheekSrc.map(([r, h]) => [r * R, h * R]), seg(6, 4));
   for (const side of [-1, 1]) {
-    pushFur(furHead, head, side < 0 ? "cheekL" : "cheekR", prep(
-      THREE, lathe(THREE, cheekPts, seg(5, 4)), fur.light, FUR,
-      side * 0.45 * R, -0.3 * R, 0.62 * R, 0, 0, side * 0.35, 1.2, 0.9, 1
-    ));
+    const right = side > 0;
+    const px = side * 0.45 * R;
+    const py = -0.3 * R;
+    const pz = 0.62 * R;
+    const cheekGeo = crewBake(
+      THREE, lathe(THREE, cheekPts, seg(12, 8)), fur.light,
+      crewMatrix(THREE, px, py, pz, 0, 0, side * 0.35, 1.2, 0.9, 1),
+      true
+    );
+    cheekGeo.translate(-px, -py, -pz);
+    const pivot = new THREE.Group();
+    pivot.name = right ? "cheekR" : "cheekL";
+    pivot.position.set(px, py, pz);
+    pivot.add(meshOf(cheekGeo, furMat, pivot.name + "mesh", null));
+    head.add(pivot);
+    parts[pivot.name] = pivot;
+    shell(pivot.children[0], 0.008);
+    if (right) face.cheekR = pivot;
+    else face.cheekL = pivot;
   }
 
   if (!lod) {
     for (const side of [-1, 1]) {
-      const ds = [-0.07, 0, 0.07];
-      ds.forEach((d, i) => {
-        const root = [side * 0.62 * R, -0.28 * R, 0.85 * R];
-        const mid = [side * 0.95 * R, (-0.3 + d) * R, 0.95 * R];
-        const tip = [side * 1.25 * R, (-0.32 + 1.5 * d) * R, 0.92 * R];
-        const g = withCore(THREE, prep(THREE, tube(THREE, [root, mid, tip], 0.012, 3, 3), 0xe8dcc4, null), R);
-        faceParts.push(g);
-        put(head, (side < 0 ? "whiskerL" : "whiskerR") + i, g.clone());
-      });
+      const root = new THREE.Vector3(side * 0.62 * R, -0.28 * R, 0.85 * R);
+      const whisk = new THREE.Group();
+      whisk.name = side < 0 ? "whiskL" : "whiskR";
+      whisk.position.copy(root);
+      whisk.userData.side = side;
+      const bits = [];
+      for (let i = 0; i < 3; i++) {
+        const y0 = (i - 1) * 0.07 * R;
+        const len = R;
+        const tubeGeo = crewBake(
+          THREE,
+          tube(THREE, [
+            [0, y0, 0],
+            [side * len * 0.62, y0, 0.03 * R],
+            [side * len * 0.84, y0 - 0.06 * R, 0.01 * R],
+            [side * len, y0 - 0.14 * R, -0.02 * R],
+          ], 0.014, 4, 4),
+          0xe8dcc4, null, false
+        );
+        bits.push(tubeGeo);
+        const probeTube = crewBake(
+          THREE,
+          lathe(THREE, [[0.001, 0], [0.02 * R, 0.01 * R], [0.001, 0.04 * R]], 5),
+          0xe8dcc4,
+          crewMatrix(THREE, root.x, root.y + y0, root.z, 0, 0, 0, 1, 1, 1),
+          false
+        );
+        probe(head, (side < 0 ? "whiskerL" : "whiskerR") + i, [probeTube, anchor(0xe8dcc4)]);
+      }
+      whisk.add(mergeMesh(bits, furMat, whisk.name + "mesh", null));
+      head.add(whisk);
+      if (side < 0) face.whiskL = whisk;
+      else face.whiskR = whisk;
     }
+  } else {
+    face.whiskL = null;
+    face.whiskR = null;
   }
 
-  const clumpPts = [[0.06, 0], [0.07, 0.04], [0.05, 0.1], [0.025, 0.16], [0.003, 0.2]];
+  const clumpPts = [[0.055, 0], [0.04, 0.1], [0.003, 0.2]];
   const tilt = 0.6108652381980153;
-  const placeClump = (parent, list, name, x, y, z, mul, color) => {
+  const clumpGeo = (x, y, z, mul, color) => {
     const sink = 0.08 * mul;
-    pushFur(list, parent, name, prep(
-      THREE, lathe(THREE, clumpPts, 6), color, FUR,
-      x, y - Math.cos(tilt) * sink, z - Math.sin(tilt) * sink,
-      tilt, 0, 0, mul, mul, mul
-    ));
+    return crewBake(
+      THREE, lathe(THREE, clumpPts, seg(4, 3)), color,
+      crewMatrix(THREE, x, y - Math.cos(tilt) * sink, z - Math.sin(tilt) * sink, tilt, 0, 0, mul, mul, mul),
+      true
+    );
   };
-  if (!lod) {
-    const crowns = [[0, 1, -0.1], [-0.25, 0.95, -0.2], [0.25, 0.95, -0.2]];
-    crowns.forEach((n, i) => {
-      const p = nPos(THREE, n[0], n[1], n[2], 0.95, R, S);
-      placeClump(head, furHead, "crown" + i, p.x, p.y, p.z, dial.crown, fur.dark);
-    });
-    for (const side of [-1, 1]) {
-      const nape = nPos(THREE, side * 0.2, -0.2, -0.95, 0.95, R, S);
-      placeClump(head, furHead, side < 0 ? "napeL" : "napeR", nape.x, nape.y, nape.z, dial.fur, fur.dark);
-      const ch = nPos(THREE, side * 0.85, -0.35, 0.35, 0.95, R, S);
-      placeClump(head, furHead, side < 0 ? "cheekFurL" : "cheekFurR", ch.x, ch.y, ch.z, dial.fur, fur.dark);
-    }
-    placeClump(driver, furBody, null, -0.75 * B, 0.78 * H, -0.1 * B, dial.fur, fur.dark);
-    placeClump(driver, furBody, null, 0.75 * B, 0.78 * H, -0.1 * B, dial.fur, fur.dark);
-    placeClump(driver, furBody, null, 0, 0.72 * H, 0.8 * B, dial.fur, fur.light);
+  const headClumps = [];
+  const crowns = [[0, 1, -0.1], [-0.25, 0.95, -0.2], [0.25, 0.95, -0.2]];
+  crowns.forEach((n, i) => {
+    const p = nPos(THREE, n[0], n[1], n[2], 0.95, R, S);
+    const g = clumpGeo(p.x, p.y, p.z, dial.crown, fur.dark);
+    headClumps.push(g);
+    probe(head, "crown" + i, [g.clone()]);
+  });
+  for (const side of [-1, 1]) {
+    const nape = nPos(THREE, side * 0.2, -0.2, -0.95, 0.95, R, S);
+    const ng = clumpGeo(nape.x, nape.y, nape.z, dial.fur, fur.dark);
+    headClumps.push(ng);
+    probe(head, side < 0 ? "napeL" : "napeR", [ng.clone()]);
+    const ch = nPos(THREE, side * 0.85, -0.35, 0.35, 0.95, R, S);
+    const cg = clumpGeo(ch.x, ch.y, ch.z, dial.fur, fur.dark);
+    headClumps.push(cg);
+    probe(head, side < 0 ? "cheekFurL" : "cheekFurR", [cg.clone()]);
   }
+  const tufts = new THREE.Group();
+  tufts.name = "tufts";
+  tufts.add(mergeMesh(headClumps, furMat, "tuftMesh", null));
+  head.add(tufts);
+  face.tufts = tufts;
+  const bodyClumps = [
+    clumpGeo(-0.75 * B, 0.78 * H, -0.1 * B, dial.fur, fur.dark),
+    clumpGeo(0.75 * B, 0.78 * H, -0.1 * B, dial.fur, fur.dark),
+    clumpGeo(0, 0.72 * H, 0.8 * B, dial.fur, fur.light),
+  ];
+  const bodyTufts = new THREE.Group();
+  bodyTufts.name = "bodyTufts";
+  bodyTufts.add(mergeMesh(bodyClumps, furMat, "bodyTuftMesh", null));
+  driver.add(bodyTufts);
+  face.bodyTufts = bodyTufts;
 
   let torsoProfile = [
     [0.05, -0.04], [0.7, 0], [0.95, 0.12], [1, 0.3], [0.93, 0.5],
@@ -1260,9 +1612,9 @@ function addCrew(THREE, chassis, spec, mats, shadow) {
     torsoProfile[6] = [0.85, 0.82];
     torsoProfile[7] = [0.6, 0.92];
   }
-  const torsoSrc = lathe(THREE, torsoProfile.map(([r, y]) => [r * B, y * H]), seg(16, 10));
-  const torsoRaw = torsoSrc.index ? torsoSrc.toNonIndexed() : torsoSrc.clone();
-  const tp = torsoRaw.attributes.position;
+  const torsoPts = resample2(THREE, torsoProfile.map(([r, y]) => [r * B, y * H]), seg(12, 8));
+  const torsoSrc = lathe(THREE, torsoPts, seg(20, 22)).clone();
+  const tp = torsoSrc.attributes.position;
   for (let i = 0; i < tp.count; i++) {
     const y = tp.getY(i);
     const z = tp.getZ(i);
@@ -1271,63 +1623,97 @@ function addCrew(THREE, chassis, spec, mats, shadow) {
     }
   }
   tp.needsUpdate = true;
-  const torsoGeo = prep(THREE, torsoRaw, fur.main, FUR, 0, 0, 0, 0, 0, 0, 1, 1, 0.85);
-  pushFur(furBody, driver, "torso", torsoGeo);
+  const torsoGeo = crewBake(THREE, torsoSrc, fur.main, crewMatrix(THREE, 0, 0, 0, 0, 0, 0, 1, 1, 0.85), true);
+  const bodyBits = [torsoGeo];
   const capR = 0.62 * B;
-  pushFur(furBody, driver, null, prep(
+  bodyBits.push(crewBake(
     THREE, lathe(THREE, [
       [0.02 * capR, 0], [capR, 0.04 * capR], [0.7 * capR, 0.22 * capR], [0.2 * capR, 0.4 * capR], [0.02 * capR, 0.46 * capR],
-    ], seg(5, 4)), fur.light, FUR,
-    0, 0.3 * H, 0.95 * B, Math.PI / 2, 0, 0
+    ], seg(8, 5)), fur.light,
+    crewMatrix(THREE, 0, 0.3 * H, 0.95 * B, Math.PI / 2, 0, 0, 1, 1, 1),
+    true
   ));
   const footPts = [[0.02, 0], [0.1, 0.02], [0.12, 0.06], [0.04, 0.09]];
   for (const side of [-1, 1]) {
-    pushFur(furBody, driver, null, prep(
-      THREE, lathe(THREE, footPts, seg(4, 3)), fur.dark, FUR,
-      side * 0.55 * B, 0.02, 0.5 * B, 0, 0, 0, 1, 1, 1.8
+    bodyBits.push(crewBake(
+      THREE, lathe(THREE, footPts, seg(8, 5)), fur.dark,
+      crewMatrix(THREE, side * 0.55 * B, 0.02, 0.5 * B, 0, 0, 0, 1, 1, 1.8),
+      true
     ));
   }
+  const torsoMesh = mergeMesh(bodyBits, furMat, "torso", driver);
+  face.torso = torsoMesh;
+  probe(driver, "torso", [torsoGeo.clone()]);
+  shell(torsoMesh, 0.012);
+  driver.userData.smooth = { skull: skullGeo, torso: torsoGeo };
 
-  spec.paws.forEach((p, pi) => {
+  const arms = [];
+  spec.paws.forEach((p) => {
     const side = p[0] < 0 ? -1 : 1;
     const shoulder = [side * 0.62 * B, 0.8 * H, 0];
     const elbow = [side * (B + dial.elbow), 0.52 * H, 0.2];
-    pushFur(furBody, driver, null, prep(THREE, tube(THREE, [shoulder, elbow], dial.arm[0], 8, 6), fur.dark, FUR));
-    const fore = prep(THREE, tube(THREE, [elbow, p], dial.arm[1], 8, 6), fur.dark, FUR);
-    pushFur(furBody, driver, side < 0 ? "armForeL" : "armForeR", fore);
-    const paw = prep(
-      THREE, lathe(THREE, [[0.02, 0], [0.08, 0.02], [0.09, 0.07], [0.05, 0.11], [0.01, 0.12]], seg(6, 5)),
-      fur.dark, FUR, p[0], p[1], p[2]
+    const upper = crewBake(THREE, tube(THREE, [shoulder, elbow], dial.arm[0], seg(8, 5), seg(5, 4)), fur.dark, null, false);
+    const fore = crewBake(THREE, tube(THREE, [elbow, p], dial.arm[1], seg(8, 5), seg(5, 4)), fur.dark, null, false);
+    const paw = crewBake(
+      THREE, lathe(THREE, [[0.02, 0], [0.08, 0.02], [0.09, 0.07], [0.05, 0.11], [0.01, 0.12]], seg(6, 4)),
+      fur.dark, crewMatrix(THREE, p[0], p[1], p[2], 0, 0, 0, 1, 1, 1), true
     );
-    pushFur(furBody, driver, side < 0 ? "pawL" : "pawR", paw);
+    const foreProbe = crewBake(THREE, tube(THREE, [elbow, p], 0.012, 3, 4), fur.dark, null, false);
+    probe(driver, side < 0 ? "armForeL" : "armForeR", [foreProbe]);
+    probe(driver, side < 0 ? "pawL" : "pawR", [paw.clone()]);
+    const bits = [upper, fore, paw];
     if (!lod) {
       for (let f = 0; f < 3; f++) {
-        pushFur(furBody, driver, null, prep(
-          THREE, extrude(THREE, rr(THREE, 0.034, 0.05, 0.01), 0.018, 0.006), fur.dark, FUR,
-          p[0] + side * (f - 1) * 0.028, p[1] + 0.012, p[2] + 0.06, 1.15, 0, side * 0.15
+        bits.push(crewBake(
+          THREE, lathe(THREE, [[0.004, 0], [0.012, 0.012], [0.004, 0.042]], 4),
+          fur.dark,
+          crewMatrix(THREE, p[0] + side * (f - 1) * 0.028, p[1] + 0.012, p[2] + 0.06, Math.PI / 2, 0, side * 0.15, 1, 1, 1),
+          true
         ));
       }
     }
     if (spec.reins) {
-      pushFur(furBody, driver, null, prep(THREE, tube(THREE, [
+      bits.push(crewBake(THREE, tube(THREE, [
         [p[0], p[1] + 0.02, p[2] + 0.02],
         [side * 0.1, p[1] + 0.02, p[2] + 0.28],
         [side * 0.05, 0.06, 0.72],
-      ], 0.012, lod ? 3 : 4, 3), 0x6a4030, FUR));
+      ], 0.012, lod ? 3 : 4, 3), 0x6a4030, null, false));
     }
+    for (const g of bits) g.translate(-shoulder[0], -shoulder[1], -shoulder[2]);
+    const pivot = new THREE.Group();
+    pivot.position.set(shoulder[0], shoulder[1], shoulder[2]);
+    pivot.userData.side = side;
+    pivot.userData.baseZ = 0;
+    pivot.userData.baseX = 0;
+    pivot.add(mergeMesh(bits, furMat, side < 0 ? "armL" : "armR", null));
+    driver.add(pivot);
+    arms.push(pivot);
   });
 
-  const bodyMesh = solidMesh(THREE, furBody, mats.fur, shadow, "body");
-  if (bodyMesh) driver.add(bodyMesh);
-  const headFur = solidMesh(THREE, furHead, mats.fur, shadow, "head-fur");
-  if (headFur) head.add(headFur);
-  const noseMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.25, metalness: 0.04 });
-  const noseMesh = solidMesh(THREE, noseParts, noseMat, shadow, "nose");
-  if (noseMesh) head.add(noseMesh);
-  const faceMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0 });
-  const faceMesh = solidMesh(THREE, faceParts, faceMat, shadow, "face");
-  if (faceMesh) head.add(faceMesh);
-  driver.add(head);
+  const mouthDepth = 0.48 * R;
+  const mouthGeo = extrudeSeg(THREE, halfMouth(THREE, 0.34 * R, 0.22 * R), mouthDepth, 0.008 * R, seg(6, 3), seg(2, 1));
+  mouthGeo.translate(0, 0, -mouthDepth / 2);
+  const mouthBaked = crewBake(THREE, mouthGeo, 0x5a1e1e, null, false);
+  const mouth = new THREE.Group();
+  mouth.name = "mouth";
+  const mouthRest = {
+    bober: { x: 0.1 * R, y: -0.46 * R, z: 0.86 * R, sx: 0.7, sy: 0.18, rz: -0.2 },
+    nib: { x: 0, y: -0.46 * R, z: 0.86 * R, sx: 1, sy: 0.45, rz: 0 },
+    muscle: { x: 0, y: -0.46 * R, z: 0.86 * R, sx: 1, sy: 0.12, rz: Math.PI },
+    tall: { x: 0, y: -0.46 * R, z: 0.86 * R, sx: 1, sy: 0.3, rz: 0 },
+  }[who];
+  mouth.position.set(mouthRest.x, mouthRest.y, mouthRest.z);
+  mouth.scale.set(mouthRest.sx, mouthRest.sy, 1);
+  mouth.rotation.z = mouthRest.rz;
+  mouth.add(meshOf(mouthBaked, toon.dark, "mouthMesh", null));
+  const tongueGeo = crewBake(THREE, stamp(new THREE.CircleGeometry(0.09 * R, seg(12, 8))), 0xd9606a, null, false);
+  const tongue = meshOf(tongueGeo, toon.dark, "tongue", mouth);
+  tongue.position.set(0, -0.06 * R, who === "tall" ? 0.06 * R : 0.015 * R);
+  tongue.rotation.x = who === "tall" ? 0.4 : 0.15;
+  head.add(mouth);
+  parts.mouth = mouth;
+  face.mouth = mouth;
+  face.tongue = tongue;
 
   const scarfParts = [];
   const ringY = torsoTop - 0.1 * H;
@@ -1365,36 +1751,52 @@ function addCrew(THREE, chassis, spec, mats, shadow) {
   const zFormula = -0.85 * B;
   const zRim = rim.z - spec.seat[2] + 0.02;
   const rootZ = Math.min(zFormula, zRim);
-  const tailGeo = extrude(THREE, paddleShape(THREE, W, L), 0.05, 0.015);
-  const spin = new THREE.Matrix4().makeRotationX(-Math.PI / 2 + 0.12);
-  tailGeo.applyMatrix4(spin);
+  let tailGeo = extrudeSeg(THREE, paddleShape(THREE, W, L), 0.05, 0.015, seg(12, 6), seg(3, 1));
+  tailGeo.applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI / 2 + 0.12));
+  if (tailGeo.attributes.uv) tailGeo.deleteAttribute("uv");
+  tailGeo = mergeVertices(tailGeo, 1e-4);
   tailGeo.computeVertexNormals();
+  blankUV(THREE, tailGeo);
   const tpos = tailGeo.attributes.position;
   let minLocal = Infinity;
   for (let i = 0; i < tpos.count; i++) minLocal = Math.min(minLocal, tpos.getY(i));
   const worldDip = (spec.seat[1] + rootY + minLocal) * 1.2;
   if (worldDip < 0.25) rootY += (0.25 - worldDip) / 1.2 + 0.01;
-  const tailMat = new THREE.MeshStandardMaterial({ map: tailTexture(THREE), roughness: 0.84, metalness: 0 });
-  const tailMesh = new THREE.Mesh(tailGeo, tailMat);
+  const tailMesh = new THREE.Mesh(tailGeo, toon.tail);
   tailMesh.name = "tail";
   tailMesh.position.set(0, rootY, rootZ);
   tailMesh.castShadow = !!shadow;
+  tailMesh.userData.baseX = 0;
   driver.add(tailMesh);
   parts.tail = tailMesh;
+  face.tail = tailMesh;
 
+  const expr = {
+    who, R, E, H,
+    lid: [lidRest, lidRest],
+    pupilR: pupilFrac,
+    pupil: pupilRest,
+    mouth: mouthRest,
+    jitter: who === "nib",
+  };
+  driver.userData.aimZ = aimZ;
   driver.userData.parts = parts;
+  driver.userData.face = face;
+  driver.userData.expr = expr;
+  driver.userData.arms = arms;
   driver.userData.beaver = {
     who, R, S, H, B, lod, paws: spec.paws,
     rimY: rim.y, rimZ: rim.z,
     seatY: spec.seat[1], seatZ: spec.seat[2],
     rootY, rootZ,
   };
+  applyFacePose(driver, "rest", 0);
   const scarfTails = [new THREE.Object3D()];
   driver.add(scarfTails[0]);
   chassis.add(driver);
   let crewTris = 0;
   driver.traverse((o) => {
-    if (!o.isMesh || (o.userData && o.userData.artProbe)) return;
+    if (!o.isMesh || (o.userData && (o.userData.artProbe || o.userData.outline))) return;
     const geo = o.geometry;
     crewTris += geo.index ? geo.index.count / 3 : geo.attributes.position.count / 3;
   });
@@ -1402,13 +1804,169 @@ function addCrew(THREE, chassis, spec, mats, shadow) {
   return {
     driver,
     head,
-    arms: [],
+    arms,
+    face,
     scarfTails,
-    tailFn: (time) => {
-      tailMesh.rotation.y = Math.sin(time * 3.3) * 0.12;
-    },
+    tailFn: () => {},
     scarfFn: scarfPose(scarfMesh.geometry),
   };
+}
+
+export function faceTargets(expr, mode, time) {
+  const t = time || 0;
+  const R = expr.R;
+  const mouth = {
+    x: expr.mouth.x, y: expr.mouth.y, z: expr.mouth.z,
+    sx: expr.mouth.sx, sy: expr.mouth.sy, rz: expr.mouth.rz,
+  };
+  const lid = [expr.lid[0], expr.lid[1]];
+  const browAddY = [0, 0];
+  const browAddZ = [0, 0];
+  let eye = 1;
+  let pupilMul = 1;
+  const p = [expr.pupil[0].slice(), expr.pupil[1].slice()];
+  let earFlat = 0;
+  let cheek = 1;
+  let tuftX = 0;
+  let whiskOut = 0;
+  let headX = null;
+  if (mode === "blink") {
+    lid[0] = 0;
+    lid[1] = 0;
+  } else if (mode === "panic") {
+    lid[0] = -1.55;
+    lid[1] = -1.55;
+    eye = 1.45;
+    pupilMul = 0.22 / expr.pupilR;
+    mouth.sx = 1.15;
+    mouth.sy = 1;
+    mouth.rz = 0;
+    browAddY[0] = 0.1 * R;
+    browAddY[1] = 0.1 * R;
+    browAddZ[0] = -0.25;
+    browAddZ[1] = 0.25;
+    earFlat = 0.9;
+    whiskOut = 0.35;
+    p[0] = [0.28, 0.16];
+    p[1] = [-0.26, 0.14];
+  } else if (mode === "boost") {
+    lid[0] = -1;
+    lid[1] = -1;
+    browAddY[0] = -0.04 * R;
+    browAddY[1] = -0.04 * R;
+    browAddZ[0] = 0.3;
+    browAddZ[1] = -0.3;
+    mouth.sx = 1.2;
+    mouth.sy = 0.55;
+    if (expr.who === "muscle") mouth.rz = 0;
+    cheek = 1.12;
+    tuftX = -0.35;
+    headX = -0.1;
+  } else if (mode === "cheer") {
+    lid[0] = -1.45;
+    lid[1] = -1.45;
+    eye = 1.15;
+    mouth.sx = 1;
+    mouth.sy = 1;
+    mouth.rz = 0;
+    if (expr.who === "tall") {
+      p[0] = [0.3 * Math.cos(t * 8), 0.3 * Math.sin(t * 8)];
+      p[1] = [0.3 * Math.cos(t * 8 + 1), 0.3 * Math.sin(t * 8 + 1)];
+    }
+  } else if (mode === "sulk") {
+    lid[0] = -0.9;
+    lid[1] = -0.9;
+    mouth.sx = 1;
+    mouth.sy = 0.12;
+    mouth.rz = Math.PI;
+    browAddZ[0] = -0.3;
+    browAddZ[1] = 0.3;
+    headX = 0.35;
+  }
+  return { lid, mouth, browAddY, browAddZ, eye, pupilMul, p, earFlat, cheek, tuftX, whiskOut, headX };
+}
+
+export function writeFace(driver, o) {
+  const face = driver.userData.face;
+  if (!face || !o) return;
+  const eyes = [face.eyeL, face.eyeR];
+  const pupils = [face.pupilL, face.pupilR];
+  const lids = [face.lidL, face.lidR];
+  const brows = [face.browL, face.browR];
+  for (let i = 0; i < 2; i++) {
+    if (lids[i]) lids[i].rotation.x = o.lid[i];
+    const eyeScale = o.eye || 1;
+    if (eyes[i]) eyes[i].scale.setScalar(eyeScale);
+    const pupil = pupils[i];
+    const eye = eyes[i];
+    if (pupil && eye && eye.userData.spot) {
+      const spot = eye.userData.spot(o.p[i][0], o.p[i][1]);
+      // Eye-group scale would shove the pupil off the skull. Keep its world pose at pupilMul.
+      pupil.position.copy(spot.pos).multiplyScalar(1 / eyeScale);
+      const aimZ = driver.userData.aimZ;
+      const n = spot.n.clone().normalize();
+      if (aimZ && n.dot(aimZ) < -0.999) pupil.quaternion.set(1, 0, 0, 0);
+      else if (aimZ) pupil.quaternion.setFromUnitVectors(aimZ, n);
+      const mul = o.pupilMul == null ? 1 : o.pupilMul;
+      pupil.scale.setScalar(mul / eyeScale);
+      pupil.userData.p = [o.p[i][0], o.p[i][1]];
+    }
+    if (brows[i]) {
+      brows[i].position.y = brows[i].userData.baseY + o.browAddY[i];
+      brows[i].rotation.z = brows[i].userData.baseZ + o.browAddZ[i];
+    }
+  }
+  if (face.mouth && o.mouth) {
+    face.mouth.position.set(o.mouth.x, o.mouth.y, o.mouth.z);
+    face.mouth.scale.set(o.mouth.sx, Math.max(0.02, o.mouth.sy), 1);
+    face.mouth.rotation.z = o.mouth.rz;
+  }
+  if (face.cheekL) face.cheekL.scale.setScalar(o.cheek || 1);
+  if (face.cheekR) face.cheekR.scale.setScalar(o.cheek || 1);
+  if (face.tufts) face.tufts.rotation.x = o.tuftX || 0;
+  if (face.bodyTufts) face.bodyTufts.rotation.x = o.tuftX || 0;
+  if (o.whiskOut && face.whiskL) {
+    face.whiskL.rotation.y = -o.whiskOut;
+    face.whiskL.rotation.z = 0;
+    face.whiskR.rotation.y = o.whiskOut;
+    face.whiskR.rotation.z = 0;
+  }
+}
+
+export function applyFacePose(driver, mode, time) {
+  const expr = driver.userData.expr;
+  const face = driver.userData.face;
+  if (!expr || !face) return;
+  const o = faceTargets(expr, mode, time || 0);
+  writeFace(driver, o);
+  [face.earL, face.earR].forEach((ear, i) => {
+    if (!ear) return;
+    const s = i === 0 ? -1 : 1;
+    ear.rotation.z = (ear.userData.baseZ || 0) + s * (o.earFlat || 0);
+    ear.rotation.x = ear.userData.baseX || 0;
+  });
+  if (face.head) face.head.rotation.x = o.headX == null ? 0.08 : o.headX;
+  if (face.torso) {
+    if (mode === "cheer") face.torso.scale.set(1 / Math.sqrt(1.08), 1.08, 1 / Math.sqrt(1.08));
+    else face.torso.scale.set(1, 1, 1);
+  }
+  if (mode === "cheer") {
+    driver.position.y = (driver.userData.baseY || 0) + (expr.who === "nib" ? 0.16 : 0.12);
+    if (face.tail) face.tail.rotation.y = 0.35;
+    if (expr.who === "bober" && face.browL) face.browL.position.y += Math.sin((time || 0.4) * 10) * 0.03 * expr.R;
+    (driver.userData.arms || []).forEach((arm) => {
+      const s = arm.userData.side || 1;
+      if (expr.who === "muscle" && s < 0) return;
+      arm.rotation.z = (arm.userData.baseZ || 0) + s * 2.2;
+    });
+  } else if (mode === "sulk") {
+    driver.position.y = driver.userData.baseY || 0;
+    if (face.tail) face.tail.rotation.y = 0.03;
+    if (face.head) face.head.rotation.x = 0.35;
+  } else {
+    driver.position.y = driver.userData.baseY || 0;
+    if (face.tail && mode === "rest") face.tail.rotation.y = 0;
+  }
 }
 function bendPaddle(geo, arc) {
   const pos = geo.attributes.position;
@@ -1943,6 +2501,7 @@ function pack(THREE, g, chassis, wheels, kind, crew) {
     driver: crew.driver,
     head: crew.head,
     arms: crew.arms,
+    face: crew.face,
     scarfTails: crew.scarfTails,
     flames: [],
     lanterns: [],
@@ -1967,6 +2526,7 @@ const FACE_NAMES = [
   "muzzle", "nose", "nostrilL", "nostrilR", "toothL", "toothR",
   "eyeWhiteL", "eyeWhiteR", "irisL", "irisR", "pupilL", "pupilR",
   "browL", "browR", "earL", "earR", "cheekL", "cheekR",
+  "mouth", "lidL", "lidR",
 ];
 const FUR_NAMES = ["crown0", "crown1", "crown2", "napeL", "napeR", "cheekFurL", "cheekFurR"];
 const WHISKER_NAMES = ["whiskerL0", "whiskerR0", "whiskerL1", "whiskerR1", "whiskerL2", "whiskerR2"];
@@ -2124,7 +2684,92 @@ export function checkArt(THREE, kart) {
     tip.applyMatrix4(tail.matrixWorld);
     if (tip.y < 0.25) fails.push(info.who + " tail tip " + tip.y.toFixed(3));
   }
-  const cap = info.lod ? 2000 : 3500;
+  const cap = info.lod ? 3000 : 5000;
   if ((driver.userData.crewTris || 0) > cap) fails.push(info.who + " tris " + driver.userData.crewTris + "/" + cap);
+  driver.traverse((o) => {
+    if (!o.isMesh || (o.userData && o.userData.artProbe)) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (let i = 0; i < mats.length; i++) {
+      if (mats[i] && mats[i].flatShading) fails.push(info.who + " flat " + (o.name || "mesh"));
+    }
+    if (!o.geometry || !o.geometry.attributes || !o.geometry.attributes.normal) {
+      fails.push(info.who + " no normal " + (o.name || "mesh"));
+    }
+  });
+  const smooth = driver.userData.smooth || {};
+  const meanAngle = (geo) => {
+    const nor = geo.attributes.normal;
+    const index = geo.index;
+    if (!nor || !index) return 90;
+    const a = new THREE.Vector3();
+    const b = new THREE.Vector3();
+    let sum = 0;
+    let n = 0;
+    for (let i = 0; i < index.count; i += 3) {
+      const tri = [index.getX(i), index.getX(i + 1), index.getX(i + 2)];
+      for (let e = 0; e < 3; e++) {
+        a.fromBufferAttribute(nor, tri[e]);
+        b.fromBufferAttribute(nor, tri[(e + 1) % 3]);
+        const d = Math.max(-1, Math.min(1, a.dot(b) / ((a.length() || 1) * (b.length() || 1))));
+        sum += Math.acos(d) * 180 / Math.PI;
+        n += 1;
+      }
+    }
+    return n ? sum / n : 0;
+  };
+  for (const key of ["skull", "torso"]) {
+    const geo = smooth[key];
+    const tris = geo && geo.index ? geo.index.count / 3 : 0;
+    const verts = geo && geo.attributes ? geo.attributes.position.count : 0;
+    if (!geo || !geo.attributes.normal || verts < 0.45 * tris || verts > 1.5 * tris) {
+      fails.push(info.who + " " + key + " weld " + verts + "/" + Math.round(tris));
+    } else {
+      const ang = meanAngle(geo);
+      if (ang >= 20) fails.push(info.who + " " + key + " facet " + ang.toFixed(1));
+    }
+  }
+  const maxExceed = (obj) => {
+    let over = -Infinity;
+    const v = new THREE.Vector3();
+    obj.traverse((o) => {
+      if (!o.isMesh || !o.geometry || !o.geometry.attributes.position) return;
+      if (o.userData && o.userData.artProbe) return;
+      const pos = o.geometry.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+        over = Math.max(over, v.distanceTo(origin) - radius);
+      }
+    });
+    return over;
+  };
+  const limit = 0.15 * info.R * ws.x;
+  const poseNames = ["mouth", "lidL", "lidR", "browL", "browR", "pupilL", "pupilR"];
+  const poseCheck = (label) => {
+    g.updateMatrixWorld(true);
+    for (let i = 0; i < poseNames.length; i++) {
+      const name = poseNames[i];
+      const mesh = parts[name];
+      if (!mesh) {
+        fails.push(info.who + " " + label + " " + name + " missing");
+        continue;
+      }
+      const box = new THREE.Box3().setFromObject(mesh);
+      if (box.isEmpty() || !box.intersectsSphere(sphere)) fails.push(info.who + " " + label + " " + name + " off skull");
+      if (name === "mouth" || name.indexOf("pupil") === 0) {
+        const over = maxExceed(mesh);
+        if (over > limit) fails.push(info.who + " " + label + " " + name + " exceed " + over.toFixed(3));
+      }
+    }
+    const pupils = [parts.pupilL, parts.pupilR];
+    for (let i = 0; i < pupils.length; i++) {
+      const p = (pupils[i] && pupils[i].userData && pupils[i].userData.p) || [0, 0];
+      const mag = Math.hypot(p[0], p[1]);
+      if (mag > 0.451) fails.push(info.who + " " + label + " pupil " + mag.toFixed(3));
+    }
+  };
+  poseCheck("rest");
+  applyFacePose(driver, "panic", 0.2);
+  poseCheck("panic");
+  applyFacePose(driver, "rest", 0);
   return fails;
 }

@@ -370,6 +370,24 @@ button:focus-visible {
 }
 #artcheck .pass strong { color: #b6e3a8; }
 #artcheck .fail strong { color: #ffb4a8; }
+#artcheck .art-poses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+#artcheck .art-poses figure {
+  width: 120px;
+  margin: 0;
+}
+#artcheck .art-poses img {
+  width: 120px;
+  height: 90px;
+}
+#artcheck .art-poses figcaption {
+  font-size: 12px;
+  line-height: 1.2;
+}
 #build-tag {
   position: absolute;
   top: auto;

@@ -21,10 +21,10 @@ import {
   setDriver as chooseDriver,
   swapTrack,
   writeSave,
-} from "./sim.js?v=gd46";
-import { createWorld } from "./world.js?v=gd46";
-import { createSfx } from "./audio.js?v=gd46";
-import { buildKart, checkArt } from "./racers.js?v=gd46";
+} from "./sim.js?v=gd47";
+import { createWorld } from "./world.js?v=gd47";
+import { createSfx } from "./audio.js?v=gd47";
+import { buildKart, checkArt, applyFacePose } from "./racers.js?v=gd47";
 
 const app = document.getElementById("app");
 const stage = document.getElementById("stage");
@@ -1313,7 +1313,9 @@ function runArtcheck() {
   const params = new URLSearchParams(location.search);
   if (params.get("artcheck") !== "1") return;
   const ids = ["bober", "nib", "muscle", "tall"];
+  const poses = ["rest", "blink", "panic", "boost", "cheer", "sulk"];
   const shots = [];
+  const poseShots = [];
   const reports = [];
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
   renderer.setSize(960, 720);
@@ -1344,6 +1346,13 @@ function runArtcheck() {
       cam.updateProjectionMatrix();
       renderer.render(artScene, cam);
       shots.push(renderer.domElement.toDataURL("image/png"));
+      for (const pose of poses) {
+        applyFacePose(kart.driver, pose, 0.4);
+        kart.group.updateMatrixWorld(true);
+        renderer.render(artScene, cam);
+        poseShots.push({ id, pose, src: renderer.domElement.toDataURL("image/png") });
+      }
+      applyFacePose(kart.driver, "rest", 0);
       artScene.remove(kart.group);
     }
   }
@@ -1399,6 +1408,19 @@ function runArtcheck() {
     line.append(img, text);
     overlay.appendChild(line);
   }
+  const poseWrap = document.createElement("div");
+  poseWrap.className = "art-poses";
+  for (const shot of poseShots) {
+    const fig = document.createElement("figure");
+    const poseImg = document.createElement("img");
+    poseImg.alt = shot.id + " " + shot.pose;
+    poseImg.src = shot.src;
+    const cap = document.createElement("figcaption");
+    cap.textContent = shot.id + " " + shot.pose;
+    fig.append(poseImg, cap);
+    poseWrap.appendChild(fig);
+  }
+  overlay.appendChild(poseWrap);
   document.body.appendChild(overlay);
   if (fails.length) console.error("ARTCHECK", fails.join(" | "));
 }

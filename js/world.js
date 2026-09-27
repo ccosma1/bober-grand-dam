@@ -1,5 +1,5 @@
-import { ROSTER, frameAt, forward } from "./sim.js?v=gd46";
-import { buildKart } from "./racers.js?v=gd46";
+import { ROSTER, frameAt, forward } from "./sim.js?v=gd47";
+import { buildKart, faceTargets, writeFace } from "./racers.js?v=gd47";
 
 function canvasTex(THREE, draw, w, h, repeat) {
   const c = document.createElement("canvas");
@@ -1050,6 +1050,7 @@ export function createWorld(THREE, track) {
     view.lanterns = src.lanterns || [];
     view.rear = src.rear;
     view.pose = src.pose;
+    view.face = src.face || null;
     for (const w of view.wheels || []) w.spin = spin;
   }
 
@@ -1324,7 +1325,11 @@ export function createWorld(THREE, track) {
     const sus = view.sus || (view.sus = { y: 0, pitch: 0, roll: 0, land: 0 });
     const rate = 1 - Math.exp(-Math.max(0.001, dt) * 8);
     const bump = Math.sin((k.x + k.z) * 0.85) * Math.min(0.03, speed * 0.0014);
+    view.bumpDelta = bump - (view.bumpWas || 0);
+    view.bumpWas = bump;
+    const landBefore = sus.land;
     if ((view.airWas || 0) > 0.12 && (k.air || 0) === 0 && k.grounded) sus.land = 1;
+    view.landed = sus.land > 0.9 && landBefore <= 0.9;
     view.airWas = k.air || 0;
     sus.land = Math.max(0, sus.land - dt * 2.4);
     const landY = -Math.sin(sus.land * Math.PI) * 0.11;
@@ -1346,22 +1351,214 @@ export function createWorld(THREE, track) {
       view.chassis.rotation.y = sus.yaw + wobble;
       view.chassis.scale.set(1 + squash * 0.02, 1 - squash * 0.07, 1 + squash * 0.03);
     }
+    const face = view.face;
+    const expr = view.driver && view.driver.userData.expr;
+    const dtC = Math.min(0.05, Math.max(0, dt || 0));
+    const anim = view.anim || (view.anim = {
+      hp: 0, hv: 0, sq: 1, sqv: 0, lagY: 0, panicT: 0,
+      blinkT: 2 + Math.random() * 3, blink: 0, earV: [0, 0], earP: [0, 0],
+      cheer: 0, boostW: 0, prevHit: 0, prevRoll: 0, spun: 0,
+      p: expr ? [expr.pupil[0].slice(), expr.pupil[1].slice()] : [[0, 0], [0, 0]],
+      v: [[0, 0], [0, 0]],
+    });
+    const mix = (a, b, w) => a + (b - a) * w;
+    const spring = (x, v, target, k, d) => {
+      const nv = v + (k * (target - x) - d * v) * dtC;
+      return [x + nv * dtC, nv];
+    };
+    if (view.landed) anim.sqv -= 3.2 * Math.min(1, speed / 20);
+    anim.sqv -= 1.2 * Math.abs(view.bumpDelta || 0) / 0.05;
+    const sprung = spring(anim.sq, anim.sqv, k.grounded ? 1 : 1.1, 180, 12);
+    anim.sq = Math.max(0.72, Math.min(1.18, sprung[0]));
+    anim.sqv = sprung[1];
+    const place = k.place || 0;
+    const podium = race.phase === "podium";
+    const celebrating = podium && place >= 1 && place <= 3;
+    const sulking = podium && place >= 4;
+    const cheerTarget = celebrating || sulking ? 1 : 0;
+    anim.cheer = Math.max(0, Math.min(1, anim.cheer + (cheerTarget ? 1 : -1) * dtC / 0.4));
+    const hopF = expr && expr.who === "nib" ? 7.8 : 6;
+    const hopA = expr && expr.who === "nib" ? 0.252 : 0.18;
+    if (celebrating && anim.cheer > 0) {
+      const hopN = Math.abs(Math.sin(race.time * hopF));
+      anim.sq = mix(anim.sq, 0.85 + hopN * 0.23, anim.cheer);
+    }
+    const hit = k.hitMarkT || 0;
+    if (hit > (anim.prevHit || 0) + 0.2) anim.panicT = 1;
+    anim.prevHit = hit;
+    if (anim.panicT > 0) anim.panicT = Math.max(0, anim.panicT - dtC);
+    const panicW = Math.min(1, anim.panicT / 0.25);
+    const boostOn = (k.boost || 0) > 0.05 ? 1 : 0;
+    anim.boostW += (boostOn - anim.boostW) * (1 - Math.exp(-10 * dtC));
     if (view.driver) {
       const baseY = view.driver.userData.baseY || 0;
+      const hop = celebrating ? Math.abs(Math.sin(race.time * hopF)) * hopA * anim.cheer : 0;
       view.driver.rotation.z = stunned ? Math.sin(race.time * 16) * 0.28 : steer * ((12 * Math.PI) / 180);
       view.driver.rotation.y = stunned ? Math.sin(race.time * 8) * 0.2 : steer * ((4 * Math.PI) / 180);
-      view.driver.position.y = baseY + Math.sin(race.time * 10 + speed) * Math.min(0.02, speed * 0.0008);
+      view.driver.position.y = baseY + Math.sin(race.time * 10 + speed) * Math.min(0.02, speed * 0.0008) + hop;
     }
-    if (view.head) {
+    if (face && face.torso) {
+      const inv = 1 / Math.sqrt(anim.sq);
+      face.torso.scale.set(inv, anim.sq, inv);
+    }
+    if (expr && face) {
+      const who = expr.who;
+      if (anim.blink > 0) anim.blink = Math.max(0, anim.blink - dtC);
+      else {
+        anim.blinkT -= dtC;
+        if (anim.blinkT <= 0) {
+          anim.blink = 0.14;
+          const gap = who === "nib" ? 1.2 + Math.random() * 1.8 : who === "muscle" ? 3 + Math.random() * 4 : 2.2 + Math.random() * 3.3;
+          anim.blinkT = Math.random() < 0.15 ? 0.25 : gap;
+        }
+      }
+      const tri = anim.blink > 0 ? 1 - Math.abs(2 * (anim.blink / 0.14) - 1) : 0;
+      const mixPose = (a, b, w) => ({
+        lid: [mix(a.lid[0], b.lid[0], w), mix(a.lid[1], b.lid[1], w)],
+        mouth: {
+          x: mix(a.mouth.x, b.mouth.x, w), y: mix(a.mouth.y, b.mouth.y, w), z: mix(a.mouth.z, b.mouth.z, w),
+          sx: mix(a.mouth.sx, b.mouth.sx, w), sy: mix(a.mouth.sy, b.mouth.sy, w), rz: mix(a.mouth.rz, b.mouth.rz, w),
+        },
+        browAddY: [mix(a.browAddY[0], b.browAddY[0], w), mix(a.browAddY[1], b.browAddY[1], w)],
+        browAddZ: [mix(a.browAddZ[0], b.browAddZ[0], w), mix(a.browAddZ[1], b.browAddZ[1], w)],
+        eye: mix(a.eye, b.eye, w),
+        pupilMul: mix(a.pupilMul, b.pupilMul, w),
+        p: a.p,
+        earFlat: mix(a.earFlat, b.earFlat, w),
+        cheek: mix(a.cheek, b.cheek, w),
+        tuftX: mix(a.tuftX, b.tuftX, w),
+        whiskOut: b.whiskOut ? mix(a.whiskOut, b.whiskOut, w) : a.whiskOut,
+        headX: b.headX == null ? a.headX : a.headX == null ? b.headX : mix(a.headX, b.headX, w),
+      });
+      let pose = faceTargets(expr, "rest", race.time);
+      pose = mixPose(pose, faceTargets(expr, "blink", race.time), panicW > 0 ? 0 : tri);
+      pose = mixPose(pose, faceTargets(expr, "boost", race.time), anim.boostW * (1 - panicW));
+      pose = mixPose(pose, faceTargets(expr, "panic", race.time), panicW);
+      if (anim.cheer > 0.001) pose = mixPose(pose, faceTargets(expr, sulking ? "sulk" : "cheer", race.time), anim.cheer);
+      const lateral = ((sus.roll || 0) - (anim.prevRoll || 0)) / Math.max(dtC, 1e-4);
+      const ax = -lateral * 0.04;
+      const ay = anim.sqv * 0.03;
+      anim.prevRoll = sus.roll || 0;
+      for (let i = 0; i < 2; i++) {
+        const rest = expr.pupil[i];
+        let px = anim.p[i][0];
+        let py = anim.p[i][1];
+        let vx = anim.v[i][0];
+        let vy = anim.v[i][1];
+        vx += ax - (px - rest[0]) * 60 * dtC - vx * 4 * dtC;
+        vy += ay - (py - rest[1]) * 60 * dtC - vy * 4 * dtC;
+        px += vx * dtC;
+        py += vy * dtC;
+        if (panicW > 0.05) {
+          px += (Math.random() - 0.5) * 0.35 * panicW;
+          py += (Math.random() - 0.5) * 0.35 * panicW;
+        }
+        if (celebrating && who === "tall") {
+          const spin = faceTargets(expr, "cheer", race.time);
+          px = mix(px, spin.p[i][0], anim.cheer);
+          py = mix(py, spin.p[i][1], anim.cheer);
+        }
+        const mag = Math.hypot(px, py);
+        if (mag > 0.45) {
+          px *= 0.45 / mag;
+          py *= 0.45 / mag;
+          vx *= -0.5;
+          vy *= -0.5;
+        }
+        anim.p[i][0] = px;
+        anim.p[i][1] = py;
+        anim.v[i][0] = vx;
+        anim.v[i][1] = vy;
+        pose.p[i] = [px, py];
+      }
+      writeFace(view.driver, pose);
+      if (view.head) {
+        const bob = Math.sin(race.time * (8 + speed * 0.25)) * Math.min(0.025, speed * 0.0012);
+        const baseHeadY = view.head.userData.baseY || 0;
+        view.head.position.y = baseHeadY + (anim.sq - 1) * expr.H + bob;
+        view.head.position.x = expr.jitter && speed < 3 ? Math.sin(race.time * 37) * 0.006 : 0;
+        if (stunned) {
+          view.head.rotation.y = Math.sin(race.time * 11) * 0.4;
+          view.head.rotation.z = Math.sin(race.time * 14) * 0.2;
+          view.head.rotation.x = 0.08 + Math.sin(race.time * 9) * 0.1;
+        } else {
+          const steerT = steer * 0.55;
+          anim.lagY += (steerT - anim.lagY) * (1 - Math.exp(-6 * dtC));
+          const hp = spring(anim.hp, anim.hv, steerT, 90, 7);
+          anim.hp = hp[0];
+          anim.hv = hp[1];
+          let yaw = anim.hp;
+          if (panicW > 0) yaw = mix(yaw, Math.sin(race.time * 28) * 0.35 * anim.panicT, panicW);
+          if (celebrating && place === 1) {
+            if (anim.spun < Math.PI * 2) anim.spun = Math.min(Math.PI * 2, anim.spun + dtC * 4);
+            yaw += anim.spun;
+          } else if (!celebrating) anim.spun = 0;
+          let pitch = 0.08 - (k.throttle || 0) * 0.06 + (k.braking || 0) * 0.12 + (1 - anim.sq) * 0.8;
+          if (pose.headX != null) {
+            const w = sulking ? anim.cheer : anim.boostW * (1 - panicW);
+            pitch = mix(pitch, pose.headX, w);
+          }
+          view.head.rotation.y = yaw;
+          view.head.rotation.z = -(anim.hp - anim.lagY) * 0.6 + steer * 0.08;
+          view.head.rotation.x = pitch;
+        }
+        if (celebrating && who === "bober" && face.browL) {
+          face.browL.position.y += Math.sin(race.time * 10) * 0.03 * expr.R * anim.cheer;
+        }
+      }
+      [face.earL, face.earR].forEach((ear, i) => {
+        if (!ear) return;
+        const s = i === 0 ? -1 : 1;
+        anim.earV[i] += (anim.sqv * 0.9 + anim.hv * 0.25 * s) * dtC * 60;
+        const ep = spring(anim.earP[i], anim.earV[i], 0, 140, 5);
+        anim.earP[i] = Math.max(-0.6, Math.min(0.6, ep[0]));
+        anim.earV[i] = ep[1];
+        const pip = who === "nib" ? Math.sin(race.time * 31) * 0.04 : 0;
+        const physZ = (ear.userData.baseZ || 0) + anim.earP[i] * s + pip;
+        const panZ = (ear.userData.baseZ || 0) + s * 0.9;
+        ear.rotation.z = mix(physZ, panZ, panicW);
+        ear.rotation.x = (ear.userData.baseX || 0) + anim.earP[i] * 0.4;
+      });
+      [face.whiskL, face.whiskR].forEach((whisk, i) => {
+        if (!whisk) return;
+        const s = whisk.userData.side || (i === 0 ? -1 : 1);
+        const earP = anim.earP[i] || 0;
+        let wy = s * (Math.sin(race.time * (7 + speed * 0.4) + s) * 0.08 + earP * 0.5);
+        if (panicW > 0) wy = mix(wy, s * 0.35, panicW);
+        whisk.rotation.y = wy;
+        whisk.rotation.z = Math.max(-0.25, Math.min(0.25, -speed * 0.004 * s));
+        whisk.rotation.x = mix(0, -0.35, anim.boostW * (1 - panicW));
+      });
+      if (face.tail) {
+        let f = Math.min(7, 2 + speed * 0.18);
+        let amp = 0.1 + Math.min(0.25, speed * 0.012);
+        if (boostOn) amp *= 1.8;
+        if (celebrating) {
+          f = mix(f, 8, anim.cheer);
+          amp = mix(amp, 0.4, anim.cheer);
+        }
+        if (sulking) amp = mix(amp, 0.03, anim.cheer);
+        face.tail.rotation.y = Math.sin(race.time * Math.PI * 2 * f) * amp;
+        face.tail.rotation.x = (face.tail.userData.baseX || 0) - Math.min(0.25, speed * 0.01) + (1 - anim.sq) * 1.2;
+      }
+    } else if (view.head) {
       view.head.rotation.y = stunned ? Math.sin(race.time * 11) * 0.4 : steer * 0.5;
       view.head.rotation.z = stunned ? Math.sin(race.time * 14) * 0.2 : steer * 0.08;
       view.head.rotation.x = 0.08 + (stunned ? Math.sin(race.time * 9) * 0.1 : Math.abs(steer) * 0.16);
     }
     const brace = Math.min(1, Math.abs(steer) * 1.5 + (k.braking || 0));
     for (const arm of view.arms || []) {
-      const wob = stunned ? Math.sin(race.time * 20 + arm.userData.side) * 0.28 : 0;
-      arm.rotation.z = (arm.userData.baseZ || 0) + arm.userData.side * brace * 0.32;
-      arm.rotation.x = (arm.userData.baseX || 0) + wob;
+      const s = arm.userData.side || 1;
+      const wob = stunned ? Math.sin(race.time * 20 + s) * 0.28 : 0;
+      let z = (arm.userData.baseZ || 0) + s * brace * 0.32;
+      let x = (arm.userData.baseX || 0) + wob + (1 - anim.sq) * 0.5;
+      x += Math.sin(race.time * 24 + s) * 0.5 * anim.panicT;
+      if (celebrating && anim.cheer > 0 && !(expr && expr.who === "muscle" && s < 0)) {
+        z = mix(z, (arm.userData.baseZ || 0) + s * 2.2, anim.cheer);
+        z += Math.sin(race.time * 9) * 0.3 * anim.cheer;
+      }
+      arm.rotation.z = z;
+      arm.rotation.x = x;
     }
     const wind = Math.min(1.5, speed / 15);
     (view.scarfTails || []).forEach((t, i) => {

@@ -6,9 +6,9 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-OUT = Path(os.environ.get("TEMP", ".")) / "gd46-art"
+OUT = Path(os.environ.get("TEMP", ".")) / "gd47-art"
 OUT.mkdir(parents=True, exist_ok=True)
-URL = "http://127.0.0.1:8791/?artcheck=1&v=gd46"
+URL = "http://127.0.0.1:8791/?artcheck=1&v=gd47"
 NAMES = ["bober", "nib", "muscle", "tall"]
 
 
